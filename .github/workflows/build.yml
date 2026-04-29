@@ -1,0 +1,99 @@
+name: Build TERMULScan APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          cache: true
+
+      - name: Write local.properties
+        run: |
+          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
+          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+
+      - name: Generate gradlew
+        run: |
+          flutter create --platforms android .
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -- lib/main.dart
+          git add -f android/gradlew android/gradlew.bat android/gradle/wrapper/gradle-wrapper.jar
+          git diff --staged --quiet || git commit -m "ci: add gradlew [skip ci]"
+          git stash
+          git pull --rebase origin main
+          git stash pop || true
+          git push || true
+
+      - name: Fix Gradle permission
+        run: chmod +x android/gradlew
+
+      - name: Add url_launcher queries to AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.intent.action.VIEW' "$MANIFEST"; then
+            sed -i 's|</manifest>|<queries>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="geo" />\n  </intent>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="https" />\n  </intent>\n</queries>\n</manifest>|' "$MANIFEST"
+          fi
+
+      - name: Generate launcher icons
+        run: |
+          pip install pillow -q
+          python3 -c "
+          from PIL import Image
+          import os
+          sizes = {
+            'mipmap-mdpi': 48,
+            'mipmap-hdpi': 72,
+            'mipmap-xhdpi': 96,
+            'mipmap-xxhdpi': 144,
+            'mipmap-xxxhdpi': 192
+          }
+          for folder, size in sizes.items():
+            path = f'android/app/src/main/res/{folder}'
+            os.makedirs(path, exist_ok=True)
+            img = Image.new('RGBA', (size, size), (0, 230, 118, 255))
+            img.save(f'{path}/ic_launcher.png')
+            img.save(f'{path}/ic_launcher_round.png')
+          print('Icons generated')
+          "
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp build/app/outputs/flutter-apk/app-release.apk output/TERMULScan-release.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TERMULScan-apk
+          path: output/TERMULScan-release.apk
