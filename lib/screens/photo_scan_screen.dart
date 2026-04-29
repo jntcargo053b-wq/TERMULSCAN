@@ -1,0 +1,250 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:gap/gap.dart';
+import '../models/scan_entry.dart';
+import '../services/location_service.dart';
+import '../services/storage_service.dart';
+import '../theme/app_theme.dart';
+
+class PhotoScanScreen extends StatefulWidget {
+  const PhotoScanScreen({super.key});
+  @override
+  State<PhotoScanScreen> createState() => _PhotoScanScreenState();
+}
+
+class _PhotoScanScreenState extends State<PhotoScanScreen> {
+  final _picker = ImagePicker();
+  final _storage = StorageService();
+  final _loc = LocationService();
+
+  bool _isSaving = false;
+  int _photoCount = 0;
+
+  Future<void> _takePhoto() async {
+    try {
+      final xfile = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 88,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+      if (xfile == null) return;
+
+      setState(() => _isSaving = true);
+      HapticFeedback.mediumImpact();
+
+      // Simpan foto ke storage app
+      final savedPath = await _storage.savePhoto(xfile.path);
+
+      // GPS
+      final loc = await _loc.getLocation();
+
+      final entry = ScanEntry(
+        id: _storage.generateId(),
+        type: ScanType.photo,
+        value: savedPath,
+        timestamp: DateTime.now(),
+        latitude: loc.lat,
+        longitude: loc.lng,
+        locationName: loc.address,
+      );
+      await _storage.add(entry);
+
+      setState(() {
+        _photoCount++;
+        _isSaving = false;
+      });
+
+      if (mounted) _showSuccess(entry);
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showError('Gagal ambil foto: $e');
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final xfile = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+      );
+      if (xfile == null) return;
+
+      setState(() => _isSaving = true);
+
+      final savedPath = await _storage.savePhoto(xfile.path);
+      final loc = await _loc.getLocation();
+
+      final entry = ScanEntry(
+        id: _storage.generateId(),
+        type: ScanType.photo,
+        value: savedPath,
+        timestamp: DateTime.now(),
+        latitude: loc.lat,
+        longitude: loc.lng,
+        locationName: loc.address,
+      );
+      await _storage.add(entry);
+
+      setState(() {
+        _photoCount++;
+        _isSaving = false;
+      });
+
+      if (mounted) _showSuccess(entry);
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showError('Gagal memilih foto: $e');
+    }
+  }
+
+  void _showSuccess(ScanEntry entry) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.green.shade700,
+        duration: const Duration(seconds: 2),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const Gap(8),
+            Expanded(
+              child: Text(
+                'Foto tersimpan  •  ${entry.locationName ?? entry.coordinatesString}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(backgroundColor: AppTheme.error, content: Text(msg)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(
+        title: const Text('Ambil Foto'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context, _photoCount),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Icon besar
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentOrange.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: AppTheme.accentOrange.withOpacity(0.4),
+                      width: 2),
+                ),
+                child: const Icon(Icons.camera_alt,
+                    size: 52, color: AppTheme.accentOrange),
+              ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
+              const Gap(24),
+
+              Text(
+                _photoCount == 0
+                    ? 'Siap Ambil Foto'
+                    : '$_photoCount foto tersimpan',
+                style: Theme.of(context).textTheme.titleLarge,
+              ).animate().fadeIn(delay: 100.ms),
+              const Gap(8),
+              Text(
+                'Foto otomatis disertai timestamp & GPS',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ).animate().fadeIn(delay: 200.ms),
+              const Gap(48),
+
+              // Tombol kamera
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isSaving ? null : _takePhoto,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.black, strokeWidth: 2))
+                      : const Icon(Icons.camera_alt, size: 22),
+                  label: Text(_isSaving ? 'Menyimpan...' : 'Ambil Foto Kamera'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.accentOrange,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ).animate().fadeIn(delay: 250.ms),
+              const Gap(14),
+
+              // Tombol galeri
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _pickFromGallery,
+                  icon: const Icon(Icons.photo_library_outlined, size: 20),
+                  label: const Text('Pilih dari Galeri'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.accentOrange,
+                    side: BorderSide(
+                        color: AppTheme.accentOrange.withOpacity(0.6)),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ).animate().fadeIn(delay: 300.ms),
+              const Gap(32),
+
+              // Info GPS
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 16, color: AppTheme.accentBlue),
+                    Gap(10),
+                    Expanded(
+                      child: Text(
+                        'Setiap foto otomatis dicatat: waktu, koordinat GPS, & nama lokasi',
+                        style: TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(delay: 350.ms),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
