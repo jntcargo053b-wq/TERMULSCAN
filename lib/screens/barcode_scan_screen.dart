@@ -8,9 +8,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:gap/gap.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:TERMULScan/models/scan_entry.dart';
-import 'package:TERMULScan/services/storage_service.dart';
-import 'package:TERMULScan/services/location_service.dart';
+import 'package:termulscan/models/scan_entry.dart';
+import 'package:termulscan/services/storage_service.dart';
+import 'package:termulscan/services/location_service.dart';
 import 'watermark_settings.dart';
 import 'watermark_settings_sheet.dart';
 
