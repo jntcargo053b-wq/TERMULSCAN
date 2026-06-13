@@ -7,7 +7,7 @@ class LocationService {
   factory LocationService() => _instance;
   LocationService._();
 
-  static const _channel = MethodChannel('com.gudang.scanner/location');
+  static const _channel = MethodChannel('com.termulscan.app/location');
 
   Future<({double? lat, double? lng, String? address})> getLocation({
     bool forceRefresh = false,

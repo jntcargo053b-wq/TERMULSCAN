@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace "com.gudang.scanner"
+    namespace "com.termulscan.app"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.gudang.scanner"
+        applicationId "com.termulscan.app"
         minSdk 21
         targetSdk 35
         versionCode flutter.versionCode

@@ -11,6 +11,9 @@ class StorageService {
 
   static const _fileName = 'scan_log.json';
 
+  // ── In-memory cache ──────────────────────────────────────────────────────
+  List<ScanEntry>? _cache;
+
   Future<Directory> get _dir async {
     final base = await getApplicationDocumentsDirectory();
     final d = Directory('${base.path}/WHScanner');
@@ -24,52 +27,62 @@ class StorageService {
   }
 
   Future<List<ScanEntry>> loadAll() async {
+    if (_cache != null) return List.unmodifiable(_cache!);
     try {
       final f = await _jsonFile;
-      if (!await f.exists()) return [];
+      if (!await f.exists()) {
+        _cache = [];
+        return [];
+      }
       final raw = await f.readAsString();
       final list = json.decode(raw) as List;
-      return list.map((e) => ScanEntry.fromJson(e)).toList()
+      _cache = list.map((e) => ScanEntry.fromJson(e)).toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return List.unmodifiable(_cache!);
     } catch (_) {
+      _cache = [];
       return [];
     }
   }
 
-  Future<void> saveAll(List<ScanEntry> entries) async {
+  Future<void> _persist() async {
     final f = await _jsonFile;
-    await f.writeAsString(json.encode(entries.map((e) => e.toJson()).toList()));
+    await f.writeAsString(
+      json.encode((_cache ?? []).map((e) => e.toJson()).toList()),
+    );
   }
 
+  /// Append entry ke cache + disk tanpa baca ulang file.
   Future<void> add(ScanEntry entry) async {
-    final all = await loadAll();
-    all.insert(0, entry);
-    await saveAll(all);
+    // Pastikan cache sudah di-load sekali
+    if (_cache == null) await loadAll();
+    _cache!.insert(0, entry);
+    await _persist();
   }
 
   Future<void> update(ScanEntry entry) async {
-    final all = await loadAll();
-    final idx = all.indexWhere((e) => e.id == entry.id);
-    if (idx >= 0) all[idx] = entry;
-    await saveAll(all);
+    if (_cache == null) await loadAll();
+    final idx = _cache!.indexWhere((e) => e.id == entry.id);
+    if (idx >= 0) _cache![idx] = entry;
+    await _persist();
   }
 
   Future<void> delete(String id) async {
-    final all = await loadAll();
-    final entry = all.firstWhere((e) => e.id == id);
+    if (_cache == null) await loadAll();
+    final entry = _cache!.firstWhere((e) => e.id == id);
     if (entry.isPhoto) {
       try {
         final f = File(entry.value);
         if (await f.exists()) await f.delete();
       } catch (_) {}
     }
-    all.removeWhere((e) => e.id == id);
-    await saveAll(all);
+    _cache!.removeWhere((e) => e.id == id);
+    await _persist();
   }
 
   Future<void> deleteAll() async {
-    final all = await loadAll();
-    for (final e in all) {
+    if (_cache == null) await loadAll();
+    for (final e in _cache!) {
       if (e.isPhoto) {
         try {
           final f = File(e.value);
@@ -77,9 +90,13 @@ class StorageService {
         } catch (_) {}
       }
     }
+    _cache = [];
     final f = await _jsonFile;
     if (await f.exists()) await f.delete();
   }
+
+  /// Invalidasi cache (misal setelah proses luar mengubah file)
+  void invalidateCache() => _cache = null;
 
   Future<String> exportTxt(List<ScanEntry> entries) async {
     final d = await _dir;
@@ -135,6 +152,8 @@ class StorageService {
     await Share.shareXFiles([XFile(path)], subject: 'Log Scan WH Scanner');
   }
 
+  /// Simpan foto ke folder permanen app.
+  /// Mengembalikan path final — TIDAK melakukan copy ganda.
   Future<String> savePhoto(String tempPath, {String? name}) async {
     final d = await _dir;
     final photoDir = Directory('${d.path}/photos');
@@ -144,7 +163,14 @@ class StorageService {
         ? name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
         : 'photo';
     final dest = '${photoDir.path}/${cleanName}_$id.jpg';
-    await File(tempPath).copy(dest);
+    await File(tempPath).rename(dest).catchError((_) async {
+      // rename lintas partisi tidak bisa → fallback copy+delete
+      await File(tempPath).copy(dest);
+      try {
+        await File(tempPath).delete();
+      } catch (_) {}
+      return File(dest);
+    });
     return dest;
   }
 

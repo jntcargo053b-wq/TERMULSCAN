@@ -27,7 +27,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     try {
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 88,
+        maxWidth: 1024,
+        imageQuality: 65,
         preferredCameraDevice: CameraDevice.rear,
       );
       if (xfile == null) return;
@@ -68,7 +69,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     try {
       final xfile = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 88,
+        maxWidth: 1024,
+        imageQuality: 65,
       );
       if (xfile == null) return;
 
