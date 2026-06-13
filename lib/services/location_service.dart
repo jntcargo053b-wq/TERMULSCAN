@@ -18,13 +18,14 @@ class LocationService {
 
       final lat = (result['lat'] as num?)?.toDouble();
       final lng = (result['lng'] as num?)?.toDouble();
+      final accuracy = (result['accuracy'] as num?)?.toDouble();
 
       if (lat == null || lng == null) {
         return (lat: null, lng: null, address: null);
       }
 
-      // Reverse geocoding via Nominatim
-      final address = await _reverseGeocode(lat, lng);
+      // Reverse geocoding via Nominatim — detail level disesuaikan akurasi GPS
+      final address = await _reverseGeocode(lat, lng, accuracy: accuracy);
 
       return (lat: lat, lng: lng, address: address);
     } catch (e) {
@@ -32,11 +33,17 @@ class LocationService {
     }
   }
 
-  Future<String?> _reverseGeocode(double lat, double lng) async {
+  Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy}) async {
     try {
+      // FIX GPS DETAIL – kalau akurasi GPS kasar (>=20m), jangan tampilkan
+      // jalan/dusun detail (bisa menyesatkan), cukup kecamatan & kota saja.
+      // zoom Nominatim: 18 = jalan/bangunan, 14 = kecamatan/suburb, 10 = kota
+      final bool isCoarse = accuracy != null && accuracy >= 20;
+      final int zoom = isCoarse ? 14 : 18;
+
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?lat=$lat&lon=$lng&format=json&addressdetails=1',
+        '?lat=$lat&lon=$lng&format=json&addressdetails=1&zoom=$zoom',
       );
 
       final response = await http.get(uri, headers: {
@@ -50,18 +57,33 @@ class LocationService {
       final addr = data['address'];
       if (addr == null) return null;
 
-      // Susun alamat dari yang paling spesifik
       final parts = <String>[];
 
-      final road = addr['road'] ?? addr['pedestrian'] ?? addr['path'];
-      final village = addr['village'] ?? addr['suburb'] ?? addr['neighbourhood'];
       final city = addr['city'] ?? addr['town'] ?? addr['regency'] ?? addr['county'];
       final state = addr['state'];
 
-      if (road != null) parts.add(road);
-      if (village != null) parts.add(village);
-      if (city != null) parts.add(city);
-      if (state != null) parts.add(state);
+      if (isCoarse) {
+        // Akurasi kasar (>= 20m): cukup kecamatan + kota, tanpa jalan/dusun
+        final district = addr['suburb'] ??
+            addr['city_district'] ??
+            addr['district'] ??
+            addr['subdistrict'] ??
+            addr['village'] ??
+            addr['neighbourhood'];
+
+        if (district != null) parts.add(district);
+        if (city != null) parts.add(city);
+        if (state != null) parts.add(state);
+      } else {
+        // Akurasi bagus (< 20m): tampilkan detail lengkap
+        final road = addr['road'] ?? addr['pedestrian'] ?? addr['path'];
+        final village = addr['village'] ?? addr['suburb'] ?? addr['neighbourhood'];
+
+        if (road != null) parts.add(road);
+        if (village != null) parts.add(village);
+        if (city != null) parts.add(city);
+        if (state != null) parts.add(state);
+      }
 
       return parts.isNotEmpty ? parts.join(', ') : data['display_name'];
     } catch (e) {
