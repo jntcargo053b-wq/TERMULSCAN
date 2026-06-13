@@ -63,9 +63,18 @@ class ScanEntry {
     note: j['note'],
   );
 
-  ScanEntry copyWith({String? note}) => ScanEntry(
-    id: id, type: type, value: value, barcodeFormat: barcodeFormat,
-    timestamp: timestamp, latitude: latitude, longitude: longitude,
-    locationName: locationName, note: note ?? this.note,
+  ScanEntry copyWith({
+    String? value,
+    double? latitude,
+    double? longitude,
+    String? locationName,
+    String? note,
+  }) => ScanEntry(
+    id: id, type: type, value: value ?? this.value, barcodeFormat: barcodeFormat,
+    timestamp: timestamp,
+    latitude: latitude ?? this.latitude,
+    longitude: longitude ?? this.longitude,
+    locationName: locationName ?? this.locationName,
+    note: note ?? this.note,
   );
 }
