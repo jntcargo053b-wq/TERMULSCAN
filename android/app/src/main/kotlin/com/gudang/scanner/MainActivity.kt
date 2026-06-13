@@ -51,6 +51,7 @@ class MainActivity : FlutterActivity() {
                         result.success(mapOf(
                             "lat" to location.latitude,
                             "lng" to location.longitude,
+                            "accuracy" to location.accuracy,
                             "address" to null
                         ))
                     }
@@ -79,6 +80,7 @@ class MainActivity : FlutterActivity() {
                         result.success(mapOf(
                             "lat" to fallback.latitude,
                             "lng" to fallback.longitude,
+                            "accuracy" to fallback.accuracy,
                             "address" to null
                         ))
                     } else {
