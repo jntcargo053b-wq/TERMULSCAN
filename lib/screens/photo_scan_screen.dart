@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/scan_entry.dart';
 import '../services/location_service.dart';
 import '../services/storage_service.dart';
@@ -11,6 +13,7 @@ import '../theme/app_theme.dart';
 
 class PhotoScanScreen extends StatefulWidget {
   const PhotoScanScreen({super.key});
+
   @override
   State<PhotoScanScreen> createState() => _PhotoScanScreenState();
 }
@@ -22,8 +25,34 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
   bool _isSaving = false;
   int _photoCount = 0;
+  bool _locationGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLocationPermission();
+  }
+
+  Future<void> _checkLocationPermission() async {
+    final status = await Permission.location.status;
+    if (!status.isGranted) {
+      final result = await Permission.location.request();
+      setState(() => _locationGranted = result.isGranted);
+    } else {
+      setState(() => _locationGranted = true);
+    }
+  }
 
   Future<void> _takePhoto() async {
+    // Pastikan izin lokasi sudah diberikan
+    if (!_locationGranted) {
+      await _checkLocationPermission();
+      if (!_locationGranted) {
+        _showError('Izin lokasi diperlukan untuk menandai foto');
+        return;
+      }
+    }
+
     try {
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
@@ -36,20 +65,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       setState(() => _isSaving = true);
       HapticFeedback.mediumImpact();
 
-      // Simpan foto ke storage app
-      final savedPath = await _storage.savePhoto(xfile.path);
+      // Jalankan paralel: ambil koordinat dan simpan foto sementara
+      final coordsFuture = _loc.getCoordinatesOnly();
+      final savedPathFuture = _storage.savePhoto(xfile.path);
 
-      // GPS
-      final loc = await _loc.getLocation();
+      final savedPath = await savedPathFuture;
+      final coords = await coordsFuture;
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
         timestamp: DateTime.now(),
-        latitude: loc.lat,
-        longitude: loc.lng,
-        locationName: loc.address,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        locationName: null,
       );
       await _storage.add(entry);
 
@@ -57,6 +87,43 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         _photoCount++;
         _isSaving = false;
       });
+
+      // Reverse geocoding asinkron (tidak menghalangi UI)
+      if (coords.lat != null && coords.lng != null) {
+        // ignore: unawaited_futures
+        _loc.updateAddressForEntry(
+          entryId: entry.id,
+          lat: coords.lat!,
+          lng: coords.lng!,
+          onAddressReceived: (id, address) async {
+            final currentEntry = await _storage.getEntry(id);
+            if (currentEntry != null) {
+              final updated = currentEntry.copyWith(locationName: address);
+              await _storage.update(updated);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('📍 Lokasi terdeteksi: $address'),
+                    duration: const Duration(seconds: 2),
+                    backgroundColor: Colors.green.shade700,
+                  ),
+                );
+              }
+            }
+          },
+        );
+      } else {
+        // Tampilkan peringatan jika GPS tidak tersedia
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
 
       if (mounted) _showSuccess(entry);
     } catch (e) {
@@ -66,6 +133,14 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   }
 
   Future<void> _pickFromGallery() async {
+    if (!_locationGranted) {
+      await _checkLocationPermission();
+      if (!_locationGranted) {
+        _showError('Izin lokasi diperlukan untuk menandai foto');
+        return;
+      }
+    }
+
     try {
       final xfile = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -76,17 +151,20 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       setState(() => _isSaving = true);
 
-      final savedPath = await _storage.savePhoto(xfile.path);
-      final loc = await _loc.getLocation();
+      final coordsFuture = _loc.getCoordinatesOnly();
+      final savedPathFuture = _storage.savePhoto(xfile.path);
+
+      final savedPath = await savedPathFuture;
+      final coords = await coordsFuture;
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
         timestamp: DateTime.now(),
-        latitude: loc.lat,
-        longitude: loc.lng,
-        locationName: loc.address,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        locationName: null,
       );
       await _storage.add(entry);
 
@@ -94,6 +172,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         _photoCount++;
         _isSaving = false;
       });
+
+      if (coords.lat != null && coords.lng != null) {
+        // ignore: unawaited_futures
+        _loc.updateAddressForEntry(
+          entryId: entry.id,
+          lat: coords.lat!,
+          lng: coords.lng!,
+          onAddressReceived: (id, address) async {
+            final currentEntry = await _storage.getEntry(id);
+            if (currentEntry != null) {
+              await _storage.update(currentEntry.copyWith(locationName: address));
+            }
+          },
+        );
+      }
 
       if (mounted) _showSuccess(entry);
     } catch (e) {
@@ -147,7 +240,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Icon besar
               Container(
                 width: 120,
                 height: 120,
@@ -155,14 +247,14 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                   color: AppTheme.accentOrange.withOpacity(0.1),
                   shape: BoxShape.circle,
                   border: Border.all(
-                      color: AppTheme.accentOrange.withOpacity(0.4),
-                      width: 2),
+                    color: AppTheme.accentOrange.withOpacity(0.4),
+                    width: 2,
+                  ),
                 ),
                 child: const Icon(Icons.camera_alt,
                     size: 52, color: AppTheme.accentOrange),
               ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
               const Gap(24),
-
               Text(
                 _photoCount == 0
                     ? 'Siap Ambil Foto'
@@ -176,8 +268,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                 textAlign: TextAlign.center,
               ).animate().fadeIn(delay: 200.ms),
               const Gap(48),
-
-              // Tombol kamera
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -200,8 +290,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                 ),
               ).animate().fadeIn(delay: 250.ms),
               const Gap(14),
-
-              // Tombol galeri
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -218,8 +306,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                 ),
               ).animate().fadeIn(delay: 300.ms),
               const Gap(32),
-
-              // Info GPS
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

@@ -18,7 +18,8 @@ dependencies:
   share_plus: ^10.0.3
   permission_handler: ^11.3.1
   shared_preferences: ^2.2.2
-  http: ^1.2.1   
+  http: ^1.2.1
+  image_gallery_saver: ^2.0.3
 
 dev_dependencies:
   flutter_test:

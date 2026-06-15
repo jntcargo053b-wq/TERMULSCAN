@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:gap/gap.dart';
@@ -47,7 +49,7 @@ class _WatermarkTask {
 void _watermarkIsolate(_WatermarkTask task) async {
   try {
     final result = await _renderWatermark(task);
-    task.replyTo.send(result); // kirim path hasil atau null
+    task.replyTo.send(result);
   } catch (e) {
     task.replyTo.send(null);
   }
@@ -55,8 +57,6 @@ void _watermarkIsolate(_WatermarkTask task) async {
 
 /// Fungsi render watermark (berjalan di isolate terpisah).
 Future<String?> _renderWatermark(_WatermarkTask task) async {
-  // FIX #3 – gambar sudah dikecilkan oleh image_picker (maxWidth:1024)
-  // di sini hanya decode + render canvas
   final imageBytes = await File(task.imagePath).readAsBytes();
   final codec = await ui.instantiateImageCodec(imageBytes);
   final frame = await codec.getNextFrame();
@@ -70,8 +70,7 @@ Future<String?> _renderWatermark(_WatermarkTask task) async {
   if (task.logoPath != null) {
     try {
       final logoBytes = await File(task.logoPath!).readAsBytes();
-      final logoCodec =
-          await ui.instantiateImageCodec(logoBytes, targetWidth: 160);
+      final logoCodec = await ui.instantiateImageCodec(logoBytes, targetWidth: 160);
       final logoFrame = await logoCodec.getNextFrame();
       logoImage = logoFrame.image;
     } catch (_) {}
@@ -82,8 +81,7 @@ Future<String?> _renderWatermark(_WatermarkTask task) async {
   canvas.drawImage(srcImage, Offset.zero, Paint());
 
   // Teks watermark
-  final dateStr =
-      DateFormat('dd/MM/yyyy HH:mm:ss').format(task.timestamp);
+  final dateStr = DateFormat('dd/MM/yyyy HH:mm:ss').format(task.timestamp);
   final gpsStr = task.locationName ??
       (task.latitude != null
           ? '${task.latitude!.toStringAsFixed(5)}, ${task.longitude!.toStringAsFixed(5)}'
@@ -225,8 +223,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (!_scanning || _isSaving) return;
 
-    final barcode =
-        capture.barcodes.isNotEmpty ? capture.barcodes.first : null;
+    final barcode = capture.barcodes.isNotEmpty ? capture.barcodes.first : null;
     if (barcode == null || barcode.rawValue == null) return;
 
     final code = barcode.rawValue!;
@@ -242,7 +239,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     try {
       HapticFeedback.mediumImpact();
 
-      // FIX #1 – simpan barcode DULU (tanpa tunggu GPS)
+      // Simpan barcode DULU tanpa GPS (akan diupdate nanti)
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.barcode,
@@ -256,16 +253,18 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       await _storage.add(entry);
       setState(() => _scanCount++);
 
-      // FIX – jangan tunggu proses foto/GPS/save, biar scanner siap lagi
       if (mounted) {
         _takePhotoAndShow(entry).catchError((e) {
           debugPrint('Error _takePhotoAndShow: $e');
+          if (mounted) setState(() {
+            _isSaving = false;
+            _scanning = true;
+            _lastCode = null;
+          });
         });
       }
     } catch (e) {
       debugPrint('Error _onDetect: $e');
-      if (mounted) setState(() { _scanning = true; _lastCode = null; });
-    } finally {
       if (mounted) setState(() {
         _isSaving = false;
         _scanning = true;
@@ -336,8 +335,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Colors.amber, width: 1.5),
+                  borderSide: const BorderSide(color: Colors.amber, width: 1.5),
                 ),
                 prefixIcon: const Icon(Icons.qr_code, color: Colors.grey),
                 suffixIcon: IconButton(
@@ -399,7 +397,6 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     try {
       HapticFeedback.mediumImpact();
 
-      // FIX #1 – simpan barcode DULU, GPS menyusul
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.barcode,
@@ -416,13 +413,15 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       if (mounted) {
         _takePhotoAndShow(entry).catchError((e) {
           debugPrint('Error _takePhotoAndShow: $e');
+          if (mounted) setState(() {
+            _isSaving = false;
+            _scanning = true;
+            _lastCode = null;
+          });
         });
       }
     } catch (e) {
       debugPrint('Error _processManualCode: $e');
-      if (mounted)
-        setState(() { _scanning = true; _lastCode = null; });
-    } finally {
       if (mounted) setState(() {
         _isSaving = false;
         _scanning = true;
@@ -433,7 +432,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
 
   // ── FOTO & WATERMARK ─────────────────────────────────────────────────────
   Future<void> _takePhotoAndShow(ScanEntry entry) async {
-    // FIX #3 – ukuran foto dikurangi langsung di image_picker
+    // Ambil foto dari kamera (sudah dikompres)
     final file = await _picker.pickImage(
       source: ImageSource.camera,
       maxWidth: 1024,
@@ -441,15 +440,31 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     );
 
     if (file == null) {
-      if (mounted) setState(() { _scanning = true; _lastCode = null; });
+      if (mounted) setState(() {
+        _isSaving = false;
+        _scanning = true;
+        _lastCode = null;
+      });
       return;
     }
 
     if (!mounted) return;
+    setState(() => _isSaving = false);
 
-    // Tampilkan result sheet SEGERA dengan status "memproses"
+    // 1. Dapatkan koordinat CEPAT (tanpa reverse geocoding)
+    final coords = await _loc.getCoordinatesOnly();
+
+    // 2. Update entry dengan koordinat (address masih null)
+    ScanEntry updatedEntry = entry.copyWith(
+      latitude: coords.lat,
+      longitude: coords.lng,
+      locationName: null,
+    );
+    await _storage.update(updatedEntry);
+
+    // 3. Tampilkan result sheet dengan status "memproses"
     final stateNotifier = ValueNotifier<_ResultState>(
-      _ResultState(entry: entry, photoPath: null, processing: true),
+      _ResultState(entry: updatedEntry, photoPath: null, processing: true),
     );
 
     showModalBottomSheet(
@@ -470,53 +485,61 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       }
     });
 
-    // Sisanya (watermark, GPS, save) berjalan di background tanpa blocking UI
+    // 4. Jalankan reverse geocoding di BACKGROUND (tanpa await)
+    if (coords.lat != null && coords.lng != null) {
+      // ignore: unawaited_futures
+      _loc.updateAddressForEntry(
+        entryId: updatedEntry.id,
+        lat: coords.lat!,
+        lng: coords.lng!,
+        onAddressReceived: (id, address) async {
+          final currentEntry = await _storage.getEntry(id);
+          if (currentEntry != null) {
+            final withAddress = currentEntry.copyWith(locationName: address);
+            await _storage.update(withAddress);
+            if (mounted) {
+              stateNotifier.value = _ResultState(
+                entry: withAddress,
+                photoPath: stateNotifier.value.photoPath,
+                processing: stateNotifier.value.processing,
+                error: stateNotifier.value.error,
+              );
+            }
+          }
+        },
+      );
+    }
+
+    // 5. Proses watermark dan simpan foto (tidak menunggu address)
     try {
-      // FIX #1 – ambil GPS paralel sementara watermark dirender
-      final locFuture = _loc.getLocation();
+      final wmPath = await _addWatermarkInIsolate(
+        file.path,
+        updatedEntry,
+      );
+      final savedPhotoPath = await _storage.savePhoto(wmPath, name: entry.value);
 
-      // FIX #4 – render watermark di isolate terpisah
-      final wmPath = await _addWatermarkInIsolate(file.path, entry);
-
-      // Tunggu GPS (sudah berjalan paralel)
-      final loc = await locFuture;
-
-      // FIX #5 – savePhoto pakai rename (bukan copy), tidak ada copy kedua
-      final saved = await _storage.savePhoto(wmPath, name: entry.value);
-
-      // Update entry dengan GPS yang sudah dapat
-      ScanEntry updated = entry;
-      if (loc.lat != null) {
-        updated = entry.copyWith(
-          latitude: loc.lat,
-          longitude: loc.lng,
-          locationName: loc.address,
-        );
-        await _storage.update(updated);
-      }
-
-      // Tambah entry foto
+      // Buat entri foto
       final photoEntry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
-        value: saved,
+        value: savedPhotoPath,
         timestamp: DateTime.now(),
-        latitude: loc.lat,
-        longitude: loc.lng,
-        locationName: loc.address,
+        latitude: coords.lat,
+        longitude: coords.lng,
+        locationName: null,
       );
       await _storage.add(photoEntry);
 
-      // Update sheet dengan hasil foto + GPS terbaru
+      // Update sheet dengan hasil foto
       stateNotifier.value = _ResultState(
-        entry: updated,
-        photoPath: saved,
+        entry: updatedEntry,
+        photoPath: savedPhotoPath,
         processing: false,
       );
     } catch (e) {
-      debugPrint('Error _takePhotoAndShow: $e');
+      debugPrint('Error watermark/save: $e');
       stateNotifier.value = _ResultState(
-        entry: entry,
+        entry: updatedEntry,
         photoPath: null,
         processing: false,
         error: true,
@@ -524,9 +547,8 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     }
   }
 
-  /// FIX #4 – jalankan watermark di Isolate agar UI tidak freeze
-  Future<String> _addWatermarkInIsolate(
-      String imagePath, ScanEntry entry) async {
+  /// Jalankan watermark di Isolate agar UI tidak freeze
+  Future<String> _addWatermarkInIsolate(String imagePath, ScanEntry entry) async {
     final receivePort = ReceivePort();
     final outputPath =
         '${File(imagePath).parent.path}/wm_${DateTime.now().millisecondsSinceEpoch}.png';
@@ -553,25 +575,20 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     return result;
   }
 
+  /// ✅ FUNGSI SAVE TO GALLERY - menggunakan image_gallery_saver
   Future<bool> _saveToGallery(String filePath, ScanEntry entry) async {
     try {
-      PermissionStatus status = await Permission.photos.request();
-      if (!status.isGranted) {
-        status = await Permission.storage.request();
+      final result = await ImageGallerySaver.saveFile(filePath);
+      
+      if (result != null && result['isSuccess'] == true) {
+        debugPrint('✅ Berhasil menyimpan ke galeri: $filePath');
+        return true;
+      } else {
+        debugPrint('⚠️ Gagal menyimpan ke galeri: $filePath');
+        return false;
       }
-      if (!status.isGranted) return false;
-
-      final bytes = await File(filePath).readAsBytes();
-      final dir = Directory('/storage/emulated/0/Pictures/TERMULScan');
-      await dir.create(recursive: true);
-      final cleanValue =
-          entry.value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final fileName =
-          '${cleanValue}_${DateTime.now().millisecondsSinceEpoch}.png';
-      await File('${dir.path}/$fileName').writeAsBytes(bytes);
-      return true;
     } catch (e) {
-      debugPrint('Error _saveToGallery: $e');
+      debugPrint('❌ Error _saveToGallery: $e');
       return false;
     }
   }
@@ -616,19 +633,16 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
               left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: const Color(0xAA000000),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: Colors.amber.withOpacity(0.4)),
+                    border: Border.all(color: Colors.amber.withOpacity(0.4)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.person,
-                          color: Colors.amber, size: 12),
+                      const Icon(Icons.person, color: Colors.amber, size: 12),
                       const Gap(5),
                       Text(
                         _wmSettings.operatorName,
@@ -640,8 +654,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
                       ),
                       if (_wmSettings.hasLogo) ...[
                         const Gap(8),
-                        const Icon(Icons.business,
-                            color: Colors.white54, size: 12),
+                        const Icon(Icons.business, color: Colors.white54, size: 12),
                       ],
                     ],
                   ),
@@ -656,21 +669,17 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
               child: Center(
                 child: TextButton.icon(
                   onPressed: _showManualInput,
-                  icon: const Icon(Icons.keyboard,
-                      color: Colors.white70, size: 18),
+                  icon: const Icon(Icons.keyboard, color: Colors.white70, size: 18),
                   label: const Text(
                     'Input Manual',
-                    style:
-                        TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
                   style: TextButton.styleFrom(
                     backgroundColor: const Color(0x88000000),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
-                      side:
-                          const BorderSide(color: Colors.white24),
+                      side: const BorderSide(color: Colors.white24),
                     ),
                   ),
                 ),
@@ -687,8 +696,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
                     CircularProgressIndicator(color: Colors.white),
                     Gap(12),
                     Text('Memproses...',
-                        style: TextStyle(
-                            color: Colors.white, fontSize: 16)),
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
                   ],
                 ),
               ),
@@ -750,272 +758,258 @@ class _ResultSheetState extends State<_ResultSheet> {
     return ValueListenableBuilder<_ResultState>(
       valueListenable: widget.notifier,
       builder: (context, state, _) {
-    final entry = state.entry;
-    final photoPath = state.photoPath;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20, 16, 20,
-        MediaQuery.of(context).viewInsets.bottom + 32,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40, height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
-            ),
+        final entry = state.entry;
+        final photoPath = state.photoPath;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            20, 16, 20,
+            MediaQuery.of(context).viewInsets.bottom + 32,
           ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
 
-          if (_isManual)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(6),
-                border:
-                    Border.all(color: Colors.amber.withOpacity(0.4)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.keyboard, color: Colors.amber, size: 13),
-                  Gap(5),
-                  Text('Input Manual',
-                      style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      )),
-                ],
-              ),
-            ),
+              if (_isManual)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.keyboard, color: Colors.amber, size: 13),
+                      Gap(5),
+                      Text('Input Manual',
+                          style: TextStyle(
+                            color: Colors.amber,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ],
+                  ),
+                ),
 
-          if (photoPath != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(
-                File(photoPath),
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            )
-          else if (state.processing)
-            Container(
-              height: 200,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 24, height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+              if (photoPath != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.file(
+                    File(photoPath),
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else if (state.processing)
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 24, height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        Gap(8),
+                        Text('Memproses foto & GPS...',
+                            style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
                     ),
-                    Gap(8),
-                    Text('Memproses foto & GPS...',
-                        style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
+                  ),
+                )
+              else if (state.error)
+                Container(
+                  height: 80,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(
+                    child: Text('Gagal memproses foto',
+                        style: TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
                 ),
-              ),
-            )
-          else if (state.error)
-            Container(
-              height: 80,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Center(
-                child: Text('Gagal memproses foto',
-                    style: TextStyle(color: Colors.red, fontSize: 12)),
-              ),
-            ),
-          const Gap(12),
+              const Gap(12),
 
-          Text(
-            entry.value,
-            style: const TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
-          const Gap(4),
-          Text(
-            DateFormat('dd/MM/yyyy HH:mm:ss')
-                .format(entry.timestamp),
-            style: const TextStyle(color: Colors.grey, fontSize: 13),
-          ),
-          const Gap(4),
-          Text(
-            entry.coordinatesString,
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-          const Gap(12),
-
-          if (!_isEditingNote && !_noteSaved)
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _isEditingNote = true),
-                icon: const Icon(Icons.note_add_outlined, size: 18),
-                label: const Text('Tambah Catatan'),
-                style: TextButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  foregroundColor: Colors.grey,
-                ),
+              Text(
+                entry.value,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                textAlign: TextAlign.center,
               ),
-            ),
+              const Gap(4),
+              Text(
+                DateFormat('dd/MM/yyyy HH:mm:ss').format(entry.timestamp),
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const Gap(4),
+              Text(
+                entry.coordinatesString,
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              const Gap(12),
 
-          if (_isEditingNote)
-            Column(
-              children: [
-                TextField(
-                  controller: _noteController,
-                  autofocus: true,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Tulis catatan...',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.all(10),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+              if (!_isEditingNote && !_noteSaved)
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _isEditingNote = true),
+                    icon: const Icon(Icons.note_add_outlined, size: 18),
+                    label: const Text('Tambah Catatan'),
+                    style: TextButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      foregroundColor: Colors.grey,
                     ),
                   ),
                 ),
-                const Gap(8),
-                Row(
+
+              if (_isEditingNote)
+                Column(
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => setState(() {
-                          _isEditingNote = false;
-                          _noteController.clear();
-                        }),
-                        child: const Text('Batal'),
+                    TextField(
+                      controller: _noteController,
+                      autofocus: true,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Tulis catatan...',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.all(10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                     const Gap(8),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final note = _noteController.text.trim();
-                          if (note.isNotEmpty) {
-                            final updated =
-                                entry.copyWith(note: note);
-                            await widget.storage.update(updated);
-                          }
-                          setState(() {
-                            _isEditingNote = false;
-                            _noteSaved = note.isNotEmpty;
-                          });
-                        },
-                        child: const Text('Simpan Catatan'),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => setState(() {
+                              _isEditingNote = false;
+                              _noteController.clear();
+                            }),
+                            child: const Text('Batal'),
+                          ),
+                        ),
+                        const Gap(8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final note = _noteController.text.trim();
+                              if (note.isNotEmpty) {
+                                final updated = entry.copyWith(note: note);
+                                await widget.storage.update(updated);
+                              }
+                              setState(() {
+                                _isEditingNote = false;
+                                _noteSaved = note.isNotEmpty;
+                              });
+                            },
+                            child: const Text('Simpan Catatan'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
 
-          if (_noteSaved)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Row(
+              if (_noteSaved)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      const Gap(8),
+                      Expanded(
+                        child: Text(
+                          _noteController.text,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _noteSaved = false;
+                          _isEditingNote = true;
+                        }),
+                        child: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const Gap(12),
+
+              Row(
                 children: [
-                  const Icon(Icons.check_circle,
-                      color: Colors.green, size: 16),
-                  const Gap(8),
                   Expanded(
-                    child: Text(
-                      _noteController.text,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _noteSaved = false;
-                      _isEditingNote = true;
-                    }),
-                    child: const Icon(Icons.edit,
-                        size: 16, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-
-          const Gap(12),
-
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed:
-                      (_isSaved || _isSaving || photoPath == null)
+                    child: ElevatedButton.icon(
+                      onPressed: (_isSaved || _isSaving || photoPath == null)
                           ? null
                           : () async {
                               setState(() => _isSaving = true);
-                              final success =
-                                  await widget.onSaveToGallery(
-                                      photoPath!, entry);
+                              final success = await widget.onSaveToGallery(photoPath!, entry);
                               setState(() {
                                 _isSaving = false;
                                 _isSaved = success;
                               });
                               if (mounted) {
-                                ScaffoldMessenger.of(context)
-                                    .showSnackBar(
+                                ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(success
                                         ? '✓ Foto tersimpan ke galeri'
                                         : 'Gagal menyimpan — cek permission'),
-                                    duration:
-                                        const Duration(seconds: 2),
+                                    duration: const Duration(seconds: 2),
                                   ),
                                 );
                               }
                             },
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2),
-                        )
-                      : Icon(
-                          _isSaved ? Icons.check : Icons.save_alt),
-                  label: Text(_isSaving
-                      ? 'Menyimpan...'
-                      : _isSaved ? 'Tersimpan' : 'Simpan'),
-                ),
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(_isSaved ? Icons.check : Icons.save_alt),
+                      label: Text(_isSaving
+                          ? 'Menyimpan...'
+                          : _isSaved ? 'Tersimpan' : 'Simpan'),
+                    ),
+                  ),
+                  const Gap(10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text('Scan Lagi'),
+                    ),
+                  ),
+                ],
               ),
-              const Gap(10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.qr_code_scanner),
-                  label: const Text('Scan Lagi'),
-                ),
-              ),
+            ],
           ),
-        ],
-      ),
-    );
+        );
       },
     );
   }

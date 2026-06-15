@@ -175,4 +175,14 @@ class StorageService {
   }
 
   String generateId() => 'sc_${DateTime.now().millisecondsSinceEpoch}';
+
+  // ── Method getEntry untuk mengambil satu entri berdasarkan ID ─────────────
+  Future<ScanEntry?> getEntry(String id) async {
+    if (_cache == null) await loadAll();
+    try {
+      return _cache!.firstWhere((e) => e.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
 }
