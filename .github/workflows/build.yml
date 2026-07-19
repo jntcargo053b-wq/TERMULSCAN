@@ -18,7 +18,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ===== PERBAIKAN 1: Nama package =====
+      # ============================================================
+      # PERBAIKAN 1: Nama package harus lowercase
+      # ============================================================
       - name: Ensure valid package name
         run: |
           if [ -f pubspec.yaml ]; then
@@ -26,16 +28,25 @@ jobs:
             echo "✅ name: termulscan"
           fi
 
-      # ===== PERBAIKAN 2: SDK constraint =====
+      # ============================================================
+      # PERBAIKAN 2: Pastikan SDK constraint ada (versi robust)
+      # ============================================================
       - name: Ensure SDK constraint
         run: |
-          if ! grep -q 'sdk:' pubspec.yaml; then
-            echo "Menambahkan SDK constraint..."
-            sed -i '/^environment:/a \  sdk: ">=3.0.0 <4.0.0"' pubspec.yaml
+          if ! grep -q '^environment:' pubspec.yaml; then
+            # Jika environment tidak ada, tambahkan di akhir
+            echo -e "\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"" >> pubspec.yaml
           else
-            sed -i 's/^  sdk:.*$/  sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
+            # Jika environment ada, cek apakah sdk: sudah ada
+            if ! grep -q '^  sdk:' pubspec.yaml; then
+              # Tambahkan sdk: setelah baris environment:
+              sed -i '/^environment:/a \  sdk: ">=3.0.0 <4.0.0"' pubspec.yaml
+            else
+              # Ganti nilai sdk yang ada
+              sed -i 's/^  sdk:.*$/  sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
+            fi
           fi
-          echo "✅ SDK constraint:"
+          echo "✅ SDK constraint sekarang:"
           grep -A1 '^environment:' pubspec.yaml
 
       - name: Set up Java
@@ -56,7 +67,9 @@ jobs:
           echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
-      # ===== PERBAIKAN 3: flutter create pakai --project-name =====
+      # ============================================================
+      # PERBAIKAN 3: flutter create dengan --project-name
+      # ============================================================
       - name: Generate gradlew (with forced project name)
         run: |
           flutter create --platforms android --project-name termulscan .
@@ -73,136 +86,139 @@ jobs:
       - name: Fix Gradle permission
         run: chmod +x android/gradlew
 
-      # ===== PERBAIKAN 4: Restore MainActivity.kt jika sudah ada =====
+      # ============================================================
+      # PERBAIKAN 4: Pastikan MainActivity.kt tidak tertimpa
+      # ============================================================
       - name: Restore custom MainActivity.kt
         run: |
-          if [ -f android/app/src/main/kotlin/com/termulscan/app/MainActivity.kt ]; then
-            echo "✅ MainActivity.kt sudah ada, tidak diubah"
+          TARGET="android/app/src/main/kotlin/com/termulscan/app/MainActivity.kt"
+          if [ -f "$TARGET" ]; then
+            echo "✅ $TARGET sudah ada, tidak diubah"
           else
-            echo "⚠️ MainActivity.kt tidak ditemukan, membuat default"
-            mkdir -p android/app/src/main/kotlin/com/termulscan/app
-            cat > android/app/src/main/kotlin/com/termulscan/app/MainActivity.kt << 'EOF'
-          package com.termulscan.app
+            echo "⚠️ Membuat $TARGET default"
+            mkdir -p "$(dirname "$TARGET")"
+            cat > "$TARGET" << 'EOF'
+        package com.termulscan.app
 
-          import android.Manifest
-          import android.content.pm.PackageManager
-          import android.location.Location
-          import android.location.LocationListener
-          import android.location.LocationManager
-          import android.os.Bundle
-          import android.os.Handler
-          import android.os.Looper
-          import androidx.core.app.ActivityCompat
-          import androidx.core.content.ContextCompat
-          import io.flutter.embedding.android.FlutterActivity
-          import io.flutter.embedding.engine.FlutterEngine
-          import io.flutter.plugin.common.MethodChannel
-          import io.flutter.plugin.common.MethodChannel.Result
+        import android.Manifest
+        import android.content.pm.PackageManager
+        import android.location.Location
+        import android.location.LocationListener
+        import android.location.LocationManager
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import androidx.core.app.ActivityCompat
+        import androidx.core.content.ContextCompat
+        import io.flutter.embedding.android.FlutterActivity
+        import io.flutter.embedding.engine.FlutterEngine
+        import io.flutter.plugin.common.MethodChannel
+        import io.flutter.plugin.common.MethodChannel.Result
 
-          class MainActivity : FlutterActivity() {
-              private val CHANNEL = "com.termulscan.app/location"
-              private lateinit var locationManager: LocationManager
+        class MainActivity : FlutterActivity() {
+            private val CHANNEL = "com.termulscan.app/location"
+            private lateinit var locationManager: LocationManager
 
-              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-                  super.configureFlutterEngine(flutterEngine)
-                  locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+            override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                super.configureFlutterEngine(flutterEngine)
+                locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
 
-                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-                      .setMethodCallHandler { call, result ->
-                          if (call.method == "getLocation") {
-                              getCurrentLocation(result)
-                          } else {
-                              result.notImplemented()
-                          }
-                      }
-              }
+                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+                    .setMethodCallHandler { call, result ->
+                        if (call.method == "getLocation") {
+                            getCurrentLocation(result)
+                        } else {
+                            result.notImplemented()
+                        }
+                    }
+            }
 
-              private fun getCurrentLocation(result: Result) {
-                  val hasFineLocation = ContextCompat.checkSelfPermission(
-                      this, Manifest.permission.ACCESS_FINE_LOCATION
-                  ) == PackageManager.PERMISSION_GRANTED
-                  val hasCoarseLocation = ContextCompat.checkSelfPermission(
-                      this, Manifest.permission.ACCESS_COARSE_LOCATION
-                  ) == PackageManager.PERMISSION_GRANTED
+            private fun getCurrentLocation(result: Result) {
+                val hasFineLocation = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                val hasCoarseLocation = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
 
-                  if (!hasFineLocation && !hasCoarseLocation) {
-                      result.error("PERMISSION_DENIED", "Location permission not granted", null)
-                      return
-                  }
+                if (!hasFineLocation && !hasCoarseLocation) {
+                    result.error("PERMISSION_DENIED", "Location permission not granted", null)
+                    return
+                }
 
-                  var bestLocation: Location? = null
-                  val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                  val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                  bestLocation = gpsLast ?: netLast
+                var bestLocation: Location? = null
+                val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                bestLocation = gpsLast ?: netLast
 
-                  if (bestLocation != null) {
-                      val map = mapOf(
-                          "lat" to bestLocation.latitude,
-                          "lng" to bestLocation.longitude,
-                          "accuracy" to bestLocation.accuracy
-                      )
-                      result.success(map)
-                      return
-                  }
+                if (bestLocation != null) {
+                    val map = mapOf(
+                        "lat" to bestLocation.latitude,
+                        "lng" to bestLocation.longitude,
+                        "accuracy" to bestLocation.accuracy
+                    )
+                    result.success(map)
+                    return
+                }
 
-                  val providers = listOf(
-                      LocationManager.GPS_PROVIDER,
-                      LocationManager.NETWORK_PROVIDER,
-                      LocationManager.PASSIVE_PROVIDER
-                  )
-                  var requested = false
-                  var resultSent = false
+                val providers = listOf(
+                    LocationManager.GPS_PROVIDER,
+                    LocationManager.NETWORK_PROVIDER,
+                    LocationManager.PASSIVE_PROVIDER
+                )
+                var requested = false
+                var resultSent = false
 
-                  val locationListener = object : LocationListener {
-                      override fun onLocationChanged(location: Location) {
-                          if (!resultSent) {
-                              resultSent = true
-                              val map = mapOf(
-                                  "lat" to location.latitude,
-                                  "lng" to location.longitude,
-                                  "accuracy" to location.accuracy
-                              )
-                              result.success(map)
-                          }
-                          providers.forEach { provider ->
-                              try { locationManager.removeUpdates(this) } catch (_: Exception) {}
-                          }
-                      }
-                      override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                      override fun onProviderEnabled(provider: String) {}
-                      override fun onProviderDisabled(provider: String) {}
-                  }
+                val locationListener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        if (!resultSent) {
+                            resultSent = true
+                            val map = mapOf(
+                                "lat" to location.latitude,
+                                "lng" to location.longitude,
+                                "accuracy" to location.accuracy
+                            )
+                            result.success(map)
+                        }
+                        providers.forEach { provider ->
+                            try { locationManager.removeUpdates(this) } catch (_: Exception) {}
+                        }
+                    }
+                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {}
+                }
 
-                  for (provider in providers) {
-                      if (locationManager.isProviderEnabled(provider)) {
-                          try {
-                              locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
-                              requested = true
-                          } catch (_: Exception) {}
-                      }
-                  }
+                for (provider in providers) {
+                    if (locationManager.isProviderEnabled(provider)) {
+                        try {
+                            locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
+                            requested = true
+                        } catch (_: Exception) {}
+                    }
+                }
 
-                  if (!requested) {
-                      result.error("NO_PROVIDER", "No location provider enabled", null)
-                      return
-                  }
+                if (!requested) {
+                    result.error("NO_PROVIDER", "No location provider enabled", null)
+                    return
+                }
 
-                  Handler(Looper.getMainLooper()).postDelayed({
-                      if (!resultSent) {
-                          resultSent = true
-                          result.success(mapOf(
-                              "lat" to null,
-                              "lng" to null,
-                              "accuracy" to null
-                          ))
-                          providers.forEach { provider ->
-                              try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
-                          }
-                      }
-                  }, 5000)
-              }
-          }
-          EOF
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (!resultSent) {
+                        resultSent = true
+                        result.success(mapOf(
+                            "lat" to null,
+                            "lng" to null,
+                            "accuracy" to null
+                        ))
+                        providers.forEach { provider ->
+                            try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+                        }
+                    }
+                }, 5000)
+            }
+        }
+        EOF
           fi
 
       - name: Add url_launcher queries to AndroidManifest
