@@ -18,6 +18,19 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # ========== PERBAIKAN UTAMA ==========
+      - name: Fix package name in pubspec.yaml
+        run: |
+          if [ -f pubspec.yaml ]; then
+            # Ubah name menjadi termulscan (lowercase)
+            sed -i 's/^name: *.*/name: termulscan/' pubspec.yaml
+            echo "✅ pubspec.yaml name diubah menjadi:"
+            grep '^name:' pubspec.yaml
+          else
+            echo "⚠️ pubspec.yaml tidak ditemukan, membuat baru"
+            echo "name: termulscan" > pubspec.yaml
+          fi
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -36,9 +49,10 @@ jobs:
           echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
 
-      - name: Generate gradlew
+      - name: Generate gradlew (with forced project name)
         run: |
-          flutter create --platforms android .
+          # Paksa nama proyek = termulscan agar tidak error
+          flutter create --platforms android --project-name termulscan .
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -- lib/main.dart
