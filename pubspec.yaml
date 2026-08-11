@@ -1,246 +1,30 @@
-name: Build TERMULScan APK
+name: termulscan
+description: TERMULScan Flutter application
+publish_to: "none"
+version: 1.0.0+1
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+environment:
+  sdk: ">=3.3.0 <4.0.0"
 
-permissions:
-  contents: write
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_animate: ^4.5.0
+  gap: ^3.0.1
+  http: ^1.2.2
+  image_gallery_saver: ^2.0.3
+  image_picker: ^1.1.2
+  intl: ^0.19.0
+  mobile_scanner: ^5.2.3
+  path_provider: ^2.1.4
+  permission_handler: ^11.3.1
+  share_plus: ^9.0.0
+  shared_preferences: ^2.3.2
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Ensure valid package name
-        run: |
-          if [ -f pubspec.yaml ]; then
-            sed -i 's/^name:.*/name: termulscan/' pubspec.yaml
-          fi
-
-      - name: Ensure SDK constraint
-        run: |
-          if ! grep -q '^environment:' pubspec.yaml; then
-            echo -e "\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"" >> pubspec.yaml
-          else
-            if ! grep -q '^  sdk:' pubspec.yaml; then
-              sed -i '/^environment:/a \  sdk: ">=3.0.0 <4.0.0"' pubspec.yaml
-            else
-              sed -i 's/^  sdk:.*$/  sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
-            fi
-          fi
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.0'
-          cache: true
-
-      - name: Write local.properties
-        run: |
-          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
-          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
-
-      - name: Generate gradlew
-        run: |
-          flutter create --platforms android --project-name termulscan .
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -- lib/main.dart || true
-          git add -f android/gradlew android/gradlew.bat android/gradle/wrapper/gradle-wrapper.jar
-          git diff --staged --quiet || git commit -m "ci: add gradlew [skip ci]"
-          git stash
-          git pull --rebase origin main
-          git stash pop || true
-          git push || true
-
-      - name: Fix Gradle permission
-        run: chmod +x android/gradlew
-
-      - name: Ensure MainActivity.kt exists
-        run: |
-          TARGET="android/app/src/main/kotlin/com/termulscan/app/MainActivity.kt"
-          if [ ! -f "$TARGET" ]; then
-            mkdir -p "$(dirname "$TARGET")"
-            cat > "$TARGET" << 'EOF'
-        package com.termulscan.app
-
-        import android.Manifest
-        import android.content.pm.PackageManager
-        import android.location.Location
-        import android.location.LocationListener
-        import android.location.LocationManager
-        import android.os.Bundle
-        import android.os.Handler
-        import android.os.Looper
-        import androidx.core.app.ActivityCompat
-        import androidx.core.content.ContextCompat
-        import io.flutter.embedding.android.FlutterActivity
-        import io.flutter.embedding.engine.FlutterEngine
-        import io.flutter.plugin.common.MethodChannel
-        import io.flutter.plugin.common.MethodChannel.Result
-
-        class MainActivity : FlutterActivity() {
-            private val CHANNEL = "com.termulscan.app/location"
-            private lateinit var locationManager: LocationManager
-
-            override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-                super.configureFlutterEngine(flutterEngine)
-                locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
-
-                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-                    .setMethodCallHandler { call, result ->
-                        if (call.method == "getLocation") {
-                            getCurrentLocation(result)
-                        } else {
-                            result.notImplemented()
-                        }
-                    }
-            }
-
-            private fun getCurrentLocation(result: Result) {
-                val hasFineLocation = ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.ACCESS_FINE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-                val hasCoarseLocation = ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-
-                if (!hasFineLocation && !hasCoarseLocation) {
-                    result.error("PERMISSION_DENIED", "Location permission not granted", null)
-                    return
-                }
-
-                var bestLocation: Location? = null
-                val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                bestLocation = gpsLast ?: netLast
-
-                if (bestLocation != null) {
-                    val map = mapOf(
-                        "lat" to bestLocation.latitude,
-                        "lng" to bestLocation.longitude,
-                        "accuracy" to bestLocation.accuracy
-                    )
-                    result.success(map)
-                    return
-                }
-
-                val providers = listOf(
-                    LocationManager.GPS_PROVIDER,
-                    LocationManager.NETWORK_PROVIDER,
-                    LocationManager.PASSIVE_PROVIDER
-                )
-                var requested = false
-                var resultSent = false
-
-                val locationListener = object : LocationListener {
-                    override fun onLocationChanged(location: Location) {
-                        if (!resultSent) {
-                            resultSent = true
-                            val map = mapOf(
-                                "lat" to location.latitude,
-                                "lng" to location.longitude,
-                                "accuracy" to location.accuracy
-                            )
-                            result.success(map)
-                        }
-                        providers.forEach { provider ->
-                            try { locationManager.removeUpdates(this) } catch (_: Exception) {}
-                        }
-                    }
-                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                    override fun onProviderEnabled(provider: String) {}
-                    override fun onProviderDisabled(provider: String) {}
-                }
-
-                for (provider in providers) {
-                    if (locationManager.isProviderEnabled(provider)) {
-                        try {
-                            locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
-                            requested = true
-                        } catch (_: Exception) {}
-                    }
-                }
-
-                if (!requested) {
-                    result.error("NO_PROVIDER", "No location provider enabled", null)
-                    return
-                }
-
-                Handler(Looper.getMainLooper()).postDelayed({
-                    if (!resultSent) {
-                        resultSent = true
-                        result.success(mapOf(
-                            "lat" to null,
-                            "lng" to null,
-                            "accuracy" to null
-                        ))
-                        providers.forEach { provider ->
-                            try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
-                        }
-                    }
-                }, 5000)
-            }
-        }
-        EOF
-          fi
-
-      - name: Add url_launcher queries to AndroidManifest
-        run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          if ! grep -q 'android.intent.action.VIEW' "$MANIFEST"; then
-            sed -i 's|</manifest>|<queries>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="geo" />\n  </intent>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="https" />\n  </intent>\n</queries>\n</manifest>|' "$MANIFEST"
-          fi
-
-      - name: Generate launcher icons
-        run: |
-          pip install pillow -q
-          python3 -c "
-          from PIL import Image
-          import os
-          sizes = {
-            'mipmap-mdpi': 48,
-            'mipmap-hdpi': 72,
-            'mipmap-xhdpi': 96,
-            'mipmap-xxhdpi': 144,
-            'mipmap-xxxhdpi': 192
-          }
-          for folder, size in sizes.items():
-            path = f'android/app/src/main/res/{folder}'
-            os.makedirs(path, exist_ok=True)
-            img = Image.new('RGBA', (size, size), (0, 230, 118, 255))
-            img.save(f'{path}/ic_launcher.png')
-            img.save(f'{path}/ic_launcher_round.png')
-          print('Icons generated')
-          "
-
-      - name: Get dependencies
-        run: flutter pub get
-
-      - name: Build APK
-        run: flutter build apk --release
-
-      - name: Rename APK
-        run: |
-          mkdir -p output
-          cp build/app/outputs/flutter-apk/app-release.apk output/TERMULScan-release.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TERMULScan-apk
-          path: output/TERMULScan-release.apk
+flutter:
+  uses-material-design: true
