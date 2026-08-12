@@ -16,7 +16,7 @@ class StorageService {
 
   Future<Directory> get _dir async {
     final base = await getApplicationDocumentsDirectory();
-    final d = Directory('${base.path}/WHScanner');
+    final d = Directory('${base.path}/TERMULScan');
     await d.create(recursive: true);
     return d;
   }

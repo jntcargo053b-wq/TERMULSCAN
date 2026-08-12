@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace "com.termulscan.app"
-    compileSdk 35
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.termulscan.app"
         minSdk 21
-        targetSdk 35
+        targetSdk 34
         versionCode flutter.versionCode
         versionName flutter.versionName
     }

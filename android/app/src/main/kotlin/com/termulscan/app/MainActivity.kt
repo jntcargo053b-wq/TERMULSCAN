@@ -6,6 +6,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
@@ -47,12 +48,26 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 1. Cek last known location (sangat cepat)
-        var bestLocation: Location? = null
+        // 1. Cek last known location (sangat cepat) — tolak jika stale atau tidak akurat
+        val maxAgeMillis = 120_000L
+        val maxAccuracyMeters = 50f
+
+        fun isUsable(loc: Location?): Boolean {
+            if (loc == null) return false
+            val ageMillis = if (loc.elapsedRealtimeNanos > 0L) {
+                (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
+            } else {
+                Long.MAX_VALUE
+            }
+            return ageMillis <= maxAgeMillis && loc.accuracy <= maxAccuracyMeters
+        }
+
         val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
         val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 
-        bestLocation = gpsLast ?: netLast
+        val bestLocation: Location? = listOfNotNull(gpsLast, netLast)
+            .filter { isUsable(it) }
+            .minByOrNull { it.accuracy }
 
         if (bestLocation != null) {
             val map = mapOf(
@@ -80,7 +95,8 @@ class MainActivity : FlutterActivity() {
                     val map = mapOf(
                         "lat" to location.latitude,
                         "lng" to location.longitude,
-                        "accuracy" to location.accuracy
+                        "accuracy" to location.accuracy,
+                    "ageMillis" to if (location.elapsedRealtimeNanos > 0L) ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L) else -1L
                     )
                     result.success(map)
                 }

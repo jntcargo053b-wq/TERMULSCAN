@@ -65,20 +65,16 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       setState(() => _isSaving = true);
       HapticFeedback.mediumImpact();
 
-      // Jalankan paralel: ambil koordinat dan simpan foto sementara
-      final coordsFuture = _loc.getCoordinatesOnly();
-      final savedPathFuture = _storage.savePhoto(xfile.path);
-
-      final savedPath = await savedPathFuture;
-      final coords = await coordsFuture;
+      // Simpan foto ke penyimpanan permanen — hanya rename file, tidak menunggu GPS
+      final savedPath = await _storage.savePhoto(xfile.path);
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
         timestamp: DateTime.now(),
-        latitude: coords.lat,
-        longitude: coords.lng,
+        latitude: null,
+        longitude: null,
         locationName: null,
       );
       await _storage.add(entry);
@@ -88,48 +84,62 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         _isSaving = false;
       });
 
-      // Reverse geocoding asinkron (tidak menghalangi UI)
-      if (coords.lat != null && coords.lng != null) {
-        // ignore: unawaited_futures
-        _loc.updateAddressForEntry(
-          entryId: entry.id,
-          lat: coords.lat!,
-          lng: coords.lng!,
-          onAddressReceived: (id, address) async {
-            final currentEntry = await _storage.getEntry(id);
-            if (currentEntry != null) {
-              final updated = currentEntry.copyWith(locationName: address);
-              await _storage.update(updated);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('📍 Lokasi terdeteksi: $address'),
-                    duration: const Duration(seconds: 2),
-                    backgroundColor: Colors.green.shade700,
-                  ),
-                );
-              }
-            }
-          },
-        );
-      } else {
-        // Tampilkan peringatan jika GPS tidak tersedia
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-
       if (mounted) _showSuccess(entry);
+
+      // GPS & reverse geocoding sepenuhnya di background — tidak menghalangi capture berikutnya
+      // ignore: unawaited_futures
+      _resolveLocationInBackground(entry.id);
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal ambil foto: $e');
     }
+  }
+
+  /// Ambil koordinat & alamat setelah entry sudah tersimpan, lalu update entry.
+  /// Dijalankan tanpa di-await dari alur capture supaya UI tidak menunggu GPS.
+  Future<void> _resolveLocationInBackground(String entryId) async {
+    final coords = await _loc.getCoordinatesOnly();
+
+    if (coords.lat == null || coords.lng == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final saved = await _storage.getEntry(entryId);
+    if (saved != null) {
+      await _storage.update(
+          saved.copyWith(latitude: coords.lat, longitude: coords.lng));
+    }
+
+    await _loc.updateAddressForEntry(
+      entryId: entryId,
+      lat: coords.lat!,
+      lng: coords.lng!,
+      onAddressReceived: (id, address) async {
+        final currentEntry = await _storage.getEntry(id);
+        if (currentEntry != null) {
+          final updated = currentEntry.copyWith(locationName: address);
+          await _storage.update(updated);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('📍 Lokasi terdeteksi: $address'),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Colors.green.shade700,
+              ),
+            );
+          }
+        }
+      },
+    );
   }
 
   Future<void> _pickFromGallery() async {
@@ -151,19 +161,15 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       setState(() => _isSaving = true);
 
-      final coordsFuture = _loc.getCoordinatesOnly();
-      final savedPathFuture = _storage.savePhoto(xfile.path);
-
-      final savedPath = await savedPathFuture;
-      final coords = await coordsFuture;
+      final savedPath = await _storage.savePhoto(xfile.path);
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
         timestamp: DateTime.now(),
-        latitude: coords.lat,
-        longitude: coords.lng,
+        latitude: null,
+        longitude: null,
         locationName: null,
       );
       await _storage.add(entry);
@@ -173,22 +179,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         _isSaving = false;
       });
 
-      if (coords.lat != null && coords.lng != null) {
-        // ignore: unawaited_futures
-        _loc.updateAddressForEntry(
-          entryId: entry.id,
-          lat: coords.lat!,
-          lng: coords.lng!,
-          onAddressReceived: (id, address) async {
-            final currentEntry = await _storage.getEntry(id);
-            if (currentEntry != null) {
-              await _storage.update(currentEntry.copyWith(locationName: address));
-            }
-          },
-        );
-      }
-
       if (mounted) _showSuccess(entry);
+
+      // GPS & reverse geocoding di background — tidak menghalangi UI
+      // ignore: unawaited_futures
+      _resolveLocationInBackground(entry.id);
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal memilih foto: $e');
