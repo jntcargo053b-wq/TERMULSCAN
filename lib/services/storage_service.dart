@@ -134,8 +134,14 @@ class StorageService {
     if (await f.exists()) await f.delete();
   }
 
-  /// Invalidasi cache (misal setelah proses luar mengubah file)
-  void invalidateCache() => _cache = null;
+  /// Invalidasi cache (misal setelah proses luar mengubah file).
+  /// Flush dulu perubahan yang masih tertunda di debounce — kalau tidak,
+  /// timer debounce yang telat jalan akan menulis ulang file jadi kosong
+  /// karena _cache sudah null duluan.
+  Future<void> invalidateCache() async {
+    await flush();
+    _cache = null;
+  }
 
   Future<String> exportTxt(List<ScanEntry> entries) async {
     final d = await _dir;
