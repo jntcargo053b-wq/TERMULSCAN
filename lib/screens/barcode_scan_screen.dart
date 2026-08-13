@@ -4,7 +4,7 @@ import 'dart:isolate';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:gap/gap.dart';
@@ -190,12 +190,31 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   final LocationService _loc = LocationService();
   final ImagePicker _picker = ImagePicker();
   final WatermarkSettings _wmSettings = WatermarkSettings();
+  final MobileScannerController _scannerController = MobileScannerController();
 
   @override
   void initState() {
     super.initState();
     _requestPermissions();
     _wmSettings.load();
+  }
+
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  /// Hentikan analisis kamera saat scanner sedang tidak dipakai
+  /// (lagi memproses hasil, buka kamera foto, dsb) — hemat CPU/baterai
+  /// dan menghindari rebutan resource kamera dengan image_picker.
+  void _pauseScanner() {
+    _scannerController.stop();
+  }
+
+  /// Aktifkan lagi analisis kamera saat siap untuk scan berikutnya.
+  void _resumeScanner() {
+    if (mounted) _scannerController.start();
   }
 
   Future<void> _requestPermissions() async {
@@ -235,6 +254,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       _lastCode = code;
       _isSaving = true;
     });
+    _pauseScanner();
 
     try {
       HapticFeedback.mediumImpact();
@@ -261,6 +281,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
             _scanning = true;
             _lastCode = null;
           });
+          _resumeScanner();
         });
       }
     } catch (e) {
@@ -270,6 +291,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         _scanning = true;
         _lastCode = null;
       });
+      _resumeScanner();
     }
   }
 
@@ -393,6 +415,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       _lastCode = code;
       _isSaving = true;
     });
+    _pauseScanner();
 
     try {
       HapticFeedback.mediumImpact();
@@ -418,6 +441,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
             _scanning = true;
             _lastCode = null;
           });
+          _resumeScanner();
         });
       }
     } catch (e) {
@@ -427,6 +451,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         _scanning = true;
         _lastCode = null;
       });
+      _resumeScanner();
     }
   }
 
@@ -445,6 +470,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         _scanning = true;
         _lastCode = null;
       });
+      _resumeScanner();
       return;
     }
 
@@ -483,6 +509,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
           _lastCode = null;
         });
       }
+      _resumeScanner();
     });
 
     // 4. Jalankan reverse geocoding di BACKGROUND (tanpa await)
@@ -492,6 +519,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         entryId: updatedEntry.id,
         lat: coords.lat!,
         lng: coords.lng!,
+        accuracy: coords.accuracy,
         onAddressReceived: (id, address) async {
           final currentEntry = await _storage.getEntry(id);
           if (currentEntry != null) {
@@ -578,7 +606,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   /// ✅ FUNGSI SAVE TO GALLERY - menggunakan image_gallery_saver
   Future<bool> _saveToGallery(String filePath, ScanEntry entry) async {
     try {
-      final result = await ImageGallerySaver.saveFile(filePath);
+      final result = await ImageGallerySaverPlus.saveFile(filePath);
       
       if (result != null && result['isSuccess'] == true) {
         debugPrint('✅ Berhasil menyimpan ke galeri: $filePath');
@@ -625,7 +653,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       ),
       body: Stack(
         children: [
-          MobileScanner(onDetect: _onDetect),
+          MobileScanner(controller: _scannerController, onDetect: _onDetect),
 
           if (_wmSettings.operatorName.isNotEmpty && !_isSaving)
             Positioned(
@@ -809,6 +837,9 @@ class _ResultSheetState extends State<_ResultSheet> {
                     height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    cacheHeight:
+                        (200 * MediaQuery.of(context).devicePixelRatio)
+                            .round(),
                   ),
                 )
               else if (state.processing)

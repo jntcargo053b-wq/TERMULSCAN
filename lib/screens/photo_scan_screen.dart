@@ -123,6 +123,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       entryId: entryId,
       lat: coords.lat!,
       lng: coords.lng!,
+      accuracy: coords.accuracy,
       onAddressReceived: (id, address) async {
         final currentEntry = await _storage.getEntry(id);
         if (currentEntry != null) {

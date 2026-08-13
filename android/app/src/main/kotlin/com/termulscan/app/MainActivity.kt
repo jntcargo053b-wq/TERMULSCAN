@@ -65,21 +65,23 @@ class MainActivity : FlutterActivity() {
         val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
         val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 
-        val bestLocation: Location? = listOfNotNull(gpsLast, netLast)
+        val cachedBest: Location? = listOfNotNull(gpsLast, netLast)
             .filter { isUsable(it) }
             .minByOrNull { it.accuracy }
 
-        if (bestLocation != null) {
+        if (cachedBest != null) {
             val map = mapOf(
-                "lat" to bestLocation.latitude,
-                "lng" to bestLocation.longitude,
-                "accuracy" to bestLocation.accuracy
+                "lat" to cachedBest.latitude,
+                "lng" to cachedBest.longitude,
+                "accuracy" to cachedBest.accuracy
             )
             result.success(map)
             return
         }
 
-        // 2. Tidak ada cache – request single update dari semua provider yang aktif
+        // 2. Tidak ada cache – request update dari semua provider yang aktif,
+        // pakai fix pertama yang sudah cukup akurat, atau fix terbaik yang
+        // sempat diterima sampai timeout (bukan asal fix tercepat).
         val providers = listOf(
             LocationManager.GPS_PROVIDER,
             LocationManager.NETWORK_PROVIDER,
@@ -87,23 +89,39 @@ class MainActivity : FlutterActivity() {
         )
         var requested = false
         var resultSent = false
+        var bestLocation: Location? = null
+
+        fun sendResult(location: Location) {
+            resultSent = true
+            val ageMillis = if (location.elapsedRealtimeNanos > 0L) {
+                (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+            } else {
+                -1L
+            }
+            result.success(
+                mapOf(
+                    "lat" to location.latitude,
+                    "lng" to location.longitude,
+                    "accuracy" to location.accuracy,
+                    "ageMillis" to ageMillis
+                )
+            )
+        }
 
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (!resultSent) {
-                    resultSent = true
-                    val map = mapOf(
-                        "lat" to location.latitude,
-                        "lng" to location.longitude,
-                        "accuracy" to location.accuracy,
-                    "ageMillis" to if (location.elapsedRealtimeNanos > 0L) ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L) else -1L
-                    )
-                    result.success(map)
+                if (resultSent) return
+
+                if (bestLocation == null || location.accuracy < bestLocation!!.accuracy) {
+                    bestLocation = location
                 }
-                // Hapus listener setelah berhasil
-                providers.forEach { provider ->
+
+                // Fix ini sudah cukup akurat — langsung pakai, tidak perlu tunggu provider lain
+                if (location.accuracy <= maxAccuracyMeters) {
+                    sendResult(location)
                     try { locationManager.removeUpdates(this) } catch (_: Exception) {}
                 }
+                // Kalau belum cukup akurat, jangan resolve — tunggu provider lain atau timeout
             }
 
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -127,19 +145,22 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 3. Timeout 5 detik – jika tidak ada lokasi, kirim null
+        // 3. Timeout 5 detik – pakai fix terbaik yang sempat diterima (walau
+        // di atas ambang akurasi), atau null kalau tidak ada sama sekali.
         Handler(Looper.getMainLooper()).postDelayed({
             if (!resultSent) {
-                resultSent = true
-                result.success(mapOf(
-                    "lat" to null,
-                    "lng" to null,
-                    "accuracy" to null
-                ))
-                // Bersihkan listener
-                providers.forEach { provider ->
-                    try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+                val fallback = bestLocation
+                if (fallback != null) {
+                    sendResult(fallback)
+                } else {
+                    resultSent = true
+                    result.success(mapOf(
+                        "lat" to null,
+                        "lng" to null,
+                        "accuracy" to null
+                    ))
                 }
+                try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
             }
         }, 5000)
     }

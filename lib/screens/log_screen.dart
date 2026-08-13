@@ -22,6 +22,11 @@ class _LogScreenState extends State<LogScreen> {
   String _search = '';
   String _filter = 'all';
   bool _exporting = false;
+  // Item yang sudah pernah dianimasikan — supaya fade-in cuma jalan sekali
+  // per entry, bukan berulang tiap kali item di-rebuild saat scroll.
+  final Set<String> _animatedIds = {};
+  int _barcodeCount = 0;
+  int _photoCount = 0;
 
   @override
   void initState() {
@@ -36,6 +41,8 @@ class _LogScreenState extends State<LogScreen> {
     if (!mounted) return;
     setState(() {
       _entries = data;
+      _barcodeCount = data.where((e) => e.isBarcode).length;
+      _photoCount = data.where((e) => e.isPhoto).length;
       _loading = false;
       _applyFilter();
     });
@@ -197,14 +204,14 @@ class _LogScreenState extends State<LogScreen> {
               const Gap(8),
               _FilterChip(
                   label: 'Barcode',
-                  count: _entries.where((e) => e.isBarcode).length,
+                  count: _barcodeCount,
                   selected: _filter == 'barcode',
                   color: AppTheme.accent,
                   onTap: () { _filter = 'barcode'; _applyFilter(); }),
               const Gap(8),
               _FilterChip(
                   label: 'Foto',
-                  count: _entries.where((e) => e.isPhoto).length,
+                  count: _photoCount,
                   selected: _filter == 'photo',
                   color: AppTheme.accentOrange,
                   onTap: () { _filter = 'photo'; _applyFilter(); }),
@@ -251,13 +258,21 @@ class _LogScreenState extends State<LogScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: _filtered.length,
-        itemBuilder: (ctx, i) => _EntryCard(
-          entry: _filtered[i],
-          onDelete: () => _delete(_filtered[i]),
-        ).animate().fadeIn(
-              delay: Duration(milliseconds: i * 40),
-              duration: 250.ms,
-            ),
+        itemBuilder: (ctx, i) {
+          final entry = _filtered[i];
+          final card = _EntryCard(
+            entry: entry,
+            onDelete: () => _delete(entry),
+          );
+          // Sudah pernah dianimasikan sebelumnya — tampilkan langsung,
+          // jangan fade-in ulang tiap kali widget ini di-rebuild.
+          if (_animatedIds.contains(entry.id)) return card;
+          _animatedIds.add(entry.id);
+          return card.animate().fadeIn(
+                delay: Duration(milliseconds: i.clamp(0, 15) * 40),
+                duration: 250.ms,
+              );
+        },
       ),
     );
   }
@@ -358,8 +373,20 @@ class _EntryCard extends StatelessWidget {
                     : (File(entry.value).existsSync()
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(10),
-                            child: Image.file(File(entry.value),
-                                width: 44, height: 44, fit: BoxFit.cover))
+                            child: Image.file(
+                              File(entry.value),
+                              width: 44,
+                              height: 44,
+                              fit: BoxFit.cover,
+                              // Dekode sesuai ukuran tampil, bukan full-res —
+                              // hemat memori & CPU saat scroll list panjang.
+                              cacheWidth:
+                                  (44 * MediaQuery.of(context).devicePixelRatio)
+                                      .round(),
+                              cacheHeight:
+                                  (44 * MediaQuery.of(context).devicePixelRatio)
+                                      .round(),
+                            ))
                         : Icon(Icons.broken_image, color: color, size: 22)),
               ),
               const Gap(12),
@@ -498,8 +525,17 @@ class _DetailSheet extends StatelessWidget {
             if (entry.isPhoto && File(entry.value).existsSync()) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.file(File(entry.value),
-                    width: double.infinity, height: 220, fit: BoxFit.cover),
+                child: Image.file(
+                  File(entry.value),
+                  width: double.infinity,
+                  height: 220,
+                  fit: BoxFit.cover,
+                  // Batasi resolusi decode ke tinggi tampil — foto sumber
+                  // bisa sampai 1024px, tak perlu didekode sebesar itu
+                  // cuma untuk preview 220px.
+                  cacheHeight:
+                      (220 * MediaQuery.of(context).devicePixelRatio).round(),
+                ),
               ),
               const Gap(20),
             ],

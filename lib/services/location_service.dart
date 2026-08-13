@@ -14,15 +14,16 @@ class LocationService {
   static DateTime? _cacheTime;
   static const _cacheDuration = Duration(seconds: 30);
 
-  Future<({double? lat, double? lng})> getCoordinatesOnly() async {
+  Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
     try {
       final result = await _channel.invokeMethod<Map>('getLocation');
-      if (result == null) return (lat: null, lng: null);
+      if (result == null) return (lat: null, lng: null, accuracy: null);
       final lat = (result['lat'] as num?)?.toDouble();
       final lng = (result['lng'] as num?)?.toDouble();
-      return (lat: lat, lng: lng);
+      final accuracy = (result['accuracy'] as num?)?.toDouble();
+      return (lat: lat, lng: lng, accuracy: accuracy);
     } catch (e) {
-      return (lat: null, lng: null);
+      return (lat: null, lng: null, accuracy: null);
     }
   }
 
@@ -47,7 +48,7 @@ class LocationService {
 
     String? address;
     if (withAddress) {
-      address = await _reverseGeocode(coords.lat!, coords.lng!);
+      address = await _reverseGeocode(coords.lat!, coords.lng!, accuracy: coords.accuracy);
     }
 
     final result = (lat: coords.lat, lng: coords.lng, address: address);

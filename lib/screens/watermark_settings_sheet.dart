@@ -179,6 +179,12 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                       width: 56,
                       height: 56,
                       fit: BoxFit.contain,
+                      cacheWidth:
+                          (56 * MediaQuery.of(context).devicePixelRatio)
+                              .round(),
+                      cacheHeight:
+                          (56 * MediaQuery.of(context).devicePixelRatio)
+                              .round(),
                     ),
                   ),
                   const Gap(12),
@@ -327,6 +333,12 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                           width: 40,
                           height: 40,
                           fit: BoxFit.contain,
+                          cacheWidth:
+                              (40 * MediaQuery.of(context).devicePixelRatio)
+                                  .round(),
+                          cacheHeight:
+                              (40 * MediaQuery.of(context).devicePixelRatio)
+                                  .round(),
                         ),
                       ),
                     ] else ...[

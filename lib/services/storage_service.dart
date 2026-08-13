@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -10,9 +11,12 @@ class StorageService {
   StorageService._();
 
   static const _fileName = 'scan_log.json';
+  static const _persistDebounce = Duration(milliseconds: 500);
 
   // ── In-memory cache ──────────────────────────────────────────────────────
   List<ScanEntry>? _cache;
+  Timer? _persistTimer;
+  bool _persistDirty = false;
 
   Future<Directory> get _dir async {
     final base = await getApplicationDocumentsDirectory();
@@ -45,11 +49,39 @@ class StorageService {
     }
   }
 
-  Future<void> _persist() async {
+  Future<void> _writeToDisk() async {
     final f = await _jsonFile;
     await f.writeAsString(
       json.encode((_cache ?? []).map((e) => e.toJson()).toList()),
     );
+  }
+
+  /// Jadwalkan write ke disk dengan debounce — menggabungkan beberapa
+  /// perubahan beruntun (mis. simpan entry → update GPS → update alamat,
+  /// yang biasa terjadi dalam satu capture) jadi satu kali tulis file
+  /// penuh, bukan berkali-kali dalam hitungan detik yang sama.
+  void _schedulePersist() {
+    _persistDirty = true;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDebounce, () async {
+      _persistTimer = null;
+      if (_persistDirty) {
+        _persistDirty = false;
+        await _writeToDisk();
+      }
+    });
+  }
+
+  /// Tulis segera ke disk & batalkan debounce yang tertunda. Dipakai untuk
+  /// operasi destruktif (delete) dan saat app akan ke background, supaya
+  /// perubahan yang baru saja terjadi tidak hilang.
+  Future<void> flush() async {
+    _persistTimer?.cancel();
+    _persistTimer = null;
+    if (_persistDirty) {
+      _persistDirty = false;
+      await _writeToDisk();
+    }
   }
 
   /// Append entry ke cache + disk tanpa baca ulang file.
@@ -57,14 +89,14 @@ class StorageService {
     // Pastikan cache sudah di-load sekali
     if (_cache == null) await loadAll();
     _cache!.insert(0, entry);
-    await _persist();
+    _schedulePersist();
   }
 
   Future<void> update(ScanEntry entry) async {
     if (_cache == null) await loadAll();
     final idx = _cache!.indexWhere((e) => e.id == entry.id);
     if (idx >= 0) _cache![idx] = entry;
-    await _persist();
+    _schedulePersist();
   }
 
   Future<void> delete(String id) async {
@@ -77,7 +109,11 @@ class StorageService {
       } catch (_) {}
     }
     _cache!.removeWhere((e) => e.id == id);
-    await _persist();
+    // Hapus bersifat destruktif — tulis segera, jangan didebounce.
+    _persistTimer?.cancel();
+    _persistTimer = null;
+    _persistDirty = false;
+    await _writeToDisk();
   }
 
   Future<void> deleteAll() async {
@@ -91,6 +127,9 @@ class StorageService {
       }
     }
     _cache = [];
+    _persistTimer?.cancel();
+    _persistTimer = null;
+    _persistDirty = false;
     final f = await _jsonFile;
     if (await f.exists()) await f.delete();
   }
