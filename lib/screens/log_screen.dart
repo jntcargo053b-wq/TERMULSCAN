@@ -16,15 +16,20 @@ class LogScreen extends StatefulWidget {
 class _LogScreenState extends State<LogScreen> {
   final _storage = StorageService();
   final _searchController = TextEditingController();
-  
+
   List<ScanEntry> _filteredEntries = [];
   Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
-    _filteredEntries = _storage.entries;
+    _loadEntries();
     _searchController.addListener(_onSearchChanged);
+  }
+
+  Future<void> _loadEntries() async {
+    final all = await _storage.loadAll();
+    if (mounted) setState(() => _filteredEntries = all);
   }
 
   @override
@@ -35,7 +40,6 @@ class _LogScreenState extends State<LogScreen> {
     super.dispose();
   }
 
-  // Debounce Search Logic
   void _onSearchChanged() {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
@@ -44,35 +48,35 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   void _performSearch(String query) {
+    final q = query.toLowerCase();
     setState(() {
       _filteredEntries = _storage.entries.where((entry) {
-        final barcodeMatch = entry.barcodeValue.toLowerCase().contains(query.toLowerCase());
-        final addressMatch = (entry.address ?? "").toLowerCase().contains(query.toLowerCase());
-        return barcodeMatch || addressMatch;
+        final valueMatch = entry.value.toLowerCase().contains(q);
+        final addressMatch = (entry.locationName ?? '').toLowerCase().contains(q);
+        return valueMatch || addressMatch;
       }).toList();
     });
   }
 
-  // Async File Check (Non-blocking)
   Future<bool> _checkFileExists(String? path) async {
     if (path == null || path.isEmpty) return false;
     try {
-      final file = File(path);
-      return await file.exists();
+      return await File(path).exists();
     } catch (e) {
       return false;
     }
   }
 
   Future<void> _shareEntry(ScanEntry entry) async {
-    if (entry.imagePath == null || entry.imagePath!.isEmpty) {
+    final sharePath = entry.isPhoto ? entry.value : entry.imagePath;
+    if (sharePath == null || sharePath.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No image to share')),
       );
       return;
     }
 
-    final exists = await _checkFileExists(entry.imagePath);
+    final exists = await _checkFileExists(sharePath);
     if (!exists) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Image file not found on device')),
@@ -82,8 +86,10 @@ class _LogScreenState extends State<LogScreen> {
 
     try {
       await Share.shareXFiles(
-        [XFile(entry.imagePath!)],
-        text: 'Scan Result: ${entry.barcodeValue}\nLocation: ${entry.address ?? "Unknown"}',
+        [XFile(sharePath)],
+        text: entry.isBarcode
+            ? 'Scan Result: ${entry.value}\nLocation: ${entry.locationName ?? "Unknown"}'
+            : 'Photo\nLocation: ${entry.locationName ?? "Unknown"}',
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -93,6 +99,7 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   void _showDetail(ScanEntry entry) {
+    final previewPath = entry.isPhoto ? entry.value : entry.imagePath;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -117,18 +124,19 @@ class _LogScreenState extends State<LogScreen> {
             ),
             const Divider(),
             const SizedBox(height: 8),
-            _buildDetailRow('Barcode', entry.barcodeValue),
+            if (entry.isBarcode) _buildDetailRow('Barcode', entry.value),
             _buildDetailRow('Time', DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.timestamp)),
-            _buildDetailRow('Type', entry.barcodeType),
-            if (entry.address != null && entry.address!.isNotEmpty)
-              _buildDetailRow('Location', entry.address!),
+            if (entry.isBarcode && entry.barcodeFormat != null)
+              _buildDetailRow('Type', entry.barcodeFormat!),
+            if (entry.locationName != null && entry.locationName!.isNotEmpty)
+              _buildDetailRow('Location', entry.locationName!),
             if (entry.latitude != null)
               _buildDetailRow('Coordinates', '${entry.latitude}, ${entry.longitude}'),
-            
+
             const SizedBox(height: 16),
-            if (entry.imagePath != null)
+            if (previewPath != null)
               FutureBuilder<bool>(
-                future: _checkFileExists(entry.imagePath),
+                future: _checkFileExists(previewPath),
                 builder: (ctx, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -136,7 +144,7 @@ class _LogScreenState extends State<LogScreen> {
                   if (snapshot.data == true) {
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(entry.imagePath!), height: 200, width: double.infinity, fit: BoxFit.cover),
+                      child: Image.file(File(previewPath), height: 200, width: double.infinity, fit: BoxFit.cover),
                     );
                   }
                   return const Text('Image not available', style: TextStyle(color: Colors.grey));
@@ -163,10 +171,12 @@ class _LogScreenState extends State<LogScreen> {
                     );
                     if (confirm == true) {
                       await _storage.deleteEntry(entry.id);
-                      setState(() {
-                        _filteredEntries = _storage.entries; // Refresh list
-                      });
-                      if (mounted) Navigator.pop(context);
+                      if (mounted) {
+                        setState(() {
+                          _filteredEntries = _storage.entries;
+                        });
+                        Navigator.pop(context);
+                      }
                     }
                   },
                   child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -259,8 +269,8 @@ class _LogScreenState extends State<LogScreen> {
                         Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
                         const SizedBox(height: 16),
                         Text(
-                          _searchController.text.isEmpty 
-                              ? 'No scans yet' 
+                          _searchController.text.isEmpty
+                              ? 'No scans yet'
                               : 'No matches found',
                           style: TextStyle(color: Colors.grey[600], fontSize: 16),
                         ),
@@ -274,10 +284,14 @@ class _LogScreenState extends State<LogScreen> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
-                          child: Icon(Icons.qr_code, color: Colors.blue.shade900, size: 20),
+                          child: Icon(
+                            entry.isBarcode ? Icons.qr_code : Icons.camera_alt,
+                            color: Colors.blue.shade900,
+                            size: 20,
+                          ),
                         ),
                         title: Text(
-                          entry.barcodeValue,
+                          entry.isBarcode ? entry.value : 'Foto: ${entry.value.split('/').last}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -290,16 +304,16 @@ class _LogScreenState extends State<LogScreen> {
                               DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
                               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             ),
-                            if (entry.address != null && entry.address!.isNotEmpty)
+                            if (entry.locationName != null && entry.locationName!.isNotEmpty)
                               Text(
-                                entry.address!,
+                                entry.locationName!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 12, color: Colors.grey[800]),
                               ),
                           ],
                         ),
-                        trailing: entry.imagePath != null && entry.imagePath!.isNotEmpty
+                        trailing: (entry.isPhoto || (entry.imagePath?.isNotEmpty ?? false))
                             ? Icon(Icons.image, color: Colors.grey[400])
                             : null,
                         onTap: () => _showDetail(entry),
