@@ -1,6 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scan_entry.dart';
 
@@ -31,6 +30,11 @@ class LRUCache {
     _cache[key] = value;
     _order.add(key);
   }
+
+  void clear() {
+    _cache.clear();
+    _order.clear();
+  }
 }
 
 class StorageService {
@@ -39,10 +43,8 @@ class StorageService {
   StorageService._internal();
 
   final List<ScanEntry> _entries = [];
-  final Map<String, String> _geoCache = {}; // In-memory cache wrapper
-  final LRUCache _lruGeoCache = LRUCache(capacity: 100);
+  final LRUCache _geoCache = LRUCache(capacity: 100);
   
-  // Debounce timer logic
   Timer? _saveDebounceTimer;
   bool _isSaving = false;
 
@@ -56,6 +58,11 @@ class StorageService {
       _entries.clear();
       _entries.addAll(jsonList.map((e) => ScanEntry.fromJson(e)).toList());
     }
+  }
+
+  // Method untuk load data secara eksplisit jika diperlukan
+  Future<List<ScanEntry>> loadAll() async {
+    return _entries;
   }
 
   Future<void> addEntry(ScanEntry entry) async {
@@ -76,6 +83,12 @@ class StorageService {
     _triggerSave();
   }
 
+  void clear() {
+    _entries.clear();
+    _geoCache.clear();
+    _persist(); // Immediate save on clear
+  }
+
   // Debounced save mechanism (Wait 500ms after last change)
   void _triggerSave() {
     if (_saveDebounceTimer != null) {
@@ -86,6 +99,14 @@ class StorageService {
     });
   }
 
+  // Forced immediate save (untuk flush manual)
+  Future<void> flush() async {
+    if (_saveDebounceTimer != null) {
+      _saveDebounceTimer!.cancel();
+    }
+    await _persist();
+  }
+
   Future<void> _persist() async {
     if (_isSaving) return;
     _isSaving = true;
@@ -93,30 +114,21 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = json.encode(_entries.map((e) => e.toJson()).toList());
       await prefs.setString('scan_entries', jsonString);
+    } catch (e) {
+      print("Error saving to preferences: $e");
     } finally {
       _isSaving = false;
     }
   }
 
-  // Cached Geocoding
-  Future<String?> getCachedLocation(double lat, double lng) async {
+  // Cached Geocoding helpers
+  String? getCachedLocation(double lat, double lng) {
     final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
-    
-    // Check LRU Cache first
-    final cached = _lruGeoCache.get(key);
-    if (cached != null) return cached;
-
-    // If not in cache, return null (caller should fetch from API and update cache)
-    return null;
+    return _geoCache.get(key);
   }
 
   void updateGeoCache(double lat, double lng, String address) {
     final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
-    _lruGeoCache.put(key, address);
-  }
-
-  void clear() {
-    _entries.clear();
-    _lruGeoCache.clear(); // Clear cache on reset if needed
+    _geoCache.put(key, address);
   }
 }
