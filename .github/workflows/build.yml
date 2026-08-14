@@ -58,6 +58,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.38.0'
           channel: 'stable'
           cache: true
 
@@ -281,6 +282,30 @@ jobs:
           fi
           rm -f pubspec.lock
           find . -path ./android -prune -o -iname "*.dart" -print | xargs grep -l "geolocator\|Geolocator" 2>/dev/null || echo "ℹ️ tidak ada referensi geolocator di lib/"
+
+      # ============================================================
+      # PERBAIKAN 7: Paksa versi Gradle/AGP/Kotlin yang kompatibel
+      # dengan Flutter 3.38 (Gradle 8.14, AGP 8.11.1, KGP 2.2.20).
+      # Ditulis ulang di sini (bukan cuma andalkan `flutter create`)
+      # karena step git stash/pull sebelumnya bisa diam-diam gagal
+      # apply perubahan dan balikin versi lama dari origin/main.
+      # ============================================================
+      - name: Force compatible Gradle/AGP/Kotlin versions
+        run: |
+          cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
+          EOF
+          sed -i -E 's/id "com\.android\.application" version "[^"]*"/id "com.android.application" version "8.11.1"/' android/settings.gradle
+          sed -i -E 's/id "org\.jetbrains\.kotlin\.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "2.2.20"/' android/settings.gradle
+          echo "✅ Gradle 8.14 / AGP 8.11.1 / Kotlin 2.2.20 dipaksa"
+          echo "--- gradle-wrapper.properties ---"
+          cat android/gradle/wrapper/gradle-wrapper.properties
+          echo "--- settings.gradle (plugins) ---"
+          grep -A4 "^plugins" android/settings.gradle
 
       - name: Get dependencies
         run: flutter pub get
