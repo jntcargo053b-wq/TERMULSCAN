@@ -1,281 +1,122 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scan_entry.dart';
 
+// Simple LRU Cache implementation for Geocoding
+class LRUCache {
+  final int capacity;
+  final Map<String, String> _cache = {};
+  final List<String> _order = [];
+
+  LRUCache({this.capacity = 50});
+
+  String? get(String key) {
+    if (_cache.containsKey(key)) {
+      _order.remove(key);
+      _order.add(key);
+      return _cache[key];
+    }
+    return null;
+  }
+
+  void put(String key, String value) {
+    if (_cache.containsKey(key)) {
+      _order.remove(key);
+    } else if (_cache.length >= capacity) {
+      final oldest = _order.removeAt(0);
+      _cache.remove(oldest);
+    }
+    _cache[key] = value;
+    _order.add(key);
+  }
+}
+
 class StorageService {
-  static final _i = StorageService._();
-  factory StorageService() => _i;
-  StorageService._();
+  static final StorageService _instance = StorageService._internal();
+  factory StorageService() => _instance;
+  StorageService._internal();
 
-  static const _fileName = 'scan_log.json';
-  static const _persistDebounce = Duration(milliseconds: 500);
+  final List<ScanEntry> _entries = [];
+  final Map<String, String> _geoCache = {}; // In-memory cache wrapper
+  final LRUCache _lruGeoCache = LRUCache(capacity: 100);
+  
+  // Debounce timer logic
+  Timer? _saveDebounceTimer;
+  bool _isSaving = false;
 
-  // ── In-memory cache ──────────────────────────────────────────────────────
-  List<ScanEntry>? _cache;
-  Timer? _persistTimer;
-  bool _persistDirty = false;
-  // Future in-flight untuk loadAll() — mencegah race saat 2 pemanggil
-  // (mis. HomeScreen & LogScreen sama-sama initState hampir bersamaan)
-  // lolos cek `_cache == null` sebelum salah satu selesai baca file,
-  // yang tadinya bisa bikin _cache saling menimpa dan entry hilang.
-  Future<List<ScanEntry>>? _loadingFuture;
+  List<ScanEntry> get entries => List.unmodifiable(_entries);
 
-  Future<Directory> get _dir async {
-    final base = await getApplicationDocumentsDirectory();
-    final d = Directory('${base.path}/TERMULScan');
-    await d.create(recursive: true);
-    return d;
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getString('scan_entries');
+    if (data != null) {
+      final List<dynamic> jsonList = json.decode(data);
+      _entries.clear();
+      _entries.addAll(jsonList.map((e) => ScanEntry.fromJson(e)).toList());
+    }
   }
 
-  Future<File> get _jsonFile async {
-    final d = await _dir;
-    return File('${d.path}/$_fileName');
+  Future<void> addEntry(ScanEntry entry) async {
+    _entries.insert(0, entry);
+    _triggerSave();
   }
 
-  Future<List<ScanEntry>> loadAll() async {
-    if (_cache != null) return List.unmodifiable(_cache!);
-    // Kalau sudah ada pembacaan yang berjalan, ikut nebeng future yang
-    // sama alih-alih mulai baca file lagi dari nol secara paralel.
-    if (_loadingFuture != null) return _loadingFuture!;
-    final future = _doLoad();
-    _loadingFuture = future;
+  Future<void> updateEntry(ScanEntry entry) async {
+    final index = _entries.indexWhere((e) => e.id == entry.id);
+    if (index != -1) {
+      _entries[index] = entry;
+      _triggerSave();
+    }
+  }
+
+  Future<void> deleteEntry(String id) async {
+    _entries.removeWhere((e) => e.id == id);
+    _triggerSave();
+  }
+
+  // Debounced save mechanism (Wait 500ms after last change)
+  void _triggerSave() {
+    if (_saveDebounceTimer != null) {
+      _saveDebounceTimer!.cancel();
+    }
+    _saveDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _persist();
+    });
+  }
+
+  Future<void> _persist() async {
+    if (_isSaving) return;
+    _isSaving = true;
     try {
-      return await future;
+      final prefs = await SharedPreferences.getInstance();
+      final jsonString = json.encode(_entries.map((e) => e.toJson()).toList());
+      await prefs.setString('scan_entries', jsonString);
     } finally {
-      _loadingFuture = null;
+      _isSaving = false;
     }
   }
 
-  Future<List<ScanEntry>> _doLoad() async {
-    try {
-      final f = await _jsonFile;
-      if (!await f.exists()) {
-        _cache = [];
-        return [];
-      }
-      final raw = await f.readAsString();
-      final list = json.decode(raw) as List;
-      _cache = list.map((e) => ScanEntry.fromJson(e)).toList()
-        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return List.unmodifiable(_cache!);
-    } catch (_) {
-      _cache = [];
-      return [];
-    }
+  // Cached Geocoding
+  Future<String?> getCachedLocation(double lat, double lng) async {
+    final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
+    
+    // Check LRU Cache first
+    final cached = _lruGeoCache.get(key);
+    if (cached != null) return cached;
+
+    // If not in cache, return null (caller should fetch from API and update cache)
+    return null;
   }
 
-  Future<void> _writeToDisk() async {
-    final f = await _jsonFile;
-    await f.writeAsString(
-      json.encode((_cache ?? []).map((e) => e.toJson()).toList()),
-    );
+  void updateGeoCache(double lat, double lng, String address) {
+    final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
+    _lruGeoCache.put(key, address);
   }
 
-  /// Jadwalkan write ke disk dengan debounce — menggabungkan beberapa
-  /// perubahan beruntun (mis. simpan entry → update GPS → update alamat,
-  /// yang biasa terjadi dalam satu capture) jadi satu kali tulis file
-  /// penuh, bukan berkali-kali dalam hitungan detik yang sama.
-  void _schedulePersist() {
-    _persistDirty = true;
-    _persistTimer?.cancel();
-    _persistTimer = Timer(_persistDebounce, () async {
-      _persistTimer = null;
-      if (_persistDirty) {
-        _persistDirty = false;
-        await _writeToDisk();
-      }
-    });
-  }
-
-  /// Tulis segera ke disk & batalkan debounce yang tertunda. Dipakai untuk
-  /// operasi destruktif (delete) dan saat app akan ke background, supaya
-  /// perubahan yang baru saja terjadi tidak hilang.
-  Future<void> flush() async {
-    _persistTimer?.cancel();
-    _persistTimer = null;
-    if (_persistDirty) {
-      _persistDirty = false;
-      await _writeToDisk();
-    }
-  }
-
-  /// Append entry ke cache + disk tanpa baca ulang file.
-  Future<void> add(ScanEntry entry) async {
-    // Pastikan cache sudah di-load sekali
-    if (_cache == null) await loadAll();
-    _cache!.insert(0, entry);
-    _schedulePersist();
-  }
-
-  Future<void> update(ScanEntry entry) async {
-    if (_cache == null) await loadAll();
-    final idx = _cache!.indexWhere((e) => e.id == entry.id);
-    if (idx >= 0) _cache![idx] = entry;
-    _schedulePersist();
-  }
-
-  Future<void> delete(String id) async {
-    if (_cache == null) await loadAll();
-    // Cari tanpa firstWhere() polos — kalau id sudah tidak ada di cache
-    // (mis. tombol hapus ke-tap dua kali dengan cepat, atau race dengan
-    // proses lain), firstWhere() akan throw StateError dan delete() gagal
-    // total alih-alih no-op dengan aman.
-    ScanEntry? entry;
-    for (final e in _cache!) {
-      if (e.id == id) {
-        entry = e;
-        break;
-      }
-    }
-    if (entry == null) return;
-
-    // Cascade: entri barcode & foto dari satu aksi scan yang sama saling
-    // ditandai lewat linkedId. Kalau salah satu dihapus sendirian, sisi
-    // satunya jadi entri "yatim" tak terhapus (barcode tanpa foto yang
-    // sudah hilang filenya, atau foto tanpa barcode yang menaunginya).
-    // Hapus dua-duanya sekaligus.
-    ScanEntry? linked;
-    if (entry.linkedId != null) {
-      for (final e in _cache!) {
-        if (e.id == entry.linkedId) {
-          linked = e;
-          break;
-        }
-      }
-    }
-
-    for (final e in [entry, if (linked != null) linked]) {
-      if (e.isPhoto) {
-        try {
-          final f = File(e.value);
-          if (await f.exists()) await f.delete();
-        } catch (_) {}
-      }
-    }
-
-    _cache!.removeWhere((e) => e.id == id || (linked != null && e.id == linked.id));
-    // Hapus bersifat destruktif — tulis segera, jangan didebounce.
-    _persistTimer?.cancel();
-    _persistTimer = null;
-    _persistDirty = false;
-    await _writeToDisk();
-  }
-
-  Future<void> deleteAll() async {
-    if (_cache == null) await loadAll();
-    for (final e in _cache!) {
-      if (e.isPhoto) {
-        try {
-          final f = File(e.value);
-          if (await f.exists()) await f.delete();
-        } catch (_) {}
-      }
-    }
-    _cache = [];
-    _persistTimer?.cancel();
-    _persistTimer = null;
-    _persistDirty = false;
-    final f = await _jsonFile;
-    if (await f.exists()) await f.delete();
-  }
-
-  /// Invalidasi cache (misal setelah proses luar mengubah file).
-  /// Flush dulu perubahan yang masih tertunda di debounce — kalau tidak,
-  /// timer debounce yang telat jalan akan menulis ulang file jadi kosong
-  /// karena _cache sudah null duluan.
-  Future<void> invalidateCache() async {
-    await flush();
-    _cache = null;
-  }
-
-  Future<String> exportTxt(List<ScanEntry> entries) async {
-    final d = await _dir;
-    final now = DateTime.now();
-    final fname =
-        'laporan_${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}.txt';
-    final f = File('${d.path}/$fname');
-
-    final buf = StringBuffer();
-    final sep = '=' * 60;
-    final thin = '-' * 60;
-
-    buf.writeln(sep);
-    buf.writeln('  WH SCANNER — LAPORAN LOG SCAN');
-    buf.writeln('  Dicetak: ${_fmt(now)}');
-    buf.writeln(sep);
-    buf.writeln();
-    buf.writeln('Total scan  : ${entries.length} entri');
-    buf.writeln('Barcode     : ${entries.where((e) => e.isBarcode).length}');
-    buf.writeln('Foto        : ${entries.where((e) => e.isPhoto).length}');
-    buf.writeln();
-
-    for (int i = 0; i < entries.length; i++) {
-      final e = entries[i];
-      buf.writeln('[${(i + 1).toString().padLeft(3, '0')}] ${e.isBarcode ? "BARCODE" : "FOTO"}');
-      buf.writeln('    Waktu    : ${e.timestampFormatted}');
-      if (e.isBarcode) {
-        buf.writeln('    Format   : ${e.barcodeFormat ?? "-"}');
-        buf.writeln('    Nilai    : ${e.value}');
-      } else {
-        buf.writeln('    File     : ${e.value.split('/').last}');
-      }
-      buf.writeln('    GPS      : ${e.coordinatesString}');
-      if (e.locationName != null) buf.writeln('    Lokasi   : ${e.locationName}');
-      if (e.note != null && e.note!.isNotEmpty) buf.writeln('    Catatan  : ${e.note}');
-      buf.writeln(thin);
-    }
-
-    buf.writeln();
-    buf.writeln(sep);
-    buf.writeln('  WH Scanner Pro  |  ${_fmt(now)}');
-    buf.writeln(sep);
-
-    await f.writeAsString(buf.toString(), flush: true);
-    return f.path;
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year} '
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}';
-
-  Future<void> shareTxt(String path) async {
-    await Share.shareXFiles([XFile(path)], subject: 'Log Scan WH Scanner');
-  }
-
-  /// Simpan foto ke folder permanen app.
-  /// Mengembalikan path final — TIDAK melakukan copy ganda.
-  Future<String> savePhoto(String tempPath, {String? name}) async {
-    final d = await _dir;
-    final photoDir = Directory('${d.path}/photos');
-    await photoDir.create(recursive: true);
-    final id = DateTime.now().millisecondsSinceEpoch;
-    final cleanName = name != null
-        ? name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
-        : 'photo';
-    final dest = '${photoDir.path}/${cleanName}_$id.jpg';
-    await File(tempPath).rename(dest).catchError((_) async {
-      // rename lintas partisi tidak bisa → fallback copy+delete
-      await File(tempPath).copy(dest);
-      try {
-        await File(tempPath).delete();
-      } catch (_) {}
-      return File(dest);
-    });
-    return dest;
-  }
-
-  String generateId() => 'sc_${DateTime.now().millisecondsSinceEpoch}';
-
-  // ── Method getEntry untuk mengambil satu entri berdasarkan ID ─────────────
-  Future<ScanEntry?> getEntry(String id) async {
-    if (_cache == null) await loadAll();
-    try {
-      return _cache!.firstWhere((e) => e.id == id);
-    } catch (_) {
-      return null;
-    }
+  void clear() {
+    _entries.clear();
+    _lruGeoCache.clear(); // Clear cache on reset if needed
   }
 }
