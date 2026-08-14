@@ -1,10 +1,41 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scan_entry.dart';
+
+// Simple LRU Cache implementation for Geocoding
+class LRUCache {
+  final int capacity;
+  final Map<String, String> _cache = {};
+  final List<String> _order = [];
+
+  LRUCache({this.capacity = 50});
+
+  String? get(String key) {
+    if (_cache.containsKey(key)) {
+      _order.remove(key);
+      _order.add(key);
+      return _cache[key];
+    }
+    return null;
+  }
+
+  void put(String key, String value) {
+    if (_cache.containsKey(key)) {
+      _order.remove(key);
+    } else if (_cache.length >= capacity) {
+      final oldest = _order.removeAt(0);
+      _cache.remove(oldest);
+    }
+    _cache[key] = value;
+    _order.add(key);
+  }
+
+  void clear() {
+    _cache.clear();
+    _order.clear();
+  }
+}
 
 class StorageService {
   static final StorageService _instance = StorageService._internal();
@@ -12,60 +43,34 @@ class StorageService {
   StorageService._internal();
 
   final List<ScanEntry> _entries = [];
-  Future<void>? _initFuture;
-
+  final LRUCache _geoCache = LRUCache(capacity: 100);
+  
   Timer? _saveDebounceTimer;
   bool _isSaving = false;
 
   List<ScanEntry> get entries => List.unmodifiable(_entries);
 
-  // Beberapa layar (home/log) baca `entries` langsung tanpa await init() —
-  // supaya tidak balik ke kondisi lama (list kosong kalau init() lupa
-  // dipanggil), semua method publik yang menyentuh _entries menunggu
-  // _ensureInit() dulu, tapi dimemoize supaya cuma load sekali dari disk.
-  Future<void> _ensureInit() {
-    _initFuture ??= _load();
-    return _initFuture!;
-  }
-
-  Future<void> _load() async {
+  Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString('scan_entries');
     if (data != null) {
       final List<dynamic> jsonList = json.decode(data);
       _entries.clear();
-      _entries.addAll(jsonList.map((e) => ScanEntry.fromMap(e)).toList());
+      _entries.addAll(jsonList.map((e) => ScanEntry.fromJson(e)).toList());
     }
   }
 
-  Future<void> init() => _ensureInit();
-
+  // Method untuk load data secara eksplisit jika diperlukan
   Future<List<ScanEntry>> loadAll() async {
-    await _ensureInit();
     return _entries;
   }
 
-  String generateId() => DateTime.now().microsecondsSinceEpoch.toString();
-
-  Future<void> add(ScanEntry entry) async {
-    await _ensureInit();
+  Future<void> addEntry(ScanEntry entry) async {
     _entries.insert(0, entry);
     _triggerSave();
   }
 
-  // Alias — dipertahankan supaya nama lama masih jalan kalau ada pemanggil lain
-  Future<void> addEntry(ScanEntry entry) => add(entry);
-
-  Future<ScanEntry?> getEntry(String id) async {
-    await _ensureInit();
-    for (final e in _entries) {
-      if (e.id == id) return e;
-    }
-    return null;
-  }
-
-  Future<void> update(ScanEntry entry) async {
-    await _ensureInit();
+  Future<void> updateEntry(ScanEntry entry) async {
     final index = _entries.indexWhere((e) => e.id == entry.id);
     if (index != -1) {
       _entries[index] = entry;
@@ -73,36 +78,32 @@ class StorageService {
     }
   }
 
-  Future<void> updateEntry(ScanEntry entry) => update(entry);
-
   Future<void> deleteEntry(String id) async {
-    await _ensureInit();
     _entries.removeWhere((e) => e.id == id);
     _triggerSave();
   }
 
   void clear() {
     _entries.clear();
-    _persist();
+    _geoCache.clear();
+    _persist(); // Immediate save on clear
   }
 
-  /// Salin file foto sementara (mis. hasil ImagePicker) ke direktori
-  /// permanen app, dan kembalikan path barunya.
-  Future<String> savePhoto(String tempPath) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final fileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final destPath = '${dir.path}/$fileName';
-    await File(tempPath).copy(destPath);
-    return destPath;
-  }
-
+  // Debounced save mechanism (Wait 500ms after last change)
   void _triggerSave() {
-    _saveDebounceTimer?.cancel();
-    _saveDebounceTimer = Timer(const Duration(milliseconds: 500), _persist);
+    if (_saveDebounceTimer != null) {
+      _saveDebounceTimer!.cancel();
+    }
+    _saveDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _persist();
+    });
   }
 
+  // Forced immediate save (untuk flush manual)
   Future<void> flush() async {
-    _saveDebounceTimer?.cancel();
+    if (_saveDebounceTimer != null) {
+      _saveDebounceTimer!.cancel();
+    }
     await _persist();
   }
 
@@ -111,12 +112,23 @@ class StorageService {
     _isSaving = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonString = json.encode(_entries.map((e) => e.toMap()).toList());
+      final jsonString = json.encode(_entries.map((e) => e.toJson()).toList());
       await prefs.setString('scan_entries', jsonString);
     } catch (e) {
-      debugPrint('Error saving to preferences: $e');
+      print("Error saving to preferences: $e");
     } finally {
       _isSaving = false;
     }
+  }
+
+  // Cached Geocoding helpers
+  String? getCachedLocation(double lat, double lng) {
+    final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
+    return _geoCache.get(key);
+  }
+
+  void updateGeoCache(double lat, double lng, String address) {
+    final key = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
+    _geoCache.put(key, address);
   }
 }

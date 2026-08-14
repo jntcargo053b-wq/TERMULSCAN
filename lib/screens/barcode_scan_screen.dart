@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/scan_entry.dart';
@@ -17,7 +18,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   MobileScannerController? _controller;
   bool _isProcessing = false;
   final _storage = StorageService();
-  final _loc = LocationService();
+  final _locationService = LocationService();
 
   @override
   void initState() {
@@ -57,64 +58,84 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
   Future<void> _handleScan(BarcodeCapture capture) async {
     if (_isProcessing || capture.barcodes.isEmpty) return;
-
+    
     final barcode = capture.barcodes.first;
     if (barcode.rawValue == null) return;
 
     setState(() => _isProcessing = true);
 
-    // Ambil koordinat cepat (best-effort, tanpa menunggu reverse-geocode)
-    // dan foto capture SEKALIGUS — dua-duanya independen (beda channel/
-    // plugin). Sebelumnya di-await berurutan sehingga latensi tiap scan =
-    // jumlah keduanya. Start dua-duanya dulu baru await, supaya jalan
-    // paralel dan latensinya cuma sebesar operasi yang paling lama.
-    final coordsFuture = _loc.getCoordinatesOnly();
-    final imageFuture = _captureImage();
-    final coords = await coordsFuture;
-    final imageFile = await imageFuture;
+    try {
+      // 1. Get Location First
+      ({double? lat, double? lng, String? address})? location;
+      try {
+        location = await _locationService.getLocation();
+      } catch (e) {
+        // Continue with null location if failed
+        debugPrint("Location error: $e");
+      }
 
-    final entry = ScanEntry(
-      id: _storage.generateId(),
-      type: ScanType.barcode,
-      value: barcode.rawValue!,
-      barcodeFormat: barcode.type.name,
-      timestamp: DateTime.now(),
-      latitude: coords.lat,
-      longitude: coords.lng,
-      imagePath: imageFile?.path,
-    );
+      // 2. Create Entry
+      final entry = ScanEntry(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        barcodeValue: barcode.rawValue!,
+        barcodeType: barcode.type.name,
+        timestamp: DateTime.now(),
+        latitude: location?.lat,
+        longitude: location?.lng,
+        address: location?.address ?? '', 
+        imagePath: null,
+      );
 
-    await _storage.add(entry);
-
-    // Susulkan alamat di background kalau koordinat awal berhasil didapat.
-    // Sengaja tidak di-await dan dipicu SEBELUM pop, supaya tetap jalan
-    // walau layar ini sudah ditutup (mirip pola di PhotoScanScreen).
-    if (coords.lat != null && coords.lng != null) {
-      // ignore: unawaited_futures
-      _loc.updateAddressForEntry(
-        entryId: entry.id,
-        lat: coords.lat!,
-        lng: coords.lng!,
-        accuracy: coords.accuracy,
-        onAddressReceived: (id, address) async {
-          final current = await _storage.getEntry(id);
-          if (current != null) {
-            await _storage.update(current.copyWith(locationName: address));
+      // 3. Capture Image
+      File? imageFile;
+      try {
+        imageFile = await _captureImage();
+        
+        // Update entry with image path if capture success
+        if (imageFile != null) {
+          // TODO: Integrasikan watermark processing di sini jika diperlukan
+          // Untuk sekarang simpan gambar asli dulu agar save tidak gagal
+          final entryWithImage = entry.copyWith(imagePath: imageFile.path);
+          
+          // 4. SAVE TO STORAGE IMMEDIATELY
+          await _storage.addEntry(entryWithImage);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Scan saved successfully!'), backgroundColor: Colors.green),
+            );
+            Navigator.pop(context, entryWithImage);
+            return;
           }
-        },
-      );
-    }
+        } else {
+          // Jika gagal ambil gambar, tetap simpan data scan tanpa gambar
+           await _storage.addEntry(entry);
+           if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Scan saved (no image)'), backgroundColor: Colors.orange),
+            );
+            Navigator.pop(context, entry);
+            return;
+          }
+        }
+      } catch (e) {
+        // Fallback: Simpan data meski gambar gagal
+        await _storage.addEntry(entry);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved without image: $e'), backgroundColor: Colors.orange),
+          );
+          Navigator.pop(context, entry);
+        }
+      }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(imageFile != null
-              ? 'Scan tersimpan'
-              : 'Scan tersimpan (tanpa gambar)'),
-          backgroundColor: imageFile != null ? Colors.green : Colors.orange,
-        ),
-      );
-      Navigator.pop(context, entry);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
@@ -127,10 +148,10 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       final dir = await getApplicationDocumentsDirectory();
       final fileName = 'scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final filePath = '${dir.path}/$fileName';
-
-      final imageFile = File(filePath);
+      
+      File imageFile = File(filePath);
       await imageFile.writeAsBytes(capture.bytes);
-
+      
       return imageFile;
     } catch (e) {
       debugPrint("Capture error: $e");
@@ -152,6 +173,12 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
               _controller?.toggleTorch();
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.camera_alt),
+            onPressed: () {
+               // Manual capture trigger if needed
+            },
+          )
         ],
       ),
       body: Stack(

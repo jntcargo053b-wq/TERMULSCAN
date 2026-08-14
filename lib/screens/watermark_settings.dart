@@ -9,30 +9,19 @@ class WatermarkSettings extends ChangeNotifier {
   String _operatorName = '';
   String? _logoPath;
 
-  // Sebelumnya hasLogo cek File(...).existsSync() tiap dipanggil — getter
-  // ini dibaca di build() HomeScreen & WatermarkSettingsSheet, termasuk
-  // tiap keystroke di field operator (onChanged: setState), jadi tiap
-  // frame nge-block UI thread dengan syscall disk. Sekarang dicek sekali
-  // saja setiap logoPath berubah (load()/setLogoPath()), lalu di-cache.
-  bool _hasLogo = false;
-
   String get operatorName => _operatorName;
   String? get logoPath => _logoPath;
-  bool get hasLogo => _hasLogo;
+
+  bool get hasLogo => _logoPath != null && File(_logoPath!).existsSync();
 
   static final WatermarkSettings _instance = WatermarkSettings._internal();
   factory WatermarkSettings() => _instance;
   WatermarkSettings._internal();
 
-  void _refreshHasLogo() {
-    _hasLogo = _logoPath != null && File(_logoPath!).existsSync();
-  }
-
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
-    _refreshHasLogo();
     notifyListeners();
   }
 
@@ -51,7 +40,6 @@ class WatermarkSettings extends ChangeNotifier {
     } else {
       await prefs.setString(_keyLogoPath, path);
     }
-    _refreshHasLogo();
     notifyListeners();
   }
 }
