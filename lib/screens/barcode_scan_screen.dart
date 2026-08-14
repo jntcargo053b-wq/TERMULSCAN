@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
 import '../services/location_service.dart';
-import '../widgets/watermark_overlay.dart'; // Pastikan widget ini ada
 
 class BarcodeScanScreen extends StatefulWidget {
   const BarcodeScanScreen({Key? key}) : super(key: key);
@@ -72,7 +71,8 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       try {
         position = await _locationService.getCurrentLocation();
       } catch (e) {
-        // Fallback handled in service, continue with null or last known
+        // Continue with null location if failed
+        debugPrint("Location error: $e");
       }
 
       // 2. Create Entry
@@ -83,38 +83,64 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         timestamp: DateTime.now(),
         latitude: position?.latitude,
         longitude: position?.longitude,
-        address: '', // Will be filled by geocoding later or in detail view
+        address: '', 
+        imagePath: null,
       );
 
-      // 3. Capture Image & Watermark (Simplified for brevity)
-      // Dalam implementasi nyata, panggil fungsi watermark isolate di sini
-      final imageFile = await _captureAndWatermark(position);
-
-      // Update entry with image path
-      final finalEntry = entry.copyWith(imagePath: imageFile?.path);
-
-      // 4. SAVE TO STORAGE IMMEDIATELY (Critical Fix)
-      await _storage.addEntry(finalEntry);
-
-      // 5. Show Success & Navigate Back
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Scan saved successfully!'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context, finalEntry);
+      // 3. Capture Image
+      File? imageFile;
+      try {
+        imageFile = await _captureImage();
+        
+        // Update entry with image path if capture success
+        if (imageFile != null) {
+          // TODO: Integrasikan watermark processing di sini jika diperlukan
+          // Untuk sekarang simpan gambar asli dulu agar save tidak gagal
+          final entryWithImage = entry.copyWith(imagePath: imageFile.path);
+          
+          // 4. SAVE TO STORAGE IMMEDIATELY
+          await _storage.addEntry(entryWithImage);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Scan saved successfully!'), backgroundColor: Colors.green),
+            );
+            Navigator.pop(context, entryWithImage);
+            return;
+          }
+        } else {
+          // Jika gagal ambil gambar, tetap simpan data scan tanpa gambar
+           await _storage.addEntry(entry);
+           if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Scan saved (no image)'), backgroundColor: Colors.orange),
+            );
+            Navigator.pop(context, entry);
+            return;
+          }
+        }
+      } catch (e) {
+        // Fallback: Simpan data meski gambar gagal
+        await _storage.addEntry(entry);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved without image: $e'), backgroundColor: Colors.orange),
+          );
+          Navigator.pop(context, entry);
+        }
       }
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
+        setState(() => _isProcessing = false);
       }
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  Future<File?> _captureAndWatermark(Position? position) async {
+  Future<File?> _captureImage() async {
     if (_controller == null) return null;
     try {
       final capture = await _controller!.takePhoto();
@@ -125,15 +151,11 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       final filePath = '${dir.path}/$fileName';
       
       File imageFile = File(filePath);
-      // Simpan foto mentah dulu
       await imageFile.writeAsBytes(capture.bytes);
-
-      // TODO: Panggil fungsi watermark isolate di sini jika diperlukan sebelum return
-      // final watermarkedFile = await processWatermark(imageFile, position);
       
       return imageFile;
     } catch (e) {
-      print("Capture error: $e");
+      debugPrint("Capture error: $e");
       return null;
     }
   }
@@ -141,7 +163,25 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan Barcode')),
+      appBar: AppBar(
+        title: const Text('Scan Barcode'),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(_controller?.torchState.value == TorchState.on ? Icons.flash_on : Icons.flash_off),
+            onPressed: () {
+              _controller?.toggleTorch();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.camera_alt),
+            onPressed: () {
+               // Manual capture trigger if needed
+            },
+          )
+        ],
+      ),
       body: Stack(
         children: [
           MobileScanner(
@@ -149,7 +189,10 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
             onDetect: _handleScan,
           ),
           if (_isProcessing)
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
+            const Container(
+              color: Colors.black54,
+              child: Center(child: CircularProgressIndicator(color: Colors.white)),
+            ),
         ],
       ),
     );
