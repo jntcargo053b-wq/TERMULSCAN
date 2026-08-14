@@ -60,7 +60,7 @@ jobs:
         with:
           flutter-version: '3.38.0'
           channel: 'stable'
-          cache: true
+          cache: false
 
       - name: Write local.properties
         run: |
@@ -258,6 +258,7 @@ jobs:
       # ============================================================
       - name: Purge stale generated plugin/build files
         run: |
+          flutter clean || true
           rm -rf .dart_tool .flutter-plugins .flutter-plugins-dependencies
           rm -rf android/.gradle android/app/.cxx build
           if [ -f .gitignore ]; then
@@ -309,6 +310,13 @@ jobs:
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Verify package resolution
+        run: |
+          echo "--- flutter --version ---"
+          flutter --version
+          echo "--- resolved packages (relevant) ---"
+          grep -E '"(http|flutter_animate|gap|image_picker|image_gallery_saver_plus|mobile_scanner)"' .dart_tool/package_config.json || echo "⚠️ Salah satu package di atas TIDAK ada di package_config.json"
 
       - name: Build APK
         run: flutter build apk --release
