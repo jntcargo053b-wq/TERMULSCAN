@@ -2,12 +2,24 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+/// Simple LRU cache untuk reverse geocoding
+class _GeoCacheEntry {
+  final String address;
+  final DateTime timestamp;
+  _GeoCacheEntry(this.address) : timestamp = DateTime.now();
+}
+
 class LocationService {
   static final _instance = LocationService._();
   factory LocationService() => _instance;
   LocationService._();
 
   static const _channel = MethodChannel('com.termulscan.app/location');
+  
+  // LRU cache sederhana dengan max 50 entri
+  static const _maxCacheSize = 50;
+  static const _cacheDuration = Duration(hours: 24);
+  final Map<String, _GeoCacheEntry> _geoCache = {};
 
   Future<({double? lat, double? lng, String? address})> getLocation({
     bool forceRefresh = false,
@@ -25,7 +37,7 @@ class LocationService {
       }
 
       // Reverse geocoding via Nominatim — detail level disesuaikan akurasi GPS
-      final address = await _reverseGeocode(lat, lng, accuracy: accuracy);
+      final address = await _reverseGeocode(lat, lng, accuracy: accuracy, forceRefresh: forceRefresh);
 
       return (lat: lat, lng: lng, address: address);
     } catch (e) {
@@ -33,8 +45,21 @@ class LocationService {
     }
   }
 
-  Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy}) async {
+  Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy, bool forceRefresh = false}) async {
     try {
+      // Cek cache dulu
+      final cacheKey = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+      if (!forceRefresh && _geoCache.containsKey(cacheKey)) {
+        final entry = _geoCache[cacheKey]!;
+        // Cek apakah cache masih valid
+        if (DateTime.now().difference(entry.timestamp) < _cacheDuration) {
+          return entry.address;
+        } else {
+          // Cache expired, hapus
+          _geoCache.remove(cacheKey);
+        }
+      }
+
       // FIX GPS DETAIL – kalau akurasi GPS kasar (>=20m), jangan tampilkan
       // jalan/dusun detail (bisa menyesatkan), cukup kecamatan & kota saja.
       // zoom Nominatim: 18 = jalan/bangunan, 14 = kecamatan/suburb, 10 = kota
@@ -85,7 +110,18 @@ class LocationService {
         if (state != null) parts.add(state);
       }
 
-      return parts.isNotEmpty ? parts.join(', ') : data['display_name'];
+      final result = parts.isNotEmpty ? parts.join(', ') : data['display_name'];
+      
+      // Simpan ke cache
+      if (_geoCache.length >= _maxCacheSize) {
+        // Hapus entri tertua jika cache penuh
+        final oldestKey = _geoCache.entries.reduce((a, b) => 
+          a.value.timestamp.isBefore(b.value.timestamp) ? a : b).key;
+        _geoCache.remove(oldestKey);
+      }
+      _geoCache[cacheKey] = _GeoCacheEntry(result);
+      
+      return result;
     } catch (e) {
       return null;
     }

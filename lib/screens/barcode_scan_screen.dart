@@ -200,6 +200,13 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
     _wmSettings.load();
   }
 
+  @override
+  void dispose() {
+    // FIX: Dispose ChangeNotifier untuk mencegah memory leak
+    _wmSettings.dispose();
+    super.dispose();
+  }
+
   Future<void> _requestPermissions() async {
     await [
       Permission.location,
