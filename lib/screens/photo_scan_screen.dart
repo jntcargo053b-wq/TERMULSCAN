@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -195,7 +196,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: Colors.green.shade700,
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 4),
         content: Row(
           children: [
             const Icon(Icons.check_circle, color: Colors.white, size: 18),
@@ -209,8 +210,39 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
             ),
           ],
         ),
+        action: SnackBarAction(
+          label: 'KE GALERI',
+          textColor: Colors.white,
+          onPressed: () => _saveToGallery(entry.value),
+        ),
       ),
     );
+  }
+
+  /// Ekspor foto yang sudah tersimpan (internal) ke galeri publik perangkat.
+  Future<void> _saveToGallery(String filePath) async {
+    try {
+      final result = await ImageGallerySaverPlus.saveFile(filePath);
+      final success = result != null && result['isSuccess'] == true;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: success ? Colors.green.shade700 : AppTheme.error,
+          duration: const Duration(seconds: 2),
+          content: Text(success
+              ? '✓ Foto tersimpan ke galeri'
+              : 'Gagal menyimpan ke galeri — cek permission'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.error,
+          content: Text('Gagal menyimpan ke galeri: $e'),
+        ),
+      );
+    }
   }
 
   void _showError(String msg) {

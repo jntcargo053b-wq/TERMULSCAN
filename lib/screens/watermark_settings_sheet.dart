@@ -43,6 +43,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       final appDir = await getApplicationDocumentsDirectory();
       final dest = '${appDir.path}/wm_logo.png';
       await File(file.path).copy(dest);
+
+      // Path tujuan selalu sama (wm_logo.png) supaya "ganti logo" langsung
+      // menimpa file lama. Tapi Flutter's ImageCache mengunci gambar
+      // berdasarkan path saja, bukan isinya — kalau tidak di-evict, preview
+      // & watermark bisa terus menampilkan logo LAMA walau file sudah
+      // diganti. Evict dulu supaya widget berikutnya baca ulang dari disk.
+      await FileImage(File(dest)).evict();
+
       await _settings.setLogoPath(dest);
     } finally {
       if (mounted) setState(() => _isSaving = false);

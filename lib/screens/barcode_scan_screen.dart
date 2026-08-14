@@ -180,7 +180,8 @@ class BarcodeScanScreen extends StatefulWidget {
   State<BarcodeScanScreen> createState() => _BarcodeScanScreenState();
 }
 
-class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
+class _BarcodeScanScreenState extends State<BarcodeScanScreen>
+    with WidgetsBindingObserver {
   bool _scanning = true;
   bool _isSaving = false;
   String? _lastCode;
@@ -192,17 +193,65 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   final WatermarkSettings _wmSettings = WatermarkSettings();
   final MobileScannerController _scannerController = MobileScannerController();
 
+  // Sebelumnya layar ini tidak punya WidgetsBindingObserver sama sekali —
+  // _pauseScanner()/_resumeScanner() cuma dipanggil manual dari alur capture
+  // sendiri (sebelum buka kamera native, setelah bottom sheet ditutup), jadi
+  // tidak pernah merespons AppLifecycleState OS yang sesungguhnya. Kalau app
+  // di-minimize (home button/notifikasi lama/telepon) SAAT live preview
+  // scanner aktif (bukan saat foto), CameraX session bisa diputus OS tanpa
+  // controller tahu, dan start() berikutnya gagal diam-diam karena state
+  // Dart-side tidak sinkron dengan kondisi native.
+  bool _pausedByLifecycle = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
-    _wmSettings.load();
+    // load() ini async & tidak di-await (initState tidak bisa async), dan
+    // WatermarkSettings tidak di-listen lewat AnimatedBuilder/dsb — tanpa
+    // setState di sini, badge nama operator & indikator logo di AppBar
+    // tidak langsung muncul begitu data selesai dimuat dari SharedPreferences,
+    // baru kelihatan setelah ada rebuild lain (mis. buka pengaturan watermark).
+    _wmSettings.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scannerController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+        // Cuma stop kalau scanner memang sedang aktif jalan (_scanning).
+        // Kalau sedang di-pause manual untuk alur foto (_scanning sudah
+        // false karena _onDetect/_processManualCode), jangan ganggu — nanti
+        // _resumeScanner() dari alur capture sendiri yang akan start ulang,
+        // supaya dua mekanisme pause ini tidak saling tabrakan.
+        if (_scanning && !_pausedByLifecycle) {
+          _pausedByLifecycle = true;
+          _scannerController.stop();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        if (_pausedByLifecycle) {
+          _pausedByLifecycle = false;
+          // Hanya start lagi kalau memang seharusnya scanning saat ini
+          // (tidak sedang di tengah alur ambil foto/bottom sheet hasil).
+          if (_scanning && mounted) _scannerController.start();
+        }
+        break;
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        break;
+    }
   }
 
   /// Hentikan analisis kamera saat scanner sedang tidak dipakai
@@ -218,10 +267,13 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
   }
 
   Future<void> _requestPermissions() async {
+    // Catatan: Permission.photos (READ_MEDIA_IMAGES di Android 13+) sengaja
+    // TIDAK diminta di sini — menulis foto baru ke galeri lewat MediaStore
+    // (image_gallery_saver_plus) tidak butuh izin baca galeri, jadi minta
+    // izin ini hanya menambah dialog yang tidak perlu bagi user.
     await [
       Permission.location,
       Permission.camera,
-      Permission.photos,
       Permission.storage,
     ].request();
   }
@@ -546,7 +598,19 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
       );
       final savedPhotoPath = await _storage.savePhoto(wmPath, name: entry.value);
 
-      // Buat entri foto
+      // Hapus foto mentah (pre-watermark) — sudah tidak dipakai lagi setelah
+      // versi watermark-nya berhasil disimpan. Tanpa ini, file cache dari
+      // image_picker menumpuk terus setiap kali scan+foto.
+      try {
+        final rawFile = File(file.path);
+        if (await rawFile.exists()) await rawFile.delete();
+      } catch (_) {
+        // Non-fatal — kalau gagal hapus, biarkan saja (mis. sudah terhapus OS)
+      }
+
+      // Buat entri foto, ditautkan ke entri barcode-nya (linkedId dua arah)
+      // supaya keduanya bukan lagi dua baris lepas tanpa relasi — ini juga
+      // yang dipakai cascade delete di StorageService.
       final photoEntry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
@@ -555,8 +619,11 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
         latitude: coords.lat,
         longitude: coords.lng,
         locationName: null,
+        linkedId: updatedEntry.id,
       );
       await _storage.add(photoEntry);
+      updatedEntry = updatedEntry.copyWith(linkedId: photoEntry.id);
+      await _storage.update(updatedEntry);
 
       // Update sheet dengan hasil foto
       stateNotifier.value = _ResultState(

@@ -9,6 +9,8 @@ import '../theme/app_theme.dart';
 import 'barcode_scan_screen.dart';
 import 'photo_scan_screen.dart';
 import 'log_screen.dart';
+import 'watermark_settings.dart';
+import 'watermark_settings_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _storage = StorageService();
   final _loc = LocationService();
+  final _wmSettings = WatermarkSettings();
 
   int _totalScans = 0;
   int _barcodeCount = 0;
@@ -33,6 +36,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadStats();
     _initPermissionsAndLocation();
+    // Sebelumnya WatermarkSettings cuma di-load di BarcodeScanScreen —
+    // icon setting di Home butuh datanya juga (untuk badge), jadi di-load
+    // di sini tanpa menunggu user masuk ke alur scan/foto dulu.
+    _wmSettings.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _initPermissionsAndLocation() async {
@@ -61,11 +70,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openBarcode() async {
-    final result = await Navigator.push(
+    // BarcodeScanScreen tidak selalu pop dengan nilai (tombol back bawaan
+    // AppBar pop dengan null), jadi refresh statistik tanpa syarat —
+    // sama seperti _openLog() di bawah — supaya Home selalu sinkron
+    // dengan data terbaru setelah sesi scan.
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const BarcodeScanScreen()),
     );
-    if (result != null) _loadStats();
+    _loadStats();
   }
 
   Future<void> _openPhoto() async {
@@ -82,6 +95,20 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => const LogScreen()),
     );
     _loadStats();
+  }
+
+  void _openWatermarkSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const WatermarkSettingsSheet(),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -175,6 +202,29 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ).animate().fadeIn(delay: 200.ms),
+          const Gap(4),
+          IconButton(
+            onPressed: _openWatermarkSettings,
+            icon: Stack(
+              children: [
+                const Icon(Icons.tune, color: AppTheme.textSecondary, size: 26),
+                if (_wmSettings.operatorName.isNotEmpty || _wmSettings.hasLogo)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            tooltip: 'Pengaturan Watermark',
+          ).animate().fadeIn(delay: 220.ms),
         ],
       ),
     );

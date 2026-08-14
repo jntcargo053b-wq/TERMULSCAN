@@ -17,6 +17,11 @@ class StorageService {
   List<ScanEntry>? _cache;
   Timer? _persistTimer;
   bool _persistDirty = false;
+  // Future in-flight untuk loadAll() — mencegah race saat 2 pemanggil
+  // (mis. HomeScreen & LogScreen sama-sama initState hampir bersamaan)
+  // lolos cek `_cache == null` sebelum salah satu selesai baca file,
+  // yang tadinya bisa bikin _cache saling menimpa dan entry hilang.
+  Future<List<ScanEntry>>? _loadingFuture;
 
   Future<Directory> get _dir async {
     final base = await getApplicationDocumentsDirectory();
@@ -32,6 +37,19 @@ class StorageService {
 
   Future<List<ScanEntry>> loadAll() async {
     if (_cache != null) return List.unmodifiable(_cache!);
+    // Kalau sudah ada pembacaan yang berjalan, ikut nebeng future yang
+    // sama alih-alih mulai baca file lagi dari nol secara paralel.
+    if (_loadingFuture != null) return _loadingFuture!;
+    final future = _doLoad();
+    _loadingFuture = future;
+    try {
+      return await future;
+    } finally {
+      _loadingFuture = null;
+    }
+  }
+
+  Future<List<ScanEntry>> _doLoad() async {
     try {
       final f = await _jsonFile;
       if (!await f.exists()) {
@@ -101,14 +119,44 @@ class StorageService {
 
   Future<void> delete(String id) async {
     if (_cache == null) await loadAll();
-    final entry = _cache!.firstWhere((e) => e.id == id);
-    if (entry.isPhoto) {
-      try {
-        final f = File(entry.value);
-        if (await f.exists()) await f.delete();
-      } catch (_) {}
+    // Cari tanpa firstWhere() polos — kalau id sudah tidak ada di cache
+    // (mis. tombol hapus ke-tap dua kali dengan cepat, atau race dengan
+    // proses lain), firstWhere() akan throw StateError dan delete() gagal
+    // total alih-alih no-op dengan aman.
+    ScanEntry? entry;
+    for (final e in _cache!) {
+      if (e.id == id) {
+        entry = e;
+        break;
+      }
     }
-    _cache!.removeWhere((e) => e.id == id);
+    if (entry == null) return;
+
+    // Cascade: entri barcode & foto dari satu aksi scan yang sama saling
+    // ditandai lewat linkedId. Kalau salah satu dihapus sendirian, sisi
+    // satunya jadi entri "yatim" tak terhapus (barcode tanpa foto yang
+    // sudah hilang filenya, atau foto tanpa barcode yang menaunginya).
+    // Hapus dua-duanya sekaligus.
+    ScanEntry? linked;
+    if (entry.linkedId != null) {
+      for (final e in _cache!) {
+        if (e.id == entry.linkedId) {
+          linked = e;
+          break;
+        }
+      }
+    }
+
+    for (final e in [entry, if (linked != null) linked]) {
+      if (e.isPhoto) {
+        try {
+          final f = File(e.value);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
+    }
+
+    _cache!.removeWhere((e) => e.id == id || (linked != null && e.id == linked.id));
     // Hapus bersifat destruktif — tulis segera, jangan didebounce.
     _persistTimer?.cancel();
     _persistTimer = null;

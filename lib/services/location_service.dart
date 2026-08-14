@@ -12,7 +12,10 @@ class LocationService {
 
   static ({double? lat, double? lng, String? address})? _cachedLocation;
   static DateTime? _cacheTime;
-  static const _cacheDuration = Duration(seconds: 30);
+  // Diperpendek dari 30 detik ke 8 detik atas permintaan — cache 30 detik
+  // terlalu lama untuk skenario user berpindah lokasi cepat antar scan,
+  // bisa nempelin koordinat/alamat basi ke entry yang sebenarnya beda titik.
+  static const _cacheDuration = Duration(seconds: 8);
 
   Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
     try {
@@ -84,7 +87,36 @@ class LocationService {
     }
   }
 
-  Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy}) async {
+  // Sebelumnya tiap _reverseGeocode() dipanggil fire-and-forget tanpa
+  // batasan sama sekali (unawaited_futures) — kalau beberapa scan terjadi
+  // berdekatan dan request lama belum selesai, request baru langsung
+  // ditembak paralel, gampang menumpuk dan melanggar batas ~1 req/detik
+  // punya Nominatim. Sekarang semua request dirantai lewat satu antrian
+  // dengan jeda minimal, jadi "menumpuk" berubah jadi antre rapi.
+  Future<void> _geocodeChain = Future.value();
+  DateTime? _lastGeocodeStart;
+  static const _minGeocodeGap = Duration(milliseconds: 1100);
+
+  Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy}) {
+    final completer = Completer<String?>();
+    _geocodeChain = _geocodeChain.then((_) async {
+      final now = DateTime.now();
+      if (_lastGeocodeStart != null) {
+        final elapsed = now.difference(_lastGeocodeStart!);
+        if (elapsed < _minGeocodeGap) {
+          await Future.delayed(_minGeocodeGap - elapsed);
+        }
+      }
+      _lastGeocodeStart = DateTime.now();
+      final result = await _doReverseGeocode(lat, lng, accuracy: accuracy);
+      if (!completer.isCompleted) completer.complete(result);
+    }).catchError((_) {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+    return completer.future;
+  }
+
+  Future<String?> _doReverseGeocode(double lat, double lng, {double? accuracy}) async {
     try {
       final isCoarse = accuracy != null && accuracy >= 20;
       final zoom = isCoarse ? 14 : 18;

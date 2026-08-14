@@ -12,6 +12,10 @@ class ScanEntry {
   final double? longitude;
   final String? locationName;
   final String? note;
+  // ID entri pasangan (barcode <-> foto) dari satu aksi scan yang sama.
+  // Dipakai untuk cascade delete & agar 2 entri yang muncul di log bisa
+  // ditelusuri sebagai satu kesatuan, bukan dua baris lepas tak terkait.
+  final String? linkedId;
 
   ScanEntry({
     required this.id,
@@ -23,6 +27,7 @@ class ScanEntry {
     this.longitude,
     this.locationName,
     this.note,
+    this.linkedId,
   });
 
   String get timestampFormatted =>
@@ -49,6 +54,7 @@ class ScanEntry {
     'longitude': longitude,
     'locationName': locationName,
     'note': note,
+    'linkedId': linkedId,
   };
 
   factory ScanEntry.fromJson(Map<String, dynamic> j) => ScanEntry(
@@ -61,6 +67,9 @@ class ScanEntry {
     longitude: (j['longitude'] as num?)?.toDouble(),
     locationName: j['locationName'],
     note: j['note'],
+    // Entri lama (sebelum field ini ada) tidak punya key 'linkedId' —
+    // aman jadi null lewat operator akses map bertanda tanya.
+    linkedId: j['linkedId'],
   );
 
   ScanEntry copyWith({
@@ -69,6 +78,7 @@ class ScanEntry {
     double? longitude,
     String? locationName,
     String? note,
+    String? linkedId,
   }) => ScanEntry(
     id: id, type: type, value: value ?? this.value, barcodeFormat: barcodeFormat,
     timestamp: timestamp,
@@ -76,5 +86,6 @@ class ScanEntry {
     longitude: longitude ?? this.longitude,
     locationName: locationName ?? this.locationName,
     note: note ?? this.note,
+    linkedId: linkedId ?? this.linkedId,
   );
 }
