@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +14,11 @@ class StorageService {
 
   // ── In-memory cache ──────────────────────────────────────────────────────
   List<ScanEntry>? _cache;
+  
+  // ── Debounce untuk write operations ─────────────────────────────────────
+  Timer? _debounceTimer;
+  bool _pendingWrite = false;
+  static const _debounceDuration = Duration(milliseconds: 500);
 
   Future<Directory> get _dir async {
     final base = await getApplicationDocumentsDirectory();
@@ -45,11 +51,38 @@ class StorageService {
     }
   }
 
+  /// Write ke disk dengan debounce (500ms) untuk menghindari frequent I/O
   Future<void> _persist() async {
-    final f = await _jsonFile;
-    await f.writeAsString(
-      json.encode((_cache ?? []).map((e) => e.toJson()).toList()),
-    );
+    _debounceTimer?.cancel();
+    _pendingWrite = true;
+    
+    _debounceTimer = Timer(_debounceDuration, () async {
+      if (_cache != null) {
+        try {
+          final f = await _jsonFile;
+          await f.writeAsString(
+            json.encode(_cache!.map((e) => e.toJson()).toList()),
+          );
+        } finally {
+          _pendingWrite = false;
+        }
+      }
+    });
+  }
+  
+  /// Flush pending write immediately (untuk saat app background/closed)
+  Future<void> flush() async {
+    _debounceTimer?.cancel();
+    if (_pendingWrite && _cache != null) {
+      try {
+        final f = await _jsonFile;
+        await f.writeAsString(
+          json.encode(_cache!.map((e) => e.toJson()).toList()),
+        );
+      } finally {
+        _pendingWrite = false;
+      }
+    }
   }
 
   /// Append entry ke cache + disk tanpa baca ulang file.

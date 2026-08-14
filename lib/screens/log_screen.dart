@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,11 +23,20 @@ class _LogScreenState extends State<LogScreen> {
   String _search = '';
   String _filter = 'all';
   bool _exporting = false;
+  
+  // Debounce untuk search input
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+  
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -173,8 +183,14 @@ class _LogScreenState extends State<LogScreen> {
         children: [
           TextField(
             onChanged: (v) {
-              _search = v;
-              _applyFilter();
+              // Debounce search untuk menghindari filter berlebihan
+              _searchDebounce?.cancel();
+              _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                if (_search != v) {
+                  _search = v;
+                  _applyFilter();
+                }
+              });
             },
             style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
             decoration: const InputDecoration(
@@ -355,12 +371,26 @@ class _EntryCard extends StatelessWidget {
                 ),
                 child: isBarcode
                     ? Icon(Icons.qr_code_scanner, color: color, size: 22)
-                    : (File(entry.value).existsSync()
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.file(File(entry.value),
-                                width: 44, height: 44, fit: BoxFit.cover))
-                        : Icon(Icons.broken_image, color: color, size: 22)),
+                    : FutureBuilder<bool>(
+                        future: File(entry.value).exists(),
+                        builder: (ctx, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.done) {
+                            if (snapshot.data == true) {
+                              return ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.file(File(entry.value),
+                                    width: 44, height: 44, fit: BoxFit.cover));
+                            }
+                          }
+                          // Default: show placeholder while checking or if not exists
+                          return snapshot.data == true
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(File(entry.value),
+                                      width: 44, height: 44, fit: BoxFit.cover))
+                              : Icon(Icons.broken_image, color: color, size: 22);
+                        },
+                      ),
               ),
               const Gap(12),
               Expanded(
@@ -440,25 +470,37 @@ class _EntryCard extends StatelessWidget {
     );
   }
 
-  void _shareEntry(BuildContext context) {
+  Future<void> _shareEntry(BuildContext context) async {
     if (entry.isBarcode) {
-      final text = 'Barcode: ${entry.value}\n'
-          'Format: ${entry.barcodeFormat ?? "-"}\n'
-          'Waktu: ${entry.timestampFormatted}\n'
+      final text = 'Barcode: ${entry.value}\\n'
+          'Format: ${entry.barcodeFormat ?? "-"}\\n'
+          'Waktu: ${entry.timestampFormatted}\\n'
           'GPS: ${entry.coordinatesString}';
       Share.share(text, subject: 'Hasil Scan WH Scanner');
-    } else if (entry.isPhoto && File(entry.value).existsSync()) {
-      Share.shareXFiles(
-        [XFile(entry.value)],
-        subject: 'Foto WH Scanner',
-        text: 'Waktu: ${entry.timestampFormatted}\n'
-            'GPS: ${entry.coordinatesString}',
-      );
+    } else if (entry.isPhoto) {
+      final exists = await File(entry.value).exists();
+      if (exists) {
+        Share.shareXFiles(
+          [XFile(entry.value)],
+          subject: 'Foto WH Scanner',
+          text: 'Waktu: ${entry.timestampFormatted}\\n'
+              'GPS: ${entry.coordinatesString}',
+        );
+      }
     }
   }
 
   void _showDetail(BuildContext context) {
     showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DetailSheet(entry: entry),
+    );
+  }
+}
       context: context,
       backgroundColor: AppTheme.surface,
       isScrollControlled: true,
@@ -495,13 +537,22 @@ class _DetailSheet extends StatelessWidget {
               ),
             ),
 
-            if (entry.isPhoto && File(entry.value).existsSync()) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(File(entry.value),
-                    width: double.infinity, height: 220, fit: BoxFit.cover),
+            if (entry.isPhoto) ...[
+              FutureBuilder<bool>(
+                future: File(entry.value).exists(),
+                builder: (context, snapshot) {
+                  if (snapshot.data == true) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(File(entry.value),
+                          width: double.infinity, height: 220, fit: BoxFit.cover),
+                    ),
+                    const Gap(20),
+                  ] else ...[
+                    const Gap(20),
+                  ];
+                },
               ),
-              const Gap(20),
             ],
 
             Text(
@@ -569,7 +620,11 @@ class _DetailSheet extends StatelessWidget {
             ],
 
             // Tombol untuk foto
-            if (entry.isPhoto && File(entry.value).existsSync()) ...[
+            if (entry.isPhoto) ...[
+              FutureBuilder<bool>(
+                future: File(entry.value).exists(),
+                builder: (context, snapshot) {
+                  if (snapshot.data == true) ...[
               const Gap(10),
               SizedBox(
                 width: double.infinity,
