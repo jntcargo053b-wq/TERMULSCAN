@@ -3,10 +3,8 @@ import 'dart:io';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:geolocator/geolocator.dart';
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
-import '../services/location_service.dart';
 
 class LogScreen extends StatefulWidget {
   const LogScreen({Key? key}) : super(key: key);
@@ -18,7 +16,6 @@ class LogScreen extends StatefulWidget {
 class _LogScreenState extends State<LogScreen> {
   final _storage = StorageService();
   final _searchController = TextEditingController();
-  final _locationService = LocationService();
   
   List<ScanEntry> _filteredEntries = [];
   Timer? _debounceTimer;
@@ -27,7 +24,6 @@ class _LogScreenState extends State<LogScreen> {
   void initState() {
     super.initState();
     _filteredEntries = _storage.entries;
-    // Listener untuk search debounce
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -50,8 +46,9 @@ class _LogScreenState extends State<LogScreen> {
   void _performSearch(String query) {
     setState(() {
       _filteredEntries = _storage.entries.where((entry) {
-        return entry.barcodeValue.toLowerCase().contains(query.toLowerCase()) ||
-               (entry.address != null && entry.address!.toLowerCase().contains(query.toLowerCase()));
+        final barcodeMatch = entry.barcodeValue.toLowerCase().contains(query.toLowerCase());
+        final addressMatch = (entry.address ?? "").toLowerCase().contains(query.toLowerCase());
+        return barcodeMatch || addressMatch;
       }).toList();
     });
   }
@@ -68,29 +65,30 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   Future<void> _shareEntry(ScanEntry entry) async {
-    if (entry.imagePath == null) {
+    if (entry.imagePath == null || entry.imagePath!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No image to share')),
       );
       return;
     }
 
-    // Gunakan async check
     final exists = await _checkFileExists(entry.imagePath);
     if (!exists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image file not found')),
+        const SnackBar(content: Text('Image file not found on device')),
       );
       return;
     }
 
-    final result = await Share.shareXFiles(
-      [XFile(entry.imagePath!)],
-      text: 'Scan Result: ${entry.barcodeValue}\nLocation: ${entry.address ?? "Unknown"}',
-    );
-    
-    if (result.status == ShareResultStatus.success) {
-      // Optional: Track share event
+    try {
+      await Share.shareXFiles(
+        [XFile(entry.imagePath!)],
+        text: 'Scan Result: ${entry.barcodeValue}\nLocation: ${entry.address ?? "Unknown"}',
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Share failed: $e')),
+      );
     }
   }
 
@@ -107,25 +105,41 @@ class _LogScreenState extends State<LogScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Details', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-            Text('Barcode: ${entry.barcodeValue}'),
-            Text('Time: ${DateFormat('yyyy-MM-dd HH:mm').format(entry.timestamp)}'),
-            Text('Location: ${entry.address ?? "Loading..."}'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Scan Details', style: Theme.of(context).textTheme.titleLarge),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const Divider(),
+            const SizedBox(height: 8),
+            _buildDetailRow('Barcode', entry.barcodeValue),
+            _buildDetailRow('Time', DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.timestamp)),
+            _buildDetailRow('Type', entry.barcodeType),
+            if (entry.address != null && entry.address!.isNotEmpty)
+              _buildDetailRow('Location', entry.address!),
             if (entry.latitude != null)
-              Text('Coords: ${entry.latitude}, ${entry.longitude}'),
+              _buildDetailRow('Coordinates', '${entry.latitude}, ${entry.longitude}'),
+            
             const SizedBox(height: 16),
             if (entry.imagePath != null)
               FutureBuilder<bool>(
                 future: _checkFileExists(entry.imagePath),
                 builder: (ctx, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
                   if (snapshot.data == true) {
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(entry.imagePath!), height: 200, fit: BoxFit.cover),
+                      child: Image.file(File(entry.imagePath!), height: 200, width: double.infinity, fit: BoxFit.cover),
                     );
                   }
-                  return const Text('Image not available');
+                  return const Text('Image not available', style: TextStyle(color: Colors.grey));
                 },
               ),
             const SizedBox(height: 20),
@@ -133,10 +147,31 @@ class _LogScreenState extends State<LogScreen> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Delete this scan?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, true),
+                            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await _storage.deleteEntry(entry.id);
+                      setState(() {
+                        _filteredEntries = _storage.entries; // Refresh list
+                      });
+                      if (mounted) Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Delete', style: TextStyle(color: Colors.red)),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: () {
                     Navigator.pop(context);
@@ -153,31 +188,50 @@ class _LogScreenState extends State<LogScreen> {
     );
   }
 
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 100, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scan History'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (c) => AlertDialog(
-                  title: const Text('Clear All?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                    TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Clear', style: TextStyle(color: Colors.red))),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                _storage.clear();
-                setState(() => _filteredEntries = []);
-              }
-            },
-          )
+          if (_filteredEntries.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              tooltip: 'Clear All',
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text('Clear All History?'),
+                    content: const Text('This action cannot be undone.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true) {
+                  _storage.clear();
+                  setState(() => _filteredEntries = []);
+                }
+              },
+            )
         ],
       ),
       body: Column(
@@ -191,12 +245,28 @@ class _LogScreenState extends State<LogScreen> {
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                filled: true,
+                fillColor: Colors.grey[100],
               ),
             ),
           ),
           Expanded(
             child: _filteredEntries.isEmpty
-                ? const Center(child: Text('No scans found'))
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          _searchController.text.isEmpty 
+                              ? 'No scans yet' 
+                              : 'No matches found',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  )
                 : ListView.builder(
                     itemCount: _filteredEntries.length,
                     itemBuilder: (ctx, i) {
@@ -204,16 +274,33 @@ class _LogScreenState extends State<LogScreen> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
-                          child: Icon(Icons.qr_code, color: Colors.blue.shade900),
+                          child: Icon(Icons.qr_code, color: Colors.blue.shade900, size: 20),
                         ),
-                        title: Text(entry.barcodeValue, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(
-                          '${DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp)}\n${entry.address ?? "No location"}',
-                          maxLines: 2,
+                        title: Text(
+                          entry.barcodeValue,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        trailing: entry.imagePath != null 
-                            ? const Icon(Icons.image, color: Colors.grey) 
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text(
+                              DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                            if (entry.address != null && entry.address!.isNotEmpty)
+                              Text(
+                                entry.address!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+                              ),
+                          ],
+                        ),
+                        trailing: entry.imagePath != null && entry.imagePath!.isNotEmpty
+                            ? Icon(Icons.image, color: Colors.grey[400])
                             : null,
                         onTap: () => _showDetail(entry),
                       );
