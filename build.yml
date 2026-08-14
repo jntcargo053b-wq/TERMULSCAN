@@ -5,45 +5,264 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Java 17
+      # ============================================================
+      # PERBAIKAN 1: Nama package harus lowercase
+      # ============================================================
+      - name: Ensure valid package name
+        run: |
+          if [ -f pubspec.yaml ]; then
+            sed -i 's/^name:.*/name: termulscan/' pubspec.yaml
+            echo "✅ name: termulscan"
+          fi
+
+      # ============================================================
+      # PERBAIKAN 2: Pastikan SDK constraint ada (versi robust)
+      # ============================================================
+      - name: Ensure SDK constraint
+        run: |
+          if ! grep -q '^environment:' pubspec.yaml; then
+            # Jika environment tidak ada, tambahkan di akhir
+            echo -e "\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"" >> pubspec.yaml
+          else
+            # Jika environment ada, cek apakah sdk: sudah ada
+            if ! grep -q '^  sdk:' pubspec.yaml; then
+              # Tambahkan sdk: setelah baris environment:
+              sed -i '/^environment:/a \  sdk: ">=3.0.0 <4.0.0"' pubspec.yaml
+            else
+              # Ganti nilai sdk yang ada
+              sed -i 's/^  sdk:.*$/  sdk: ">=3.0.0 <4.0.0"/' pubspec.yaml
+            fi
+          fi
+          echo "✅ SDK constraint sekarang:"
+          grep -A1 '^environment:' pubspec.yaml
+
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
+          distribution: 'zulu'
+          java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.3"
-          channel: stable
+          flutter-version: '3.24.0'
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
+      - name: Write local.properties
+        run: |
+          FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
+          echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
+          echo "sdk.dir=$ANDROID_SDK_ROOT" >> android/local.properties
+
+      # ============================================================
+      # PERBAIKAN 3: flutter create dengan --project-name
+      # ============================================================
+      - name: Generate gradlew (with forced project name)
+        run: |
+          flutter create --platforms android --project-name termulscan .
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -- lib/main.dart || true
+          git add -f android/gradlew android/gradlew.bat android/gradle/wrapper/gradle-wrapper.jar
+          git diff --staged --quiet || git commit -m "ci: add gradlew [skip ci]"
+          git stash
+          git pull --rebase origin main
+          git stash pop || true
+          git push || true
+
+      - name: Fix Gradle permission
+        run: chmod +x android/gradlew
+
+      # ============================================================
+      # PERBAIKAN 4: Pastikan MainActivity.kt tidak tertimpa
+      # ============================================================
+      - name: Restore custom MainActivity.kt
+        run: |
+          TARGET="android/app/src/main/kotlin/com/termulscan/app/MainActivity.kt"
+          if [ -f "$TARGET" ]; then
+            echo "✅ $TARGET sudah ada, tidak diubah"
+          else
+            echo "⚠️ Membuat $TARGET default"
+            mkdir -p "$(dirname "$TARGET")"
+            cat > "$TARGET" << 'EOF'
+        package com.termulscan.app
+
+        import android.Manifest
+        import android.content.pm.PackageManager
+        import android.location.Location
+        import android.location.LocationListener
+        import android.location.LocationManager
+        import android.os.Bundle
+        import android.os.Handler
+        import android.os.Looper
+        import androidx.core.app.ActivityCompat
+        import androidx.core.content.ContextCompat
+        import io.flutter.embedding.android.FlutterActivity
+        import io.flutter.embedding.engine.FlutterEngine
+        import io.flutter.plugin.common.MethodChannel
+        import io.flutter.plugin.common.MethodChannel.Result
+
+        class MainActivity : FlutterActivity() {
+            private val CHANNEL = "com.termulscan.app/location"
+            private lateinit var locationManager: LocationManager
+
+            override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                super.configureFlutterEngine(flutterEngine)
+                locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+
+                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+                    .setMethodCallHandler { call, result ->
+                        if (call.method == "getLocation") {
+                            getCurrentLocation(result)
+                        } else {
+                            result.notImplemented()
+                        }
+                    }
+            }
+
+            private fun getCurrentLocation(result: Result) {
+                val hasFineLocation = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                val hasCoarseLocation = ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (!hasFineLocation && !hasCoarseLocation) {
+                    result.error("PERMISSION_DENIED", "Location permission not granted", null)
+                    return
+                }
+
+                var bestLocation: Location? = null
+                val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                bestLocation = gpsLast ?: netLast
+
+                if (bestLocation != null) {
+                    val map = mapOf(
+                        "lat" to bestLocation.latitude,
+                        "lng" to bestLocation.longitude,
+                        "accuracy" to bestLocation.accuracy
+                    )
+                    result.success(map)
+                    return
+                }
+
+                val providers = listOf(
+                    LocationManager.GPS_PROVIDER,
+                    LocationManager.NETWORK_PROVIDER,
+                    LocationManager.PASSIVE_PROVIDER
+                )
+                var requested = false
+                var resultSent = false
+
+                val locationListener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        if (!resultSent) {
+                            resultSent = true
+                            val map = mapOf(
+                                "lat" to location.latitude,
+                                "lng" to location.longitude,
+                                "accuracy" to location.accuracy
+                            )
+                            result.success(map)
+                        }
+                        providers.forEach { provider ->
+                            try { locationManager.removeUpdates(this) } catch (_: Exception) {}
+                        }
+                    }
+                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {}
+                }
+
+                for (provider in providers) {
+                    if (locationManager.isProviderEnabled(provider)) {
+                        try {
+                            locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
+                            requested = true
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                if (!requested) {
+                    result.error("NO_PROVIDER", "No location provider enabled", null)
+                    return
+                }
+
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (!resultSent) {
+                        resultSent = true
+                        result.success(mapOf(
+                            "lat" to null,
+                            "lng" to null,
+                            "accuracy" to null
+                        ))
+                        providers.forEach { provider ->
+                            try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+                        }
+                    }
+                }, 5000)
+            }
+        }
+        EOF
+          fi
+
+      - name: Add url_launcher queries to AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.intent.action.VIEW' "$MANIFEST"; then
+            sed -i 's|</manifest>|<queries>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="geo" />\n  </intent>\n  <intent>\n    <action android:name="android.intent.action.VIEW" />\n    <data android:scheme="https" />\n  </intent>\n</queries>\n</manifest>|' "$MANIFEST"
+          fi
+
+      - name: Generate launcher icons
+        run: |
+          pip install pillow -q
+          python3 -c "
+          from PIL import Image
+          import os
+          sizes = {
+            'mipmap-mdpi': 48,
+            'mipmap-hdpi': 72,
+            'mipmap-xhdpi': 96,
+            'mipmap-xxhdpi': 144,
+            'mipmap-xxxhdpi': 192
+          }
+          for folder, size in sizes.items():
+            path = f'android/app/src/main/res/{folder}'
+            os.makedirs(path, exist_ok=True)
+            img = Image.new('RGBA', (size, size), (0, 230, 118, 255))
+            img.save(f'{path}/ic_launcher.png')
+            img.save(f'{path}/ic_launcher_round.png')
+          print('Icons generated')
+          "
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze
-        continue-on-error: true
-
-      - name: Build release APK
+      - name: Build APK
         run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp build/app/outputs/flutter-apk/app-release.apk output/TERMULScan-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: termulscan-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: TERMULScan-apk
+          path: output/TERMULScan-release.apk
