@@ -267,14 +267,18 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen>
   }
 
   Future<void> _requestPermissions() async {
-    // Catatan: Permission.photos (READ_MEDIA_IMAGES di Android 13+) sengaja
-    // TIDAK diminta di sini — menulis foto baru ke galeri lewat MediaStore
-    // (image_gallery_saver_plus) tidak butuh izin baca galeri, jadi minta
-    // izin ini hanya menambah dialog yang tidak perlu bagi user.
+    // Sebelumnya Permission.photos (READ_MEDIA_IMAGES di Android 13+)
+    // sengaja TIDAK diminta di sini dengan asumsi menulis foto baru ke
+    // galeri lewat MediaStore tidak butuh izin baca galeri. Ternyata
+    // dokumentasi image_gallery_saver_plus sendiri secara eksplisit
+    // mensyaratkan izin storage/photos diminta manual lewat
+    // permission_handler — tanpa ini, saveFile() gagal dengan
+    // "Gagal menyimpan — cek permission" di banyak device/Android version.
     await [
       Permission.location,
       Permission.camera,
       Permission.storage,
+      Permission.photos,
     ].request();
   }
 
@@ -671,7 +675,14 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen>
   }
 
   /// ✅ FUNGSI SAVE TO GALLERY - menggunakan image_gallery_saver
+  /// Sebelumnya langsung panggil saveFile() tanpa mengecek izin sama sekali
+  /// — kalau _requestPermissions() di initState belum sempat granted (atau
+  /// user menolak dialognya), saveFile() gagal diam-diam dengan pesan generik
+  /// "cek permission" tanpa jalan keluar. Sekarang dicek & diminta ulang di
+  /// sini juga, dan kalau permanently denied diarahkan ke App Settings.
   Future<bool> _saveToGallery(String filePath, ScanEntry entry) async {
+    final granted = await _ensureGalleryPermission();
+    if (!granted) return false;
     try {
       final result = await ImageGallerySaverPlus.saveFile(filePath);
       
@@ -686,6 +697,32 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen>
       debugPrint('❌ Error _saveToGallery: $e');
       return false;
     }
+  }
+
+  /// Pastikan izin galeri (photos/storage) benar-benar granted sebelum
+  /// menulis. Kalau permanently denied, arahkan user ke App Settings lewat
+  /// snackbar — sebelumnya tidak ada jalan keluar selain pesan generik.
+  Future<bool> _ensureGalleryPermission() async {
+    var status = await Permission.photos.status;
+    if (status.isGranted || status.isLimited) return true;
+
+    status = await Permission.photos.request();
+    if (status.isGranted || status.isLimited) return true;
+
+    if (status.isPermanentlyDenied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'BUKA SETTING',
+            onPressed: openAppSettings,
+          ),
+        ),
+      );
+    }
+    return false;
   }
 
   // ── BUILD ────────────────────────────────────────────────────────────────

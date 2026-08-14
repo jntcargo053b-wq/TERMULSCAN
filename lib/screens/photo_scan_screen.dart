@@ -220,7 +220,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   }
 
   /// Ekspor foto yang sudah tersimpan (internal) ke galeri publik perangkat.
+  /// Sebelumnya layar ini tidak pernah meminta Permission.photos sama
+  /// sekali (cuma Permission.location) — saveFile() ke galeri jadi gagal
+  /// diam-diam di banyak device karena izinnya memang belum pernah diminta.
   Future<void> _saveToGallery(String filePath) async {
+    final granted = await _ensureGalleryPermission();
+    if (!granted) return;
     try {
       final result = await ImageGallerySaverPlus.saveFile(filePath);
       final success = result != null && result['isSuccess'] == true;
@@ -243,6 +248,31 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         ),
       );
     }
+  }
+
+  /// Pastikan izin galeri granted sebelum menulis; kalau permanently
+  /// denied, arahkan ke App Settings lewat snackbar dengan aksi langsung.
+  Future<bool> _ensureGalleryPermission() async {
+    var status = await Permission.photos.status;
+    if (status.isGranted || status.isLimited) return true;
+
+    status = await Permission.photos.request();
+    if (status.isGranted || status.isLimited) return true;
+
+    if (status.isPermanentlyDenied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'BUKA SETTING',
+            onPressed: openAppSettings,
+          ),
+        ),
+      );
+    }
+    return false;
   }
 
   void _showError(String msg) {
