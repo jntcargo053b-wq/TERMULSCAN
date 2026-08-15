@@ -190,9 +190,9 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
             onDetect: _handleScan,
           ),
           if (_isProcessing)
-            const Container(
+            Container(
               color: Colors.black54,
-              child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              child: const Center(child: CircularProgressIndicator(color: Colors.white)),
             ),
         ],
       ),
