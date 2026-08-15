@@ -23,7 +23,7 @@ class PhotoScanScreen extends StatefulWidget {
   State<PhotoScanScreen> createState() => _PhotoScanScreenState();
 }
 
-class _PhotoScanScreenState extends State<PhotoScanScreen> {
+class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingObserver {
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
@@ -33,26 +33,49 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   int _photoCount = 0;
   bool _locationGranted = false;
 
+  // Antrian burn watermark — dirantai lewat Future, BUKAN single Completer.
+  // Pola single-Completer sebelumnya cuma aman untuk 2 pemanggil bersamaan:
+  // kalau ada pemanggil ke-3 datang sebelum pemanggil ke-2 sempat memasang
+  // lock barunya, pemanggil ke-3 akan menimpa lock pemanggil ke-2 tanpa
+  // pernah menunggunya — akibatnya keduanya jalan bersamaan, persis yang
+  // mau dicegah. Pola chained-future ini menjamin urutan FIFO untuk berapa
+  // pun banyaknya pemanggil, dan sudah dipakai & terbukti benar di
+  // LocationService._geocodeChain untuk kasus yang sama persis.
+  Future<void> _burnQueue = Future.value();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkLocationPermission();
-    // Idempotent — aman dipanggil lagi walau sudah di-load dari HomeScreen.
     _wmSettings.load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Setelah kembali dari pengaturan, periksa ulang izin galeri
+    if (state == AppLifecycleState.resumed) {
+      _checkLocationPermission();
+    }
   }
 
   Future<void> _checkLocationPermission() async {
     final status = await Permission.location.status;
     if (!status.isGranted) {
       final result = await Permission.location.request();
-      setState(() => _locationGranted = result.isGranted);
+      if (mounted) setState(() => _locationGranted = result.isGranted);
     } else {
-      setState(() => _locationGranted = true);
+      if (mounted) setState(() => _locationGranted = true);
     }
   }
 
   Future<void> _takePhoto() async {
-    // Pastikan izin lokasi sudah diberikan
     if (!_locationGranted) {
       await _checkLocationPermission();
       if (!_locationGranted) {
@@ -72,13 +95,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       HapticFeedback.mediumImpact();
 
-      // Tampilkan preview hasil jepretan dulu — user bisa 'Ambil Ulang'
-      // sebelum foto benar-benar disimpan ke storage.
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
-        // Ambil ulang: hapus file sementara hasil jepretan yang dibatalkan,
-        // lalu buka kamera lagi.
         _deleteTempFile(xfile.path);
         await _takePhoto();
         return;
@@ -86,18 +105,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       setState(() => _isSaving = true);
 
-      // Simpan foto ke penyimpanan permanen — hanya rename file, tidak menunggu GPS
       final savedPath = await _storage.savePhoto(xfile.path);
       final capturedAt = DateTime.now();
-
-      // Simpan salinan mentah dulu sebelum watermark dibakar — dipakai
-      // untuk render ulang watermark begitu lokasi resolve di background,
-      // tanpa menumpuk watermark lama+baru.
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
-      // Bakar watermark tahap pertama: waktu, operator, logo. Lokasi belum
-      // tersedia (masih dicari di background) — ditandai placeholder dulu,
-      // nanti di-render ulang begitu koordinat/alamat ketemu.
+      // Burn awal dengan placeholder lokasi
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
@@ -123,20 +135,17 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       if (mounted) _showSuccess(entry);
 
-      // GPS & reverse geocoding sepenuhnya di background — tidak menghalangi capture berikutnya
-      // ignore: unawaited_futures
-      _resolveLocationInBackground(entry.id);
+      // Proses lokasi di background
+      unawaited(_resolveLocationInBackground(entry.id));
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal ambil foto: $e');
     }
   }
 
-  /// Ambil koordinat & alamat setelah entry sudah tersimpan, lalu update entry.
-  /// Dijalankan tanpa di-await dari alur capture supaya UI tidak menunggu GPS.
   Future<void> _resolveLocationInBackground(String entryId) async {
+    // 1. Ambil koordinat
     final coords = await _loc.getCoordinatesOnly();
-
     if (coords.lat == null || coords.lng == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -150,52 +159,83 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       return;
     }
 
+    // Update entry dengan koordinat (tanpa re-burn dulu)
     final saved = await _storage.getEntry(entryId);
-    if (saved != null) {
-      final updated = saved.copyWith(latitude: coords.lat, longitude: coords.lng);
-      await _storage.update(updated);
-      // Render ulang watermark dari salinan mentah dengan koordinat yang
-      // baru ketemu (alamat menyusul di bawah kalau reverse-geocode sukses).
-      await _burnWatermark(
-        sourcePath: _storage.rawPathFor(updated.value),
-        destPath: updated.value,
-        timestamp: updated.timestamp,
-        locationText: updated.coordinatesString,
+    if (saved == null) return;
+    final updatedWithCoords = saved.copyWith(
+      latitude: coords.lat,
+      longitude: coords.lng,
+    );
+    await _storage.update(updatedWithCoords);
+
+    // 2. Coba reverse geocoding dengan timeout (10 detik)
+    String finalLocationText;
+    try {
+      final address = await _loc.reverseGeocode(coords.lat!, coords.lng!).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => null,
       );
-      await FileImage(File(updated.value)).evict();
+      if (address != null && address.isNotEmpty) {
+        finalLocationText = address;
+        // Update entry dengan nama lokasi
+        final current = await _storage.getEntry(entryId);
+        if (current != null) {
+          final updatedWithAddress = current.copyWith(locationName: address);
+          await _storage.update(updatedWithAddress);
+        }
+        // Tampilkan snackbar sukses
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📍 Lokasi terdeteksi: $address'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
+      } else {
+        // Gagal reverse geocode, gunakan koordinat mentah
+        finalLocationText = updatedWithCoords.coordinatesString;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Gagal mengambil alamat, gunakan koordinat'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Error reverse geocode, gunakan koordinat
+      finalLocationText = updatedWithCoords.coordinatesString;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Gagal mengambil alamat: $e'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
     }
 
-    await _loc.updateAddressForEntry(
-      entryId: entryId,
-      lat: coords.lat!,
-      lng: coords.lng!,
-      accuracy: coords.accuracy,
-      onAddressReceived: (id, address) async {
-        final currentEntry = await _storage.getEntry(id);
-        if (currentEntry != null) {
-          final updated = currentEntry.copyWith(locationName: address);
-          await _storage.update(updated);
-          // Render ulang lagi begitu alamat human-readable ketemu, supaya
-          // watermark tampil alamat, bukan cuma koordinat mentah.
-          await _burnWatermark(
-            sourcePath: _storage.rawPathFor(updated.value),
-            destPath: updated.value,
-            timestamp: updated.timestamp,
-            locationText: address,
-          );
-          await FileImage(File(updated.value)).evict();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('📍 Lokasi terdeteksi: $address'),
-                duration: const Duration(seconds: 2),
-                backgroundColor: Colors.green.shade700,
-              ),
-            );
-          }
-        }
-      },
-    );
+    // 3. Re-burn watermark dengan lokasi final (hanya sekali)
+    final currentEntry = await _storage.getEntry(entryId);
+    if (currentEntry == null) return;
+    try {
+      await _burnWatermark(
+        sourcePath: _storage.rawPathFor(currentEntry.value),
+        destPath: currentEntry.value,
+        timestamp: currentEntry.timestamp,
+        locationText: finalLocationText,
+      );
+      // Hapus cache gambar agar tampilan terbaru
+      await FileImage(File(currentEntry.value)).evict();
+    } catch (_) {
+      // Sudah ditangani (snackbar) di dalam _burnWatermark — foto tetap
+      // ada dengan watermark placeholder, tidak perlu ditangani ulang di sini.
+    }
   }
 
   Future<void> _pickFromGallery() async {
@@ -218,7 +258,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
-        // Pilih ulang: buka galeri lagi, file asal di galeri tidak disentuh.
         await _pickFromGallery();
         return;
       }
@@ -227,7 +266,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
       final savedPath = await _storage.savePhoto(xfile.path);
       final capturedAt = DateTime.now();
-
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
       await _burnWatermark(
@@ -254,46 +292,77 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       });
 
       if (mounted) _showSuccess(entry);
-
-      // GPS & reverse geocoding di background — tidak menghalangi UI
-      // ignore: unawaited_futures
-      _resolveLocationInBackground(entry.id);
+      unawaited(_resolveLocationInBackground(entry.id));
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal memilih foto: $e');
     }
   }
 
-  /// Susun baris teks watermark dari data yang tersedia lalu bakar ke foto.
-  /// Dipakai dua kali per foto: sekali langsung setelah capture (tanpa
-  /// lokasi), sekali lagi begitu GPS/alamat resolve di background.
+  /// Membakar watermark, diserialisasi lewat [_burnQueue] supaya burn untuk
+  /// beberapa foto tidak menembak banyak isolate compute() bersamaan.
+  /// Setiap panggilan menunggu giliran lewat rantai Future FIFO, lalu
+  /// mengembalikan Future terpisah yang resolve/error sesuai hasil burn
+  /// PANGGILAN INI SAJA — kegagalan satu burn tidak menghentikan antrian
+  /// burn lain yang menunggu di belakangnya (persis pola _geocodeChain di
+  /// LocationService).
   Future<void> _burnWatermark({
     required String sourcePath,
     required String destPath,
     required DateTime timestamp,
     required String locationText,
-  }) async {
-    try {
-      Uint8List? logoBytes;
-      if (_wmSettings.hasLogo) {
-        logoBytes = await File(_wmSettings.logoPath!).readAsBytes();
+  }) {
+    final completer = Completer<void>();
+    _burnQueue = _burnQueue.then((_) async {
+      try {
+        // Cek apakah source tersedia.
+        if (!File(sourcePath).existsSync()) {
+          // JANGAN fallback ke file publik yang sudah ber-watermark —
+          // membakar watermark baru di atas watermark lama akan
+          // menumpuk bar/teks (persis masalah yang raw-copy dibuat untuk
+          // dihindari, lihat StorageService.rawPathFor). Lebih aman gagal
+          // jelas di sini; foto tetap ada dengan watermark placeholder.
+          throw Exception(
+              'File sumber watermark tidak ditemukan: $sourcePath (raw copy hilang)');
+        }
+
+        Uint8List? logoBytes;
+        if (_wmSettings.hasLogo) {
+          final logoFile = File(_wmSettings.logoPath!);
+          if (await logoFile.exists()) {
+            logoBytes = await logoFile.readAsBytes();
+          }
+        }
+        await WatermarkService.burn(
+          sourcePath: sourcePath,
+          destPath: destPath,
+          lines: [
+            DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
+            locationText,
+            if (_wmSettings.operatorName.isNotEmpty)
+              'Operator: ${_wmSettings.operatorName}',
+          ],
+          logoBytes: logoBytes,
+        );
+        if (!completer.isCompleted) completer.complete();
+      } catch (e, st) {
+        debugPrint('Watermark error: $e\n$st');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppTheme.error,
+              duration: const Duration(seconds: 3),
+              content: Text('⚠️ Gagal menandai watermark: $e'),
+            ),
+          );
+        }
+        if (!completer.isCompleted) completer.completeError(e, st);
       }
-      await WatermarkService.burn(
-        sourcePath: sourcePath,
-        destPath: destPath,
-        lines: [
-          DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
-          locationText,
-          if (_wmSettings.operatorName.isNotEmpty)
-            'Operator: ${_wmSettings.operatorName}',
-        ],
-        logoBytes: logoBytes,
-      );
-    } catch (e) {
-      // Watermark gagal bukan alasan untuk gagalkan penyimpanan foto —
-      // foto tanpa watermark tetap lebih baik daripada foto hilang.
-      debugPrint('Watermark error: $e');
-    }
+      // Selalu resolve normal di sini (error sudah disalurkan lewat
+      // `completer` di atas) supaya antrian tetap lanjut memproses burn
+      // berikutnya walau burn ini gagal.
+    });
+    return completer.future;
   }
 
   void _showSuccess(ScanEntry entry) {
@@ -323,10 +392,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     );
   }
 
-  /// Ekspor foto yang sudah tersimpan (internal) ke galeri publik perangkat.
-  /// Sebelumnya layar ini tidak pernah meminta Permission.photos sama
-  /// sekali (cuma Permission.location) — saveFile() ke galeri jadi gagal
-  /// diam-diam di banyak device karena izinnya memang belum pernah diminta.
   Future<void> _saveToGallery(String filePath) async {
     final granted = await _ensureGalleryPermission();
     if (!granted) return;
@@ -359,8 +424,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     }
   }
 
-  /// Pastikan izin galeri granted sebelum menulis; kalau permanently
-  /// denied, arahkan ke App Settings lewat snackbar dengan aksi langsung.
   Future<bool> _ensureGalleryPermission() async {
     var status = await Permission.photos.status;
     if (status.isGranted || status.isLimited) return true;
@@ -371,8 +434,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     if (status.isPermanentlyDenied && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-              'Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
+          content: const Text('Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
           duration: const Duration(seconds: 4),
           action: SnackBarAction(
             label: 'BUKA SETTING',
@@ -384,9 +446,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     return false;
   }
 
-  /// Tampilkan foto hasil jepretan/pilihan full-screen dan minta konfirmasi
-  /// user sebelum benar-benar disimpan ke storage & entry list.
-  /// Return true kalau user pilih 'Gunakan Foto', false kalau 'Ambil Ulang'.
   Future<bool> _showPreviewAndConfirm(String path) async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -397,21 +456,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     return result ?? false;
   }
 
-  /// Bersihkan file sementara di cache picker saat user memilih ambil ulang,
-  /// supaya tidak menumpuk sampah di cache directory.
   void _deleteTempFile(String path) {
     try {
       final f = File(path);
       if (f.existsSync()) f.deleteSync();
     } catch (_) {
-      // Abaikan — bukan fatal, cache OS akan dibersihkan sendiri nanti.
+      // Abaikan
     }
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: AppTheme.error, content: Text(msg)),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: AppTheme.error, content: Text(msg)),
+      );
+    }
   }
 
   @override
@@ -442,14 +501,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                     width: 2,
                   ),
                 ),
-                child: const Icon(Icons.camera_alt,
-                    size: 52, color: AppTheme.accentOrange),
+                child: const Icon(Icons.camera_alt, size: 52, color: AppTheme.accentOrange),
               ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
               const Gap(24),
               Text(
-                _photoCount == 0
-                    ? 'Siap Ambil Foto'
-                    : '$_photoCount foto tersimpan',
+                _photoCount == 0 ? 'Siap Ambil Foto' : '$_photoCount foto tersimpan',
                 style: Theme.of(context).textTheme.titleLarge,
               ).animate().fadeIn(delay: 100.ms),
               const Gap(8),
@@ -475,8 +531,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                     backgroundColor: AppTheme.accentOrange,
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 18),
-                    textStyle: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 15),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                 ),
               ).animate().fadeIn(delay: 250.ms),
@@ -489,8 +544,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                   label: const Text('Pilih dari Galeri'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.accentOrange,
-                    side: BorderSide(
-                        color: AppTheme.accentOrange.withOpacity(0.6)),
+                    side: BorderSide(color: AppTheme.accentOrange.withOpacity(0.6)),
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     textStyle: const TextStyle(fontWeight: FontWeight.w600),
                   ),
@@ -498,8 +552,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
               ).animate().fadeIn(delay: 300.ms),
               const Gap(32),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: AppTheme.surface,
                   borderRadius: BorderRadius.circular(10),
@@ -507,14 +560,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.info_outline,
-                        size: 16, color: AppTheme.accentBlue),
+                    Icon(Icons.info_outline, size: 16, color: AppTheme.accentBlue),
                     Gap(10),
                     Expanded(
                       child: Text(
                         'Setiap foto otomatis dicatat: waktu, koordinat GPS, & nama lokasi',
-                        style: TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 12),
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                       ),
                     ),
                   ],
@@ -528,9 +579,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   }
 }
 
-/// Layar preview full-screen sebelum foto di-commit ke storage.
-/// Muncul setelah shutter native camera / pemilihan galeri, supaya user
-/// bisa cek hasilnya dulu dan pilih 'Ambil Ulang' kalau kurang pas.
 class _PhotoPreviewScreen extends StatelessWidget {
   final String imagePath;
 
@@ -560,8 +608,7 @@ class _PhotoPreviewScreen extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).pop(false),
                       icon: const Icon(Icons.replay, color: Colors.white),
-                      label: const Text('Ambil Ulang',
-                          style: TextStyle(color: Colors.white)),
+                      label: const Text('Ambil Ulang', style: TextStyle(color: Colors.white)),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.white54),
                         padding: const EdgeInsets.symmetric(vertical: 16),
