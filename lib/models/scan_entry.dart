@@ -1,35 +1,72 @@
 import 'dart:convert';
+import 'package:intl/intl.dart';
+
+enum ScanType { barcode, photo }
 
 class ScanEntry {
   final String id;
-  final String barcodeValue;
-  final String barcodeType;
+  final ScanType type;
+
+  /// Nilai utama entry: isi barcode untuk [ScanType.barcode],
+  /// path file foto untuk [ScanType.photo].
+  final String value;
+
+  /// Format/tipe barcode (mis. "qrCode", "ean13"). Null untuk foto.
+  final String? barcodeFormat;
+
   final DateTime timestamp;
   final double? latitude;
   final double? longitude;
-  final String? address;
+
+  /// Nama lokasi hasil reverse-geocoding (alamat).
+  final String? locationName;
+
+  /// Foto konteks opsional yang menyertai sebuah scan barcode.
   final String? imagePath;
 
   ScanEntry({
     required this.id,
-    required this.barcodeValue,
-    required this.barcodeType,
+    ScanType? type,
+    String? value,
+    String? barcodeValue,
+    String? barcodeFormat,
+    String? barcodeType,
     required this.timestamp,
     this.latitude,
     this.longitude,
-    this.address,
+    String? locationName,
+    String? address,
     this.imagePath,
-  });
+  })  : type = type ?? (barcodeValue != null ? ScanType.barcode : ScanType.photo),
+        value = value ?? barcodeValue ?? '',
+        barcodeFormat = barcodeFormat ?? barcodeType,
+        locationName = locationName ?? address;
+
+  // ── Alias getters untuk kompatibilitas API lama ──────────────────────────
+  bool get isBarcode => type == ScanType.barcode;
+  bool get isPhoto => type == ScanType.photo;
+
+  String get barcodeValue => value;
+  String get barcodeType => barcodeFormat ?? '';
+  String? get address => locationName;
+
+  String get coordinatesString {
+    if (latitude == null || longitude == null) return 'Lokasi tidak tersedia';
+    return '${latitude!.toStringAsFixed(5)}, ${longitude!.toStringAsFixed(5)}';
+  }
+
+  String get timestampShort => DateFormat('dd/MM HH:mm').format(timestamp);
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'barcodeValue': barcodeValue,
-      'barcodeType': barcodeType,
+      'type': type.name,
+      'value': value,
+      'barcodeFormat': barcodeFormat,
       'timestamp': timestamp.toIso8601String(),
       'latitude': latitude,
       'longitude': longitude,
-      'address': address,
+      'locationName': locationName,
       'imagePath': imagePath,
     };
   }
@@ -37,12 +74,16 @@ class ScanEntry {
   factory ScanEntry.fromMap(Map<String, dynamic> map) {
     return ScanEntry(
       id: map['id'] ?? '',
-      barcodeValue: map['barcodeValue'] ?? '',
-      barcodeType: map['barcodeType'] ?? '',
-      timestamp: DateTime.parse(map['timestamp']),
-      latitude: map['latitude']?.toDouble(),
-      longitude: map['longitude']?.toDouble(),
-      address: map['address'],
+      type: ScanType.values.firstWhere(
+        (t) => t.name == map['type'],
+        orElse: () => ScanType.barcode,
+      ),
+      value: map['value'] ?? '',
+      barcodeFormat: map['barcodeFormat'],
+      timestamp: DateTime.tryParse(map['timestamp'] ?? '') ?? DateTime.now(),
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
+      locationName: map['locationName'],
       imagePath: map['imagePath'],
     );
   }
@@ -53,22 +94,24 @@ class ScanEntry {
 
   ScanEntry copyWith({
     String? id,
-    String? barcodeValue,
-    String? barcodeType,
+    ScanType? type,
+    String? value,
+    String? barcodeFormat,
     DateTime? timestamp,
     double? latitude,
     double? longitude,
-    String? address,
+    String? locationName,
     String? imagePath,
   }) {
     return ScanEntry(
       id: id ?? this.id,
-      barcodeValue: barcodeValue ?? this.barcodeValue,
-      barcodeType: barcodeType ?? this.barcodeType,
+      type: type ?? this.type,
+      value: value ?? this.value,
+      barcodeFormat: barcodeFormat ?? this.barcodeFormat,
       timestamp: timestamp ?? this.timestamp,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
-      address: address ?? this.address,
+      locationName: locationName ?? this.locationName,
       imagePath: imagePath ?? this.imagePath,
     );
   }

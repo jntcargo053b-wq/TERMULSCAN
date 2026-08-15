@@ -23,7 +23,7 @@ if (flutterVersionName == null) {
 }
 
 android {
-    namespace "com.example.termulscan"
+    namespace "com.termulscan.app"
     compileSdk 35
     ndkVersion flutter.ndkVersion
 
@@ -41,7 +41,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.termulscan"
+        applicationId "com.termulscan.app"
         minSdk 21
         targetSdk 35
         versionCode flutterVersionCode.toInteger()

@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/scan_entry.dart';
 
@@ -44,39 +46,61 @@ class StorageService {
 
   final List<ScanEntry> _entries = [];
   final LRUCache _geoCache = LRUCache(capacity: 100);
-  
+
   Timer? _saveDebounceTimer;
   bool _isSaving = false;
+  bool _initialized = false;
+  int _idCounter = 0;
 
   List<ScanEntry> get entries => List.unmodifiable(_entries);
 
+  /// Memuat data tersimpan dari disk. Dipanggil sekali di main() sebelum
+  /// runApp(), sehingga saat layar pertama tampil, riwayat scan sudah siap.
   Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString('scan_entries');
     if (data != null) {
-      final List<dynamic> jsonList = json.decode(data);
-      _entries.clear();
-      _entries.addAll(jsonList.map((e) => ScanEntry.fromJson(e)).toList());
+      try {
+        final List<dynamic> jsonList = json.decode(data);
+        _entries.clear();
+        _entries.addAll(jsonList.map((e) => ScanEntry.fromJson(e)).toList());
+      } catch (_) {
+        // Data korup — mulai dari kosong daripada crash saat startup.
+      }
     }
   }
 
-  // Method untuk load data secara eksplisit jika diperlukan
   Future<List<ScanEntry>> loadAll() async {
-    return _entries;
+    if (!_initialized) await init();
+    return entries;
   }
 
-  Future<void> addEntry(ScanEntry entry) async {
+  Future<void> add(ScanEntry entry) async {
     _entries.insert(0, entry);
     _triggerSave();
   }
 
-  Future<void> updateEntry(ScanEntry entry) async {
+  Future<void> addEntry(ScanEntry entry) => add(entry);
+
+  Future<ScanEntry?> getEntry(String id) async {
+    try {
+      return _entries.firstWhere((e) => e.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> update(ScanEntry entry) async {
     final index = _entries.indexWhere((e) => e.id == entry.id);
     if (index != -1) {
       _entries[index] = entry;
       _triggerSave();
     }
   }
+
+  Future<void> updateEntry(ScanEntry entry) => update(entry);
 
   Future<void> deleteEntry(String id) async {
     _entries.removeWhere((e) => e.id == id);
@@ -87,6 +111,28 @@ class StorageService {
     _entries.clear();
     _geoCache.clear();
     _persist(); // Immediate save on clear
+  }
+
+  /// ID unik berbasis timestamp + counter, aman dipanggil berkali-kali
+  /// dalam milidetik yang sama (mis. capture foto beruntun).
+  String generateId() {
+    _idCounter = (_idCounter + 1) % 1000000;
+    return '${DateTime.now().millisecondsSinceEpoch}_$_idCounter';
+  }
+
+  /// Menyalin foto dari lokasi sementara (hasil kamera/galeri) ke direktori
+  /// permanen aplikasi supaya tidak hilang saat cache dibersihkan OS.
+  Future<String> savePhoto(String sourcePath) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final photosDir = Directory('${dir.path}/photos');
+    if (!await photosDir.exists()) {
+      await photosDir.create(recursive: true);
+    }
+    final ext = sourcePath.contains('.') ? sourcePath.split('.').last : 'jpg';
+    final fileName = 'photo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final destPath = '${photosDir.path}/$fileName';
+    await File(sourcePath).copy(destPath);
+    return destPath;
   }
 
   // Debounced save mechanism (Wait 500ms after last change)
@@ -115,6 +161,7 @@ class StorageService {
       final jsonString = json.encode(_entries.map((e) => e.toJson()).toList());
       await prefs.setString('scan_entries', jsonString);
     } catch (e) {
+      // ignore: avoid_print
       print("Error saving to preferences: $e");
     } finally {
       _isSaving = false;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
@@ -31,6 +32,9 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
+      // Wajib true supaya BarcodeCapture.image terisi — mobile_scanner 3.x
+      // tidak punya method takePhoto(), gambar hanya didapat lewat sini.
+      returnImage: true,
     );
   }
 
@@ -86,10 +90,11 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         imagePath: null,
       );
 
-      // 3. Capture Image
+      // 3. Capture Image (didapat dari BarcodeCapture.image, bukan API
+      // takePhoto() yang tidak ada di mobile_scanner versi ini)
       File? imageFile;
       try {
-        imageFile = await _captureImage();
+        imageFile = await _saveCapturedImage(capture.image);
         
         // Update entry with image path if capture success
         if (imageFile != null) {
@@ -139,19 +144,16 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     }
   }
 
-  Future<File?> _captureImage() async {
-    if (_controller == null) return null;
+  Future<File?> _saveCapturedImage(Uint8List? bytes) async {
+    if (bytes == null) return null;
     try {
-      final capture = await _controller!.takePhoto();
-      if (capture == null) return null;
-
       final dir = await getApplicationDocumentsDirectory();
       final fileName = 'scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final filePath = '${dir.path}/$fileName';
-      
+
       File imageFile = File(filePath);
-      await imageFile.writeAsBytes(capture.bytes);
-      
+      await imageFile.writeAsBytes(bytes);
+
       return imageFile;
     } catch (e) {
       debugPrint("Capture error: $e");

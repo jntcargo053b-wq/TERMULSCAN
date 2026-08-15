@@ -6,6 +6,9 @@ import 'services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Tanpa ini, riwayat scan yang tersimpan tidak pernah dimuat balik dari
+  // disk — StorageService akan selalu tampak kosong setiap app dibuka ulang.
+  await StorageService().init();
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
