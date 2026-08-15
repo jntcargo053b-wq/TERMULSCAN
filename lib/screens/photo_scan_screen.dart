@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
+import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -227,16 +227,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     final granted = await _ensureGalleryPermission();
     if (!granted) return;
     try {
-      final result = await ImageGallerySaverPlus.saveFile(filePath);
-      final success = result != null && result['isSuccess'] == true;
+      await Gal.putImage(filePath, album: 'TermulScan');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: success ? Colors.green.shade700 : AppTheme.error,
+          backgroundColor: Colors.green.shade700,
           duration: const Duration(seconds: 2),
-          content: Text(success
-              ? '✓ Foto tersimpan ke galeri'
-              : 'Gagal menyimpan ke galeri — cek permission'),
+          content: const Text('✓ Foto tersimpan ke galeri'),
+        ),
+      );
+    } on GalException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.error,
+          content: Text('Gagal menyimpan ke galeri: ${e.type.message}'),
         ),
       );
     } catch (e) {

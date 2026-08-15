@@ -22,7 +22,7 @@ dependencies:
   flutter_animate: ^4.5.0
   gap: ^3.0.1
   image_picker: ^1.1.2
-  image_gallery_saver_plus: ^3.0.3
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:
