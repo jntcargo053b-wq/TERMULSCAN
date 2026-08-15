@@ -135,6 +135,24 @@ class StorageService {
     return destPath;
   }
 
+  /// Path file "mentah" (sebelum watermark dibakar) untuk sebuah foto
+  /// publik. Watermark perlu di-render ulang kalau GPS/alamat baru resolve
+  /// belakangan (async, setelah foto sudah tersimpan) — kalau langsung
+  /// dibakar ulang di atas file publik yang sudah ada watermark-nya, hasil
+  /// akan menumpuk (watermark lama + baru bertabrakan). Jadi salinan
+  /// mentah ini dijaga terpisah sebagai sumber render ulang.
+  String rawPathFor(String publicPath) {
+    final dotIndex = publicPath.lastIndexOf('.');
+    if (dotIndex == -1) return '${publicPath}_raw';
+    return '${publicPath.substring(0, dotIndex)}_raw${publicPath.substring(dotIndex)}';
+  }
+
+  /// Simpan salinan mentah foto berdampingan dengan file publik memakai
+  /// penamaan dari [rawPathFor], sebelum watermark pertama dibakar.
+  Future<void> savePhotoRawCopy(String sourcePath, String publicPath) async {
+    await File(sourcePath).copy(rawPathFor(publicPath));
+  }
+
   // Debounced save mechanism (Wait 500ms after last change)
   void _triggerSave() {
     if (_saveDebounceTimer != null) {

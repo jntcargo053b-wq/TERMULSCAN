@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
+import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/scan_entry.dart';
 import '../services/location_service.dart';
 import '../services/storage_service.dart';
+import '../services/watermark_service.dart';
 import '../theme/app_theme.dart';
+import 'watermark_settings.dart';
 
 class PhotoScanScreen extends StatefulWidget {
   const PhotoScanScreen({super.key});
@@ -23,6 +27,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
+  final _wmSettings = WatermarkSettings();
 
   bool _isSaving = false;
   int _photoCount = 0;
@@ -32,6 +37,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   void initState() {
     super.initState();
     _checkLocationPermission();
+    // Idempotent — aman dipanggil lagi walau sudah di-load dari HomeScreen.
+    _wmSettings.load();
   }
 
   Future<void> _checkLocationPermission() async {
@@ -63,17 +70,46 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       );
       if (xfile == null) return;
 
-      setState(() => _isSaving = true);
       HapticFeedback.mediumImpact();
+
+      // Tampilkan preview hasil jepretan dulu — user bisa 'Ambil Ulang'
+      // sebelum foto benar-benar disimpan ke storage.
+      final confirmed = await _showPreviewAndConfirm(xfile.path);
+      if (!mounted) return;
+      if (!confirmed) {
+        // Ambil ulang: hapus file sementara hasil jepretan yang dibatalkan,
+        // lalu buka kamera lagi.
+        _deleteTempFile(xfile.path);
+        await _takePhoto();
+        return;
+      }
+
+      setState(() => _isSaving = true);
 
       // Simpan foto ke penyimpanan permanen — hanya rename file, tidak menunggu GPS
       final savedPath = await _storage.savePhoto(xfile.path);
+      final capturedAt = DateTime.now();
+
+      // Simpan salinan mentah dulu sebelum watermark dibakar — dipakai
+      // untuk render ulang watermark begitu lokasi resolve di background,
+      // tanpa menumpuk watermark lama+baru.
+      await _storage.savePhotoRawCopy(xfile.path, savedPath);
+
+      // Bakar watermark tahap pertama: waktu, operator, logo. Lokasi belum
+      // tersedia (masih dicari di background) — ditandai placeholder dulu,
+      // nanti di-render ulang begitu koordinat/alamat ketemu.
+      await _burnWatermark(
+        sourcePath: savedPath,
+        destPath: savedPath,
+        timestamp: capturedAt,
+        locationText: 'Mencari lokasi...',
+      );
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
-        timestamp: DateTime.now(),
+        timestamp: capturedAt,
         latitude: null,
         longitude: null,
         locationName: null,
@@ -116,8 +152,17 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
 
     final saved = await _storage.getEntry(entryId);
     if (saved != null) {
-      await _storage.update(
-          saved.copyWith(latitude: coords.lat, longitude: coords.lng));
+      final updated = saved.copyWith(latitude: coords.lat, longitude: coords.lng);
+      await _storage.update(updated);
+      // Render ulang watermark dari salinan mentah dengan koordinat yang
+      // baru ketemu (alamat menyusul di bawah kalau reverse-geocode sukses).
+      await _burnWatermark(
+        sourcePath: _storage.rawPathFor(updated.value),
+        destPath: updated.value,
+        timestamp: updated.timestamp,
+        locationText: updated.coordinatesString,
+      );
+      await FileImage(File(updated.value)).evict();
     }
 
     await _loc.updateAddressForEntry(
@@ -130,6 +175,15 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         if (currentEntry != null) {
           final updated = currentEntry.copyWith(locationName: address);
           await _storage.update(updated);
+          // Render ulang lagi begitu alamat human-readable ketemu, supaya
+          // watermark tampil alamat, bukan cuma koordinat mentah.
+          await _burnWatermark(
+            sourcePath: _storage.rawPathFor(updated.value),
+            destPath: updated.value,
+            timestamp: updated.timestamp,
+            locationText: address,
+          );
+          await FileImage(File(updated.value)).evict();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -161,15 +215,33 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       );
       if (xfile == null) return;
 
+      final confirmed = await _showPreviewAndConfirm(xfile.path);
+      if (!mounted) return;
+      if (!confirmed) {
+        // Pilih ulang: buka galeri lagi, file asal di galeri tidak disentuh.
+        await _pickFromGallery();
+        return;
+      }
+
       setState(() => _isSaving = true);
 
       final savedPath = await _storage.savePhoto(xfile.path);
+      final capturedAt = DateTime.now();
+
+      await _storage.savePhotoRawCopy(xfile.path, savedPath);
+
+      await _burnWatermark(
+        sourcePath: savedPath,
+        destPath: savedPath,
+        timestamp: capturedAt,
+        locationText: 'Mencari lokasi...',
+      );
 
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
         value: savedPath,
-        timestamp: DateTime.now(),
+        timestamp: capturedAt,
         latitude: null,
         longitude: null,
         locationName: null,
@@ -189,6 +261,38 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal memilih foto: $e');
+    }
+  }
+
+  /// Susun baris teks watermark dari data yang tersedia lalu bakar ke foto.
+  /// Dipakai dua kali per foto: sekali langsung setelah capture (tanpa
+  /// lokasi), sekali lagi begitu GPS/alamat resolve di background.
+  Future<void> _burnWatermark({
+    required String sourcePath,
+    required String destPath,
+    required DateTime timestamp,
+    required String locationText,
+  }) async {
+    try {
+      Uint8List? logoBytes;
+      if (_wmSettings.hasLogo) {
+        logoBytes = await File(_wmSettings.logoPath!).readAsBytes();
+      }
+      await WatermarkService.burn(
+        sourcePath: sourcePath,
+        destPath: destPath,
+        lines: [
+          DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
+          locationText,
+          if (_wmSettings.operatorName.isNotEmpty)
+            'Operator: ${_wmSettings.operatorName}',
+        ],
+        logoBytes: logoBytes,
+      );
+    } catch (e) {
+      // Watermark gagal bukan alasan untuk gagalkan penyimpanan foto —
+      // foto tanpa watermark tetap lebih baik daripada foto hilang.
+      debugPrint('Watermark error: $e');
     }
   }
 
@@ -278,6 +382,30 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       );
     }
     return false;
+  }
+
+  /// Tampilkan foto hasil jepretan/pilihan full-screen dan minta konfirmasi
+  /// user sebelum benar-benar disimpan ke storage & entry list.
+  /// Return true kalau user pilih 'Gunakan Foto', false kalau 'Ambil Ulang'.
+  Future<bool> _showPreviewAndConfirm(String path) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _PhotoPreviewScreen(imagePath: path),
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// Bersihkan file sementara di cache picker saat user memilih ambil ulang,
+  /// supaya tidak menumpuk sampah di cache directory.
+  void _deleteTempFile(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {
+      // Abaikan — bukan fatal, cache OS akan dibersihkan sendiri nanti.
+    }
   }
 
   void _showError(String msg) {
@@ -394,6 +522,70 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
               ).animate().fadeIn(delay: 350.ms),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Layar preview full-screen sebelum foto di-commit ke storage.
+/// Muncul setelah shutter native camera / pemilihan galeri, supaya user
+/// bisa cek hasilnya dulu dan pilih 'Ambil Ulang' kalau kurang pas.
+class _PhotoPreviewScreen extends StatelessWidget {
+  final String imagePath;
+
+  const _PhotoPreviewScreen({required this.imagePath});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: Image.file(File(imagePath), fit: BoxFit.contain),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      icon: const Icon(Icons.replay, color: Colors.white),
+                      label: const Text('Ambil Ulang',
+                          style: TextStyle(color: Colors.white)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white54),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                  const Gap(12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      icon: const Icon(Icons.check, color: Colors.black),
+                      label: const Text('Gunakan Foto'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.accentOrange,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
 import '../services/location_service.dart';
+import '../services/watermark_service.dart';
+import 'watermark_settings.dart';
 
 class BarcodeScanScreen extends StatefulWidget {
   const BarcodeScanScreen({Key? key}) : super(key: key);
@@ -20,12 +22,16 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   bool _isProcessing = false;
   final _storage = StorageService();
   final _locationService = LocationService();
+  final _wmSettings = WatermarkSettings();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initCamera();
+    // Idempotent — kalau sudah pernah di-load dari HomeScreen, ini cuma
+    // baca ulang dari SharedPreferences, aman dipanggil lagi.
+    _wmSettings.load();
   }
 
   void _initCamera() {
@@ -98,8 +104,38 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         
         // Update entry with image path if capture success
         if (imageFile != null) {
-          // TODO: Integrasikan watermark processing di sini jika diperlukan
-          // Untuk sekarang simpan gambar asli dulu agar save tidak gagal
+          // Bakar watermark (barcode value, waktu, lokasi, operator, logo)
+          // langsung ke file foto sebelum disimpan sebagai entry. Lokasi
+          // sudah tersedia dari langkah 1 di atas (di-await sebelum foto
+          // diambil), jadi cukup satu kali proses — tidak perlu render
+          // ulang belakangan seperti di alur Ambil Foto.
+          try {
+            Uint8List? logoBytes;
+            if (_wmSettings.hasLogo) {
+              logoBytes = await File(_wmSettings.logoPath!).readAsBytes();
+            }
+            final coordsText = (location?.lat != null && location?.lng != null)
+                ? '${location!.lat!.toStringAsFixed(5)}, ${location!.lng!.toStringAsFixed(5)}'
+                : null;
+            await WatermarkService.burn(
+              sourcePath: imageFile.path,
+              destPath: imageFile.path,
+              lines: [
+                barcode.rawValue!,
+                DateFormat('dd/MM/yyyy HH:mm:ss').format(entry.timestamp),
+                location?.address ?? coordsText ?? 'Lokasi tidak tersedia',
+                if (_wmSettings.operatorName.isNotEmpty)
+                  'Operator: ${_wmSettings.operatorName}',
+              ],
+              logoBytes: logoBytes,
+            );
+          } catch (e) {
+            // Watermark gagal bukan alasan untuk gagalkan seluruh proses
+            // scan — foto tanpa watermark tetap lebih baik daripada scan
+            // hilang sama sekali.
+            debugPrint('Watermark error: $e');
+          }
+
           final entryWithImage = entry.copyWith(imagePath: imageFile.path);
           
           // 4. SAVE TO STORAGE IMMEDIATELY
