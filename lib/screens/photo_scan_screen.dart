@@ -9,6 +9,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+
 import '../models/scan_entry.dart';
 import '../services/location_service.dart';
 import '../services/storage_service.dart';
@@ -17,13 +19,18 @@ import '../theme/app_theme.dart';
 import 'watermark_settings.dart';
 
 class PhotoScanScreen extends StatefulWidget {
-  const PhotoScanScreen({super.key});
+  /// Hasil barcode/QR yang didapat dari layar scan sebelumnya (opsional).
+  /// Jika diset, kamera akan langsung terbuka tanpa menampilkan tombol.
+  final String? initialBarcode;
+
+  const PhotoScanScreen({super.key, this.initialBarcode});
 
   @override
   State<PhotoScanScreen> createState() => _PhotoScanScreenState();
 }
 
-class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingObserver {
+class _PhotoScanScreenState extends State<PhotoScanScreen>
+    with WidgetsBindingObserver {
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
@@ -33,22 +40,28 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
   int _photoCount = 0;
   bool _locationGranted = false;
 
-  // Antrian burn watermark — dirantai lewat Future, BUKAN single Completer.
-  // Pola single-Completer sebelumnya cuma aman untuk 2 pemanggil bersamaan:
-  // kalau ada pemanggil ke-3 datang sebelum pemanggil ke-2 sempat memasang
-  // lock barunya, pemanggil ke-3 akan menimpa lock pemanggil ke-2 tanpa
-  // pernah menunggunya — akibatnya keduanya jalan bersamaan, persis yang
-  // mau dicegah. Pola chained-future ini menjamin urutan FIFO untuk berapa
-  // pun banyaknya pemanggil, dan sudah dipakai & terbukti benar di
-  // LocationService._geocodeChain untuk kasus yang sama persis.
+  /// Barcode yang akan dicantumkan di watermark.
+  /// Diisi dari widget.initialBarcode (bisa null).
+  String? _barcode;
+
+  /// Antrian burn watermark — FIFO chained Future. Lihat penjelasan di
+  /// _burnWatermark kenapa pola ini dipakai (bukan single Completer lock).
   Future<void> _burnQueue = Future.value();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _barcode = widget.initialBarcode;
     _checkLocationPermission();
     _wmSettings.load();
+
+    // Jika ada barcode, langsung buka kamera setelah layout selesai.
+    if (_barcode != null && _barcode!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _takePhoto();
+      });
+    }
   }
 
   @override
@@ -59,11 +72,14 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Setelah kembali dari pengaturan, periksa ulang izin galeri
     if (state == AppLifecycleState.resumed) {
       _checkLocationPermission();
     }
   }
+
+  // ============================================================================
+  // Izin
+  // ============================================================================
 
   Future<void> _checkLocationPermission() async {
     final status = await Permission.location.status;
@@ -74,6 +90,65 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
       if (mounted) setState(() => _locationGranted = true);
     }
   }
+
+  Future<bool> _ensureGalleryPermission() async {
+    var status = await Permission.photos.status;
+    if (status.isGranted || status.isLimited) return true;
+    status = await Permission.photos.request();
+    if (status.isGranted || status.isLimited) return true;
+    if (status.isPermanentlyDenied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'BUKA SETTING',
+            onPressed: openAppSettings,
+          ),
+        ),
+      );
+    }
+    return false;
+  }
+
+  // ============================================================================
+  // Pemindaian barcode dari gambar galeri
+  // ============================================================================
+
+  /// Scan barcode/QR dari file gambar (dipakai untuk foto yang dipilih dari
+  /// galeri, di mana barcode tidak diketahui lebih dulu seperti dari layar
+  /// scan kamera langsung).
+  ///
+  /// Pakai `mobile_scanner` yang SUDAH jadi dependency app ini
+  /// (`controller.analyzeImage()`, tersedia sejak v3.5.x) — bukan
+  /// `google_mlkit_barcode_scanning` terpisah. Menambah package ML Kit
+  /// barcode kedua akan membundel dua mesin decode barcode sekaligus di
+  /// APK (nambah ukuran, duplikasi native lib) padahal mobile_scanner
+  /// sendiri sudah dibangun di atas ML Kit dan bisa menganalisis file
+  /// statis, bukan cuma stream kamera.
+  Future<String?> _scanBarcodeFromImage(String imagePath) async {
+    final controller = MobileScannerController();
+    try {
+      final capture = await controller.analyzeImage(imagePath);
+      final barcodes = capture?.barcodes ?? const [];
+      for (final barcode in barcodes) {
+        if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
+          return barcode.rawValue;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Gagal scan barcode dari gambar: $e');
+      return null;
+    } finally {
+      await controller.dispose();
+    }
+  }
+
+  // ============================================================================
+  // Metode utama: ambil foto dari kamera
+  // ============================================================================
 
   Future<void> _takePhoto() async {
     if (!_locationGranted) {
@@ -95,6 +170,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
 
       HapticFeedback.mediumImpact();
 
+      // Preview dan konfirmasi
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -105,18 +181,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
 
       setState(() => _isSaving = true);
 
+      // Simpan foto ke storage internal
       final savedPath = await _storage.savePhoto(xfile.path);
       final capturedAt = DateTime.now();
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
-      // Burn awal dengan placeholder lokasi
+      // Watermark awal dengan barcode (jika ada)
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
         locationText: 'Mencari lokasi...',
+        barcode: _barcode,
       );
 
+      // Buat entry dan simpan
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
@@ -125,6 +204,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
         latitude: null,
         longitude: null,
         locationName: null,
+        scanResult: _barcode, // simpan barcode di database
       );
       await _storage.add(entry);
 
@@ -135,7 +215,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
 
       if (mounted) _showSuccess(entry);
 
-      // Proses lokasi di background
+      // Proses lokasi di latar belakang (akan re-burn watermark)
       unawaited(_resolveLocationInBackground(entry.id));
     } catch (e) {
       setState(() => _isSaving = false);
@@ -143,100 +223,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
     }
   }
 
-  Future<void> _resolveLocationInBackground(String entryId) async {
-    // 1. Ambil koordinat
-    final coords = await _loc.getCoordinatesOnly();
-    if (coords.lat == null || coords.lng == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Update entry dengan koordinat (tanpa re-burn dulu)
-    final saved = await _storage.getEntry(entryId);
-    if (saved == null) return;
-    final updatedWithCoords = saved.copyWith(
-      latitude: coords.lat,
-      longitude: coords.lng,
-    );
-    await _storage.update(updatedWithCoords);
-
-    // 2. Coba reverse geocoding dengan timeout (10 detik)
-    String finalLocationText;
-    try {
-      final address = await _loc.reverseGeocode(coords.lat!, coords.lng!).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => null,
-      );
-      if (address != null && address.isNotEmpty) {
-        finalLocationText = address;
-        // Update entry dengan nama lokasi
-        final current = await _storage.getEntry(entryId);
-        if (current != null) {
-          final updatedWithAddress = current.copyWith(locationName: address);
-          await _storage.update(updatedWithAddress);
-        }
-        // Tampilkan snackbar sukses
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('📍 Lokasi terdeteksi: $address'),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.green.shade700,
-            ),
-          );
-        }
-      } else {
-        // Gagal reverse geocode, gunakan koordinat mentah
-        finalLocationText = updatedWithCoords.coordinatesString;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Gagal mengambil alamat, gunakan koordinat'),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      // Error reverse geocode, gunakan koordinat
-      finalLocationText = updatedWithCoords.coordinatesString;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ Gagal mengambil alamat: $e'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    }
-
-    // 3. Re-burn watermark dengan lokasi final (hanya sekali)
-    final currentEntry = await _storage.getEntry(entryId);
-    if (currentEntry == null) return;
-    try {
-      await _burnWatermark(
-        sourcePath: _storage.rawPathFor(currentEntry.value),
-        destPath: currentEntry.value,
-        timestamp: currentEntry.timestamp,
-        locationText: finalLocationText,
-      );
-      // Hapus cache gambar agar tampilan terbaru
-      await FileImage(File(currentEntry.value)).evict();
-    } catch (_) {
-      // Sudah ditangani (snackbar) di dalam _burnWatermark — foto tetap
-      // ada dengan watermark placeholder, tidak perlu ditangani ulang di sini.
-    }
-  }
+  // ============================================================================
+  // Ambil dari galeri (dengan scan barcode otomatis dari gambar)
+  // ============================================================================
 
   Future<void> _pickFromGallery() async {
     if (!_locationGranted) {
@@ -255,6 +244,46 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
       );
       if (xfile == null) return;
 
+      // Scan barcode/QR dari gambar yang dipilih (menggantikan _barcode jika ada)
+      String? scannedBarcode;
+      try {
+        scannedBarcode = await _scanBarcodeFromImage(xfile.path);
+        if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
+          setState(() => _barcode = scannedBarcode);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ Barcode terdeteksi: $scannedBarcode'),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Colors.green.shade700,
+              ),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
+                duration: Duration(seconds: 2),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          // Tetap lanjut tanpa barcode
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('⚠️ Gagal memindai gambar: $e'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+
+      // Preview
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -268,11 +297,13 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
       final capturedAt = DateTime.now();
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
+      // Watermark awal dengan barcode (yang sudah diperbarui dari scan)
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
         locationText: 'Mencari lokasi...',
+        barcode: _barcode,
       );
 
       final entry = ScanEntry(
@@ -283,6 +314,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
         latitude: null,
         longitude: null,
         locationName: null,
+        scanResult: _barcode,
       );
       await _storage.add(entry);
 
@@ -299,29 +331,29 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
     }
   }
 
-  /// Membakar watermark, diserialisasi lewat [_burnQueue] supaya burn untuk
-  /// beberapa foto tidak menembak banyak isolate compute() bersamaan.
-  /// Setiap panggilan menunggu giliran lewat rantai Future FIFO, lalu
+  // ============================================================================
+  // Watermark dengan antrian FIFO
+  // ============================================================================
+
+  /// Membakar watermark, diserialisasi lewat [_burnQueue] via chained Future
+  /// (bukan single Completer lock — pola itu bocor kalau ada 3+ pemanggil
+  /// bersamaan, lihat riwayat perbaikan sebelumnya). Setiap panggilan
   /// mengembalikan Future terpisah yang resolve/error sesuai hasil burn
-  /// PANGGILAN INI SAJA — kegagalan satu burn tidak menghentikan antrian
-  /// burn lain yang menunggu di belakangnya (persis pola _geocodeChain di
-  /// LocationService).
+  /// PANGGILAN INI SAJA; kegagalan satu burn tidak menghentikan antrian
+  /// burn lain di belakangnya.
   Future<void> _burnWatermark({
     required String sourcePath,
     required String destPath,
     required DateTime timestamp,
     required String locationText,
+    String? barcode,
   }) {
     final completer = Completer<void>();
     _burnQueue = _burnQueue.then((_) async {
       try {
-        // Cek apakah source tersedia.
         if (!File(sourcePath).existsSync()) {
-          // JANGAN fallback ke file publik yang sudah ber-watermark —
-          // membakar watermark baru di atas watermark lama akan
-          // menumpuk bar/teks (persis masalah yang raw-copy dibuat untuk
-          // dihindari, lihat StorageService.rawPathFor). Lebih aman gagal
-          // jelas di sini; foto tetap ada dengan watermark placeholder.
+          // JANGAN fallback ke file publik yang sudah ber-watermark — akan
+          // menumpuk watermark baru di atas watermark lama.
           throw Exception(
               'File sumber watermark tidak ditemukan: $sourcePath (raw copy hilang)');
         }
@@ -333,17 +365,24 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
             logoBytes = await logoFile.readAsBytes();
           }
         }
+
+        final lines = <String>[];
+        if (barcode != null && barcode.isNotEmpty) {
+          lines.add('Hasil Scan: $barcode');
+        }
+        lines.add(DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp));
+        lines.add(locationText);
+        if (_wmSettings.operatorName.isNotEmpty) {
+          lines.add('Operator: ${_wmSettings.operatorName}');
+        }
+
         await WatermarkService.burn(
           sourcePath: sourcePath,
           destPath: destPath,
-          lines: [
-            DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
-            locationText,
-            if (_wmSettings.operatorName.isNotEmpty)
-              'Operator: ${_wmSettings.operatorName}',
-          ],
+          lines: lines,
           logoBytes: logoBytes,
         );
+
         if (!completer.isCompleted) completer.complete();
       } catch (e, st) {
         debugPrint('Watermark error: $e\n$st');
@@ -358,11 +397,137 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
         }
         if (!completer.isCompleted) completer.completeError(e, st);
       }
-      // Selalu resolve normal di sini (error sudah disalurkan lewat
-      // `completer` di atas) supaya antrian tetap lanjut memproses burn
-      // berikutnya walau burn ini gagal.
+      // Selalu resolve normal di sini supaya antrian tetap lanjut memproses
+      // burn berikutnya walau burn ini gagal (error sudah disalurkan lewat
+      // `completer` di atas, terpisah dari resolusi _burnQueue).
     });
     return completer.future;
+  }
+
+  // ============================================================================
+  // Resolusi lokasi di background (re-burn watermark)
+  // ============================================================================
+
+  Future<void> _resolveLocationInBackground(String entryId) async {
+    // 1. Ambil koordinat
+    final coords = await _loc.getCoordinatesOnly();
+    if (coords.lat == null || coords.lng == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final saved = await _storage.getEntry(entryId);
+    if (saved == null) return;
+    final updatedWithCoords = saved.copyWith(
+      latitude: coords.lat,
+      longitude: coords.lng,
+    );
+    await _storage.update(updatedWithCoords);
+
+    // 2. Reverse geocoding dengan timeout 10 detik
+    String finalLocationText;
+    try {
+      final address = await _loc
+          .reverseGeocode(coords.lat!, coords.lng!)
+          .timeout(const Duration(seconds: 10), onTimeout: () => null);
+      if (address != null && address.isNotEmpty) {
+        finalLocationText = address;
+        final current = await _storage.getEntry(entryId);
+        if (current != null) {
+          final updatedWithAddress = current.copyWith(locationName: address);
+          await _storage.update(updatedWithAddress);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('📍 Lokasi terdeteksi: $address'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
+      } else {
+        finalLocationText = updatedWithCoords.coordinatesString;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Gagal mengambil alamat, gunakan koordinat'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      finalLocationText = updatedWithCoords.coordinatesString;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ Gagal mengambil alamat: $e'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+
+    // 3. Re-burn watermark dengan lokasi final dan barcode yang tersimpan
+    final currentEntry = await _storage.getEntry(entryId);
+    if (currentEntry == null) return;
+    try {
+      await _burnWatermark(
+        sourcePath: _storage.rawPathFor(currentEntry.value),
+        destPath: currentEntry.value,
+        timestamp: currentEntry.timestamp,
+        locationText: finalLocationText,
+        barcode: currentEntry.scanResult, // ambil barcode dari database
+      );
+      await FileImage(File(currentEntry.value)).evict();
+    } catch (_) {
+      // Sudah ditangani (snackbar) di dalam _burnWatermark.
+    }
+  }
+
+  // ============================================================================
+  // UI Helpers
+  // ============================================================================
+
+  Future<bool> _showPreviewAndConfirm(String path) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _PhotoPreviewScreen(
+          imagePath: path,
+          barcode: _barcode,
+        ),
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _deleteTempFile(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {
+      // Abaikan
+    }
+  }
+
+  void _showError(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: AppTheme.error, content: Text(msg)),
+      );
+    }
   }
 
   void _showSuccess(ScanEntry entry) {
@@ -424,61 +589,17 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
     }
   }
 
-  Future<bool> _ensureGalleryPermission() async {
-    var status = await Permission.photos.status;
-    if (status.isGranted || status.isLimited) return true;
-
-    status = await Permission.photos.request();
-    if (status.isGranted || status.isLimited) return true;
-
-    if (status.isPermanentlyDenied && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Izin galeri ditolak permanen — aktifkan manual di Pengaturan'),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'BUKA SETTING',
-            onPressed: openAppSettings,
-          ),
-        ),
-      );
-    }
-    return false;
-  }
-
-  Future<bool> _showPreviewAndConfirm(String path) async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => _PhotoPreviewScreen(imagePath: path),
-      ),
-    );
-    return result ?? false;
-  }
-
-  void _deleteTempFile(String path) {
-    try {
-      final f = File(path);
-      if (f.existsSync()) f.deleteSync();
-    } catch (_) {
-      // Abaikan
-    }
-  }
-
-  void _showError(String msg) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: AppTheme.error, content: Text(msg)),
-      );
-    }
-  }
+  // ============================================================================
+  // Build
+  // ============================================================================
 
   @override
   Widget build(BuildContext context) {
+    final hasBarcode = _barcode != null && _barcode!.isNotEmpty;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Ambil Foto'),
+        title: Text(hasBarcode ? 'Foto dengan Scan' : 'Ambil Foto'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context, _photoCount),
@@ -490,6 +611,32 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (hasBarcode) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentOrange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.accentOrange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.qr_code, size: 16, color: AppTheme.accentOrange),
+                      const Gap(8),
+                      Flexible(
+                        child: Text(
+                          _barcode!,
+                          style: const TextStyle(
+                              color: AppTheme.accentOrange, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Gap(20),
+              ],
               Container(
                 width: 120,
                 height: 120,
@@ -581,16 +728,37 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> with WidgetsBindingOb
 
 class _PhotoPreviewScreen extends StatelessWidget {
   final String imagePath;
+  final String? barcode;
 
-  const _PhotoPreviewScreen({required this.imagePath});
+  const _PhotoPreviewScreen({required this.imagePath, this.barcode});
 
   @override
   Widget build(BuildContext context) {
+    final hasBarcode = barcode != null && barcode!.isNotEmpty;
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
+            if (hasBarcode)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                color: AppTheme.accentOrange.withOpacity(0.15),
+                child: Row(
+                  children: [
+                    const Icon(Icons.qr_code, size: 16, color: Colors.white),
+                    const Gap(8),
+                    Expanded(
+                      child: Text(
+                        'Hasil Scan: $barcode',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: InteractiveViewer(
                 minScale: 1,

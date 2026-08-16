@@ -1,14 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:intl/intl.dart';
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:path_provider/path_provider.dart';
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
 import '../services/location_service.dart';
-import '../services/watermark_service.dart';
-import 'watermark_settings.dart';
+import 'photo_scan_screen.dart';
 
 class BarcodeScanScreen extends StatefulWidget {
   const BarcodeScanScreen({Key? key}) : super(key: key);
@@ -19,28 +14,34 @@ class BarcodeScanScreen extends StatefulWidget {
 
 class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindingObserver {
   MobileScannerController? _controller;
-  bool _isProcessing = false;
   final _storage = StorageService();
   final _locationService = LocationService();
-  final _wmSettings = WatermarkSettings();
+
+  /// Barcode yang barusan terdeteksi, menunggu keputusan user (Ambil Foto /
+  /// Simpan Tanpa Foto / Scan Ulang). Selama ini tidak null, kamera
+  /// di-pause dan onDetect diabaikan — tidak lagi auto-capture & auto-save
+  /// begitu barcode kelihatan.
+  Barcode? _detectedBarcode;
+
+  /// Indikator loading khusus untuk aksi "Simpan Tanpa Foto" (fetch lokasi
+  /// + simpan). Terpisah dari _detectedBarcode supaya tombol bisa nonaktif
+  /// sementara tanpa menghilangkan panel konfirmasi.
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initCamera();
-    // Idempotent — kalau sudah pernah di-load dari HomeScreen, ini cuma
-    // baca ulang dari SharedPreferences, aman dipanggil lagi.
-    _wmSettings.load();
   }
 
   void _initCamera() {
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
-      // Wajib true supaya BarcodeCapture.image terisi — mobile_scanner 3.x
-      // tidak punya method takePhoto(), gambar hanya didapat lewat sini.
-      returnImage: true,
+      // Tidak perlu lagi returnImage: true — foto sekarang diambil lewat
+      // kamera penuh di PhotoScanScreen (tombol "Ambil Foto"), bukan dari
+      // frame scanner otomatis seperti alur sebelumnya.
     );
   }
 
@@ -49,7 +50,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     if (_controller == null) return;
     switch (state) {
       case AppLifecycleState.resumed:
-        _controller?.start();
+        if (_detectedBarcode == null) _controller?.start();
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
@@ -66,25 +67,57 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     super.dispose();
   }
 
-  Future<void> _handleScan(BarcodeCapture capture) async {
-    if (_isProcessing || capture.barcodes.isEmpty) return;
-    
+  void _handleScan(BarcodeCapture capture) {
+    // Diam-diam abaikan deteksi baru selama panel konfirmasi masih
+    // terbuka — mencegah barcode lain "menimpa" pilihan user di tengah
+    // jalan.
+    if (_detectedBarcode != null || capture.barcodes.isEmpty) return;
     final barcode = capture.barcodes.first;
-    if (barcode.rawValue == null) return;
+    if (barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
 
-    setState(() => _isProcessing = true);
+    _controller?.stop();
+    setState(() => _detectedBarcode = barcode);
+  }
 
+  void _rescan() {
+    setState(() => _detectedBarcode = null);
+    _controller?.start();
+  }
+
+  /// User pilih "Ambil Foto" — pindah ke PhotoScanScreen yang otomatis
+  /// membuka kamera dan membakar nomor barcode ini ke watermark foto.
+  /// PhotoScanScreen sendiri yang menyimpan entry (dengan scanResult diisi
+  /// barcode ini) begitu foto dikonfirmasi, jadi di sini kita tidak perlu
+  /// menyimpan apa pun lagi — cukup teruskan hasilnya ke pemanggil layar
+  /// scan ini lalu tutup layar scan.
+  Future<void> _goTakePhoto() async {
+    final barcode = _detectedBarcode;
+    if (barcode == null) return;
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoScanScreen(initialBarcode: barcode.rawValue),
+      ),
+    );
+    if (!mounted) return;
+    Navigator.pop(context, result);
+  }
+
+  /// User pilih "Simpan Tanpa Foto" — simpan entry barcode polos (tanpa
+  /// gambar), sama seperti alur lama sebelum ada fitur foto opsional ini.
+  Future<void> _saveWithoutPhoto() async {
+    final barcode = _detectedBarcode;
+    if (barcode == null) return;
+
+    setState(() => _isSaving = true);
     try {
-      // 1. Get Location First
       ({double? lat, double? lng, String? address})? location;
       try {
         location = await _locationService.getLocation();
       } catch (e) {
-        // Continue with null location if failed
-        debugPrint("Location error: $e");
+        debugPrint('Location error: $e');
       }
 
-      // 2. Create Entry
       final entry = ScanEntry(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         barcodeValue: barcode.rawValue!,
@@ -92,113 +125,31 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         timestamp: DateTime.now(),
         latitude: location?.lat,
         longitude: location?.lng,
-        address: location?.address ?? '', 
+        address: location?.address ?? '',
         imagePath: null,
       );
+      await _storage.addEntry(entry);
 
-      // 3. Capture Image (didapat dari BarcodeCapture.image, bukan API
-      // takePhoto() yang tidak ada di mobile_scanner versi ini)
-      File? imageFile;
-      try {
-        imageFile = await _saveCapturedImage(capture.image);
-        
-        // Update entry with image path if capture success
-        if (imageFile != null) {
-          // Bakar watermark (barcode value, waktu, lokasi, operator, logo)
-          // langsung ke file foto sebelum disimpan sebagai entry. Lokasi
-          // sudah tersedia dari langkah 1 di atas (di-await sebelum foto
-          // diambil), jadi cukup satu kali proses — tidak perlu render
-          // ulang belakangan seperti di alur Ambil Foto.
-          try {
-            Uint8List? logoBytes;
-            if (_wmSettings.hasLogo) {
-              logoBytes = await File(_wmSettings.logoPath!).readAsBytes();
-            }
-            final coordsText = (location?.lat != null && location?.lng != null)
-                ? '${location!.lat!.toStringAsFixed(5)}, ${location!.lng!.toStringAsFixed(5)}'
-                : null;
-            await WatermarkService.burn(
-              sourcePath: imageFile.path,
-              destPath: imageFile.path,
-              lines: [
-                barcode.rawValue!,
-                DateFormat('dd/MM/yyyy HH:mm:ss').format(entry.timestamp),
-                location?.address ?? coordsText ?? 'Lokasi tidak tersedia',
-                if (_wmSettings.operatorName.isNotEmpty)
-                  'Operator: ${_wmSettings.operatorName}',
-              ],
-              logoBytes: logoBytes,
-            );
-          } catch (e) {
-            // Watermark gagal bukan alasan untuk gagalkan seluruh proses
-            // scan — foto tanpa watermark tetap lebih baik daripada scan
-            // hilang sama sekali.
-            debugPrint('Watermark error: $e');
-          }
-
-          final entryWithImage = entry.copyWith(imagePath: imageFile.path);
-          
-          // 4. SAVE TO STORAGE IMMEDIATELY
-          await _storage.addEntry(entryWithImage);
-          
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Scan saved successfully!'), backgroundColor: Colors.green),
-            );
-            Navigator.pop(context, entryWithImage);
-            return;
-          }
-        } else {
-          // Jika gagal ambil gambar, tetap simpan data scan tanpa gambar
-           await _storage.addEntry(entry);
-           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Scan saved (no image)'), backgroundColor: Colors.orange),
-            );
-            Navigator.pop(context, entry);
-            return;
-          }
-        }
-      } catch (e) {
-        // Fallback: Simpan data meski gambar gagal
-        await _storage.addEntry(entry);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Saved without image: $e'), backgroundColor: Colors.orange),
-          );
-          Navigator.pop(context, entry);
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Scan tersimpan'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context, entry);
       }
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: Colors.red),
         );
-        setState(() => _isProcessing = false);
       }
-    }
-  }
-
-  Future<File?> _saveCapturedImage(Uint8List? bytes) async {
-    if (bytes == null) return null;
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = 'scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final filePath = '${dir.path}/$fileName';
-
-      File imageFile = File(filePath);
-      await imageFile.writeAsBytes(bytes);
-
-      return imageFile;
-    } catch (e) {
-      debugPrint("Capture error: $e");
-      return null;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final barcode = _detectedBarcode;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scan Barcode'),
@@ -211,12 +162,6 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
               _controller?.toggleTorch();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.camera_alt),
-            onPressed: () {
-               // Manual capture trigger if needed
-            },
-          )
         ],
       ),
       body: Stack(
@@ -225,13 +170,88 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
             controller: _controller,
             onDetect: _handleScan,
           ),
-          if (_isProcessing)
-            Container(
-              color: Colors.black54,
-              child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+          if (barcode != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                decoration: const BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.qr_code, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            barcode.rawValue ?? '',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isSaving ? null : _goTakePhoto,
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text('Ambil Foto'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _isSaving ? null : _saveWithoutPhoto,
+                            icon: _isSaving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.check, color: Colors.white),
+                            label: Text(
+                              _isSaving ? 'Menyimpan...' : 'Tanpa Foto',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.white54),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Center(
+                      child: TextButton(
+                        onPressed: _isSaving ? null : _rescan,
+                        child: const Text('Scan Ulang', style: TextStyle(color: Colors.white70)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
     );
   }
 }
+
