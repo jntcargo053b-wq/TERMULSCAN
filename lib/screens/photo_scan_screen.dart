@@ -17,6 +17,7 @@ import '../services/storage_service.dart';
 import '../services/watermark_service.dart';
 import '../theme/app_theme.dart';
 import 'watermark_settings.dart';
+import 'watermark_settings_sheet.dart';
 
 class PhotoScanScreen extends StatefulWidget {
   /// Hasil barcode/QR yang didapat dari layar scan sebelumnya (opsional).
@@ -602,6 +603,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   @override
   Widget build(BuildContext context) {
     final hasBarcode = _barcode != null && _barcode!.isNotEmpty;
+
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
@@ -616,4 +618,183 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            chil
+            children: [
+              const Icon(
+                Icons.add_a_photo_outlined,
+                size: 72,
+                color: AppTheme.accent,
+              ),
+              const Gap(20),
+              Text(
+                hasBarcode ? 'Ambil foto untuk hasil scan' : 'Dokumentasi Foto',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.displayMedium,
+              ),
+              const Gap(10),
+              Text(
+                hasBarcode
+                    ? 'Barcode akan dicantumkan pada watermark foto.'
+                    : 'Foto akan diberi watermark waktu dan lokasi secara otomatis.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              if (hasBarcode) ...[
+                const Gap(16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.qr_code_2, color: AppTheme.accent),
+                      const Gap(10),
+                      Expanded(
+                        child: Text(
+                          _barcode!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_photoCount > 0) ...[
+                const Gap(16),
+                Text(
+                  'Foto tersimpan sesi ini: $_photoCount',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+              const Gap(28),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _isSaving ? null : _takePhoto,
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('AMBIL FOTO'),
+                ),
+              ),
+              const Gap(12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _pickFromGallery,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('PILIH DARI GALERI'),
+                ),
+              ),
+              const Gap(12),
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const WatermarkSettingsSheet(),
+                  ),
+                ),
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('Pengaturan watermark'),
+              ),
+              if (_isSaving) ...[
+                const Gap(18),
+                const LinearProgressIndicator(),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoPreviewScreen extends StatelessWidget {
+  final String imagePath;
+  final String? barcode;
+
+  const _PhotoPreviewScreen({
+    required this.imagePath,
+    this.barcode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBarcode = barcode != null && barcode!.isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: const Text('Pratinjau Foto'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4,
+                child: Center(
+                  child: Image.file(
+                    File(imagePath),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.broken_image_outlined,
+                      size: 64,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (hasBarcode)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  'Barcode: $barcode',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context, false),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('ULANGI'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white54),
+                      ),
+                    ),
+                  ),
+                  const Gap(12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.check),
+                      label: const Text('GUNAKAN'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
