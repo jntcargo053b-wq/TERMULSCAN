@@ -24,6 +24,11 @@ class ScanEntry {
   /// Foto konteks opsional yang menyertai sebuah scan barcode.
   final String? imagePath;
 
+  /// Hasil scan barcode/QR yang menyertai sebuah foto (kebalikan dari
+  /// [imagePath] — dipakai saat type == ScanType.photo tapi foto tersebut
+  /// terkait dengan sebuah barcode, misal dari alur "Foto dengan Scan").
+  final String? scanResult;
+
   ScanEntry({
     required this.id,
     ScanType? type,
@@ -37,6 +42,7 @@ class ScanEntry {
     String? locationName,
     String? address,
     this.imagePath,
+    this.scanResult,
   })  : type = type ?? (barcodeValue != null ? ScanType.barcode : ScanType.photo),
         value = value ?? barcodeValue ?? '',
         barcodeFormat = barcodeFormat ?? barcodeType,
@@ -68,6 +74,7 @@ class ScanEntry {
       'longitude': longitude,
       'locationName': locationName,
       'imagePath': imagePath,
+      'scanResult': scanResult,
     };
   }
 
@@ -85,6 +92,7 @@ class ScanEntry {
       longitude: (map['longitude'] as num?)?.toDouble(),
       locationName: map['locationName'],
       imagePath: map['imagePath'],
+      scanResult: map['scanResult'],
     );
   }
 
@@ -102,6 +110,7 @@ class ScanEntry {
     double? longitude,
     String? locationName,
     String? imagePath,
+    String? scanResult,
   }) {
     return ScanEntry(
       id: id ?? this.id,
@@ -113,6 +122,7 @@ class ScanEntry {
       longitude: longitude ?? this.longitude,
       locationName: locationName ?? this.locationName,
       imagePath: imagePath ?? this.imagePath,
+      scanResult: scanResult ?? this.scanResult,
     );
   }
 }
