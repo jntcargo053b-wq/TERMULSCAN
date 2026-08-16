@@ -121,28 +121,35 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   /// scan kamera langsung).
   ///
   /// Pakai `mobile_scanner` yang SUDAH jadi dependency app ini
-  /// (`controller.analyzeImage()`, tersedia sejak v3.5.x) — bukan
-  /// `google_mlkit_barcode_scanning` terpisah. Menambah package ML Kit
-  /// barcode kedua akan membundel dua mesin decode barcode sekaligus di
-  /// APK (nambah ukuran, duplikasi native lib) padahal mobile_scanner
-  /// sendiri sudah dibangun di atas ML Kit dan bisa menganalisis file
-  /// statis, bukan cuma stream kamera.
+  /// (`controller.analyzeImage()`). Versi mobile_scanner 3.x: analyzeImage()
+  /// mengembalikan bool dan hasil barcode dikirim lewat stream `barcodes`.
   Future<String?> _scanBarcodeFromImage(String imagePath) async {
     final controller = MobileScannerController();
+    StreamSubscription<BarcodeCapture>? sub;
     try {
-      final capture = await controller.analyzeImage(imagePath);
-      final barcodes = capture?.barcodes ?? const [];
-      for (final barcode in barcodes) {
-        if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
-          return barcode.rawValue;
+      final completer = Completer<String?>();
+      sub = controller.barcodes.listen((capture) {
+        for (final barcode in capture.barcodes) {
+          if (barcode.rawValue != null && barcode.rawValue!.isNotEmpty) {
+            if (!completer.isCompleted) completer.complete(barcode.rawValue);
+            return;
+          }
         }
-      }
-      return null;
+      });
+
+      final found = await controller.analyzeImage(imagePath);
+      if (!found) return null;
+
+      return await completer.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null,
+      );
     } catch (e) {
       debugPrint('Gagal scan barcode dari gambar: $e');
       return null;
     } finally {
-      await controller.dispose();
+      await sub?.cancel();
+      controller.dispose();
     }
   }
 
@@ -337,10 +344,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   /// Membakar watermark, diserialisasi lewat [_burnQueue] via chained Future
   /// (bukan single Completer lock — pola itu bocor kalau ada 3+ pemanggil
-  /// bersamaan, lihat riwayat perbaikan sebelumnya). Setiap panggilan
-  /// mengembalikan Future terpisah yang resolve/error sesuai hasil burn
-  /// PANGGILAN INI SAJA; kegagalan satu burn tidak menghentikan antrian
-  /// burn lain di belakangnya.
+  /// bersamaan). Setiap panggilan mengembalikan Future terpisah yang
+  /// resolve/error sesuai hasil burn PANGGILAN INI SAJA; kegagalan satu burn
+  /// tidak menghentikan antrian burn lain di belakangnya.
   Future<void> _burnWatermark({
     required String sourcePath,
     required String destPath,
@@ -610,199 +616,4 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (hasBarcode) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.accentOrange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.accentOrange.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.qr_code, size: 16, color: AppTheme.accentOrange),
-                      const Gap(8),
-                      Flexible(
-                        child: Text(
-                          _barcode!,
-                          style: const TextStyle(
-                              color: AppTheme.accentOrange, fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Gap(20),
-              ],
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: AppTheme.accentOrange.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppTheme.accentOrange.withOpacity(0.4),
-                    width: 2,
-                  ),
-                ),
-                child: const Icon(Icons.camera_alt, size: 52, color: AppTheme.accentOrange),
-              ).animate().scale(duration: 400.ms, curve: Curves.elasticOut),
-              const Gap(24),
-              Text(
-                _photoCount == 0 ? 'Siap Ambil Foto' : '$_photoCount foto tersimpan',
-                style: Theme.of(context).textTheme.titleLarge,
-              ).animate().fadeIn(delay: 100.ms),
-              const Gap(8),
-              Text(
-                'Foto otomatis disertai timestamp & GPS',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ).animate().fadeIn(delay: 200.ms),
-              const Gap(48),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isSaving ? null : _takePhoto,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              color: Colors.black, strokeWidth: 2))
-                      : const Icon(Icons.camera_alt, size: 22),
-                  label: Text(_isSaving ? 'Menyimpan...' : 'Ambil Foto Kamera'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accentOrange,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                ),
-              ).animate().fadeIn(delay: 250.ms),
-              const Gap(14),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isSaving ? null : _pickFromGallery,
-                  icon: const Icon(Icons.photo_library_outlined, size: 20),
-                  label: const Text('Pilih dari Galeri'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.accentOrange,
-                    side: BorderSide(color: AppTheme.accentOrange.withOpacity(0.6)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ).animate().fadeIn(delay: 300.ms),
-              const Gap(32),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 16, color: AppTheme.accentBlue),
-                    Gap(10),
-                    Expanded(
-                      child: Text(
-                        'Setiap foto otomatis dicatat: waktu, koordinat GPS, & nama lokasi',
-                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn(delay: 350.ms),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PhotoPreviewScreen extends StatelessWidget {
-  final String imagePath;
-  final String? barcode;
-
-  const _PhotoPreviewScreen({required this.imagePath, this.barcode});
-
-  @override
-  Widget build(BuildContext context) {
-    final hasBarcode = barcode != null && barcode!.isNotEmpty;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (hasBarcode)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                color: AppTheme.accentOrange.withOpacity(0.15),
-                child: Row(
-                  children: [
-                    const Icon(Icons.qr_code, size: 16, color: Colors.white),
-                    const Gap(8),
-                    Expanded(
-                      child: Text(
-                        'Hasil Scan: $barcode',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 4,
-                child: Center(
-                  child: Image.file(File(imagePath), fit: BoxFit.contain),
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      icon: const Icon(Icons.replay, color: Colors.white),
-                      label: const Text('Ambil Ulang', style: TextStyle(color: Colors.white)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white54),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                    ),
-                  ),
-                  const Gap(12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      icon: const Icon(Icons.check, color: Colors.black),
-                      label: const Text('Gunakan Foto'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentOrange,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+            chil
