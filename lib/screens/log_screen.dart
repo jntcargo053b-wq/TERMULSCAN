@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
 
@@ -13,79 +15,95 @@ class LogScreen extends StatefulWidget {
   State<LogScreen> createState() => _LogScreenState();
 }
 
-class _LogScreenState extends State<LogScreen> {
+class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
   final _storage = StorageService();
   final _searchController = TextEditingController();
-  
+
   List<ScanEntry> _filteredEntries = [];
   Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _filteredEntries = _storage.entries;
     _searchController.addListener(_onSearchChanged);
+    _refreshList();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
   }
 
-  // Debounce Search Logic
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshList();
+  }
+
   void _onSearchChanged() {
-    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _performSearch(_searchController.text);
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) _performSearch(_searchController.text);
     });
   }
 
   void _performSearch(String query) {
-    setState(() {
-      _filteredEntries = _storage.entries.where((entry) {
-        final barcodeMatch = entry.barcodeValue.toLowerCase().contains(query.toLowerCase());
-        final addressMatch = (entry.address ?? "").toLowerCase().contains(query.toLowerCase());
-        return barcodeMatch || addressMatch;
-      }).toList();
-    });
-  }
-
-  // Async File Check (Non-blocking)
-  Future<bool> _checkFileExists(String? path) async {
-    if (path == null || path.isEmpty) return false;
-    try {
-      final file = File(path);
-      return await file.exists();
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Future<void> _shareEntry(ScanEntry entry) async {
-    if (entry.imagePath == null || entry.imagePath!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No image to share')),
-      );
+    final q = query.trim().toLowerCase();
+    final source = _storage.entries;
+    if (q.isEmpty) {
+      if (mounted) setState(() => _filteredEntries = source);
       return;
     }
 
-    final exists = await _checkFileExists(entry.imagePath);
-    if (!exists) {
+    bool contains(String? value) =>
+        value != null && value.trim().toLowerCase().contains(q);
+
+    final result = source.where((entry) {
+      final date = DateFormat('dd MMM yyyy HH:mm yyyy-MM-dd').format(entry.timestamp);
+      return contains(entry.displayTitle) ||
+          contains(entry.scanResult) ||
+          contains(entry.barcodeValue) ||
+          contains(entry.barcodeType) ||
+          contains(entry.address) ||
+          contains(entry.imageFileName) ||
+          contains(entry.displayImagePath) ||
+          date.toLowerCase().contains(q);
+    }).toList();
+
+    if (mounted) setState(() => _filteredEntries = result);
+  }
+
+  void _refreshList() {
+    _performSearch(_searchController.text);
+  }
+
+  Future<String?> _resolveImagePath(ScanEntry entry) {
+    return _storage.resolveImagePath(entry);
+  }
+
+  Future<void> _shareEntry(ScanEntry entry) async {
+    final imagePath = await _resolveImagePath(entry);
+    if (!mounted) return;
+
+    if (imagePath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Image file not found on device')),
+        const SnackBar(content: Text('Foto tidak ditemukan di penyimpanan aplikasi')),
       );
       return;
     }
 
     try {
       await Share.shareXFiles(
-        [XFile(entry.imagePath!)],
-        text: 'Scan Result: ${entry.barcodeValue}\nLocation: ${entry.address ?? "Unknown"}',
+        [XFile(imagePath)],
+        text: 'Scan Result: ${entry.displayTitle}\nLocation: ${entry.address ?? "Unknown"}',
       );
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Share failed: $e')),
       );
@@ -99,106 +117,211 @@ class _LogScreenState extends State<LogScreen> {
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 16, right: 16, top: 16
+          left: 16,
+          right: 16,
+          top: 16,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Scan Details', style: Theme.of(context).textTheme.titleLarge),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Scan Details', style: Theme.of(context).textTheme.titleLarge),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const SizedBox(height: 8),
+              _buildDetailRow('Result', entry.displayTitle),
+              _buildDetailRow(
+                'Time',
+                DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.timestamp),
+              ),
+              if (!entry.isPhoto) _buildDetailRow('Type', entry.barcodeType),
+              if (entry.address != null && entry.address!.isNotEmpty)
+                _buildDetailRow('Location', entry.address!),
+              if (entry.latitude != null)
+                _buildDetailRow(
+                  'Coordinates',
+                  '${entry.latitude}, ${entry.longitude}',
                 ),
-              ],
-            ),
-            const Divider(),
-            const SizedBox(height: 8),
-            _buildDetailRow('Barcode', entry.barcodeValue),
-            _buildDetailRow('Time', DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.timestamp)),
-            _buildDetailRow('Type', entry.barcodeType),
-            if (entry.address != null && entry.address!.isNotEmpty)
-              _buildDetailRow('Location', entry.address!),
-            if (entry.latitude != null)
-              _buildDetailRow('Coordinates', '${entry.latitude}, ${entry.longitude}'),
-            
-            const SizedBox(height: 16),
-            if (entry.imagePath != null)
-              FutureBuilder<bool>(
-                future: _checkFileExists(entry.imagePath),
+              const SizedBox(height: 16),
+              FutureBuilder<String?>(
+                future: _resolveImagePath(entry),
                 builder: (ctx, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.data == true) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(File(entry.imagePath!), height: 200, width: double.infinity, fit: BoxFit.cover),
+                    return const SizedBox(
+                      height: 120,
+                      child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  return const Text('Image not available', style: TextStyle(color: Colors.grey));
+                  final path = snapshot.data;
+                  if (path == null) {
+                    return const Text(
+                      'Image not available',
+                      style: TextStyle(color: Colors.grey),
+                    );
+                  }
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(path),
+                      height: 220,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                        height: 120,
+                        child: Center(child: Icon(Icons.broken_image_outlined, size: 48)),
+                      ),
+                    ),
+                  );
                 },
               ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (c) => AlertDialog(
-                        title: const Text('Delete this scan?'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                          TextButton(
-                            onPressed: () => Navigator.pop(c, true),
-                            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) {
-                      await _storage.deleteEntry(entry.id);
-                      setState(() {
-                        _filteredEntries = _storage.entries; // Refresh list
-                      });
-                      if (mounted) Navigator.pop(context);
-                    }
-                  },
-                  child: const Text('Delete', style: TextStyle(color: Colors.red)),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _shareEntry(entry);
-                  },
-                  icon: const Icon(Icons.share),
-                  label: const Text('Share'),
-                ),
-              ],
-            )
-          ],
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (c) => AlertDialog(
+                          title: const Text('Delete this scan?'),
+                          content: const Text('Foto dan data riwayat ini akan dihapus.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await _storage.deleteEntry(entry.id);
+                        _refreshList();
+                        if (context.mounted) Navigator.pop(context);
+                      }
+                    },
+                    child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      unawaited(_shareEntry(entry));
+                    },
+                    icon: const Icon(Icons.share),
+                    label: const Text('Share'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildThumbnail(ScanEntry entry) {
+    if (!entry.isPhoto && entry.imagePath == null) {
+      return CircleAvatar(
+        backgroundColor: Colors.blue.shade100,
+        child: Icon(Icons.qr_code, color: Colors.blue.shade900, size: 20),
+      );
+    }
+
+    return FutureBuilder<String?>(
+      future: _resolveImagePath(entry),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            width: 52,
+            height: 52,
+            child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+          );
+        }
+
+        final path = snapshot.data;
+        if (path == null) {
+          return Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade500),
+          );
+        }
+
+        return SizedBox(
+          width: 52,
+          height: 52,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(path),
+              width: 52,
+              height: 52,
+              fit: BoxFit.cover,
+              cacheWidth: 156,
+              errorBuilder: (_, __, ___) => Container(
+                color: Colors.grey.shade200,
+                child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade500),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 100, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
+          SizedBox(
+            width: 100,
+            child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
           Expanded(child: Text(value)),
         ],
       ),
     );
+  }
+
+  Future<void> _clearAll() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Clear All History?'),
+        content: const Text('Semua riwayat dan foto yang disimpan aplikasi akan dihapus.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Clear All', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await _storage.clear();
+      if (mounted) setState(() => _filteredEntries = []);
+    }
   }
 
   @override
@@ -207,42 +330,29 @@ class _LogScreenState extends State<LogScreen> {
       appBar: AppBar(
         title: const Text('Scan History'),
         actions: [
-          if (_filteredEntries.isNotEmpty)
+          if (_storage.entries.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep),
               tooltip: 'Clear All',
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (c) => AlertDialog(
-                    title: const Text('Clear All History?'),
-                    content: const Text('This action cannot be undone.'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                      TextButton(
-                        onPressed: () => Navigator.pop(c, true),
-                        child: const Text('Clear All', style: TextStyle(color: Colors.red)),
-                      ),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  _storage.clear();
-                  setState(() => _filteredEntries = []);
-                }
-              },
-            )
+              onPressed: _clearAll,
+            ),
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(8),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search barcode or location...',
+                hintText: 'Search barcode, foto, lokasi, nama file, tanggal...',
                 prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => _searchController.clear(),
+                      ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 filled: true,
@@ -259,9 +369,7 @@ class _LogScreenState extends State<LogScreen> {
                         Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
                         const SizedBox(height: 16),
                         Text(
-                          _searchController.text.isEmpty 
-                              ? 'No scans yet' 
-                              : 'No matches found',
+                          _searchController.text.trim().isEmpty ? 'No scans yet' : 'No matches found',
                           style: TextStyle(color: Colors.grey[600], fontSize: 16),
                         ),
                       ],
@@ -272,12 +380,10 @@ class _LogScreenState extends State<LogScreen> {
                     itemBuilder: (ctx, i) {
                       final entry = _filteredEntries[i];
                       return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.blue.shade100,
-                          child: Icon(Icons.qr_code, color: Colors.blue.shade900, size: 20),
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        leading: _buildThumbnail(entry),
                         title: Text(
-                          entry.barcodeValue,
+                          entry.displayTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -299,9 +405,7 @@ class _LogScreenState extends State<LogScreen> {
                               ),
                           ],
                         ),
-                        trailing: entry.imagePath != null && entry.imagePath!.isNotEmpty
-                            ? Icon(Icons.image, color: Colors.grey[400])
-                            : null,
+                        trailing: const Icon(Icons.chevron_right),
                         onTap: () => _showDetail(entry),
                       );
                     },

@@ -6,27 +6,13 @@ enum ScanType { barcode, photo }
 class ScanEntry {
   final String id;
   final ScanType type;
-
-  /// Nilai utama entry: isi barcode untuk [ScanType.barcode],
-  /// path file foto untuk [ScanType.photo].
   final String value;
-
-  /// Format/tipe barcode (mis. "qrCode", "ean13"). Null untuk foto.
   final String? barcodeFormat;
-
   final DateTime timestamp;
   final double? latitude;
   final double? longitude;
-
-  /// Nama lokasi hasil reverse-geocoding (alamat).
   final String? locationName;
-
-  /// Foto konteks opsional yang menyertai sebuah scan barcode.
   final String? imagePath;
-
-  /// Hasil scan barcode/QR yang menyertai sebuah foto (kebalikan dari
-  /// [imagePath] — dipakai saat type == ScanType.photo tapi foto tersebut
-  /// terkait dengan sebuah barcode, misal dari alur "Foto dengan Scan").
   final String? scanResult;
 
   ScanEntry({
@@ -48,13 +34,38 @@ class ScanEntry {
         barcodeFormat = barcodeFormat ?? barcodeType,
         locationName = locationName ?? address;
 
-  // ── Alias getters untuk kompatibilitas API lama ──────────────────────────
   bool get isBarcode => type == ScanType.barcode;
   bool get isPhoto => type == ScanType.photo;
 
   String get barcodeValue => value;
   String get barcodeType => barcodeFormat ?? '';
   String? get address => locationName;
+
+  /// Untuk foto, imagePath adalah field kanonis. `value` tetap menjadi
+  /// fallback agar data lama tetap dapat ditampilkan.
+  String? get displayImagePath {
+    if (isPhoto) {
+      if (imagePath != null && imagePath!.trim().isNotEmpty) return imagePath;
+      if (value.trim().isNotEmpty) return value;
+      return null;
+    }
+    return imagePath?.trim().isNotEmpty == true ? imagePath : null;
+  }
+
+  String get displayTitle {
+    if (isPhoto) {
+      if (scanResult != null && scanResult!.trim().isNotEmpty) return scanResult!;
+      return 'Foto tanpa barcode';
+    }
+    return barcodeValue;
+  }
+
+  /// Nama file saja, aman dipakai untuk search tanpa membocorkan path storage.
+  String get imageFileName {
+    final path = displayImagePath;
+    if (path == null || path.isEmpty) return '';
+    return path.split(RegExp(r'[/\\]')).last;
+  }
 
   String get coordinatesString {
     if (latitude == null || longitude == null) return 'Lokasi tidak tersedia';
@@ -79,20 +90,27 @@ class ScanEntry {
   }
 
   factory ScanEntry.fromMap(Map<String, dynamic> map) {
+    final typeName = map['type']?.toString();
+    final type = ScanType.values.firstWhere(
+      (t) => t.name == typeName,
+      orElse: () => (map['imagePath'] != null ||
+              (map['value']?.toString().contains('/') ?? false) ||
+              (map['value']?.toString().contains('\\') ?? false))
+          ? ScanType.photo
+          : ScanType.barcode,
+    );
+
     return ScanEntry(
-      id: map['id'] ?? '',
-      type: ScanType.values.firstWhere(
-        (t) => t.name == map['type'],
-        orElse: () => ScanType.barcode,
-      ),
-      value: map['value'] ?? '',
-      barcodeFormat: map['barcodeFormat'],
-      timestamp: DateTime.tryParse(map['timestamp'] ?? '') ?? DateTime.now(),
+      id: map['id']?.toString() ?? '',
+      type: type,
+      value: map['value']?.toString() ?? '',
+      barcodeFormat: map['barcodeFormat']?.toString(),
+      timestamp: DateTime.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now(),
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
-      locationName: map['locationName'],
-      imagePath: map['imagePath'],
-      scanResult: map['scanResult'],
+      locationName: map['locationName']?.toString(),
+      imagePath: map['imagePath']?.toString(),
+      scanResult: map['scanResult']?.toString(),
     );
   }
 
