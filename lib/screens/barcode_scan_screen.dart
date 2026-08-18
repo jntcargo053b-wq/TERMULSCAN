@@ -23,6 +23,9 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   /// begitu barcode kelihatan.
   Barcode? _detectedBarcode;
 
+  /// AWB/barcode yang dimasukkan manual oleh user.
+  String? _manualBarcode;
+
   /// Indikator loading khusus untuk aksi "Simpan Tanpa Foto" (fetch lokasi
   /// + simpan). Terpisah dari _detectedBarcode supaya tombol bisa nonaktif
   /// sementara tanpa menghilangkan panel konfirmasi.
@@ -80,9 +83,69 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   }
 
   void _rescan() {
-    setState(() => _detectedBarcode = null);
+    setState(() {
+      _detectedBarcode = null;
+      _manualBarcode = null;
+    });
     _controller?.start();
   }
+
+  Future<void> _inputManualBarcode() async {
+    final controller = TextEditingController(text: _manualBarcode ?? '');
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Input AWB Manual'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            labelText: 'AWB / Barcode',
+            hintText: 'Masukkan nomor AWB',
+            prefixIcon: Icon(Icons.edit_outlined),
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) {
+            final trimmed = v.trim();
+            if (trimmed.isNotEmpty) Navigator.pop(dialogContext, trimmed);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Batal'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              final trimmed = controller.text.trim();
+              if (trimmed.isNotEmpty) Navigator.pop(dialogContext, trimmed);
+            },
+            icon: const Icon(Icons.check),
+            label: const Text('Gunakan AWB'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (!mounted || value == null || value.isEmpty) return;
+    _controller?.stop();
+    setState(() {
+      _manualBarcode = value;
+      _detectedBarcode = null;
+    });
+  }
+
+  String? get _selectedBarcodeValue {
+    final detected = _detectedBarcode?.rawValue?.trim();
+    if (detected != null && detected.isNotEmpty) return detected;
+    final manual = _manualBarcode?.trim();
+    if (manual != null && manual.isNotEmpty) return manual;
+    return null;
+  }
+
 
   /// User pilih "Ambil Foto" — pindah ke PhotoScanScreen yang otomatis
   /// membuka kamera dan membakar nomor barcode ini ke watermark foto.
@@ -91,12 +154,12 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   /// menyimpan apa pun lagi — cukup teruskan hasilnya ke pemanggil layar
   /// scan ini lalu tutup layar scan.
   Future<void> _goTakePhoto() async {
-    final barcode = _detectedBarcode;
-    if (barcode == null) return;
+    final barcodeValue = _selectedBarcodeValue;
+    if (barcodeValue == null) return;
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => PhotoScanScreen(initialBarcode: barcode.rawValue),
+        builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
       ),
     );
     if (!mounted) return;
@@ -106,8 +169,8 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   /// User pilih "Simpan Tanpa Foto" — simpan entry barcode polos (tanpa
   /// gambar), sama seperti alur lama sebelum ada fitur foto opsional ini.
   Future<void> _saveWithoutPhoto() async {
-    final barcode = _detectedBarcode;
-    if (barcode == null) return;
+    final barcodeValue = _selectedBarcodeValue;
+    if (barcodeValue == null) return;
 
     setState(() => _isSaving = true);
     try {
@@ -120,8 +183,8 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
       final entry = ScanEntry(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        barcodeValue: barcode.rawValue!,
-        barcodeType: barcode.type.name,
+        barcodeValue: barcodeValue,
+        barcodeType: _manualBarcode != null ? 'manual' : (_detectedBarcode?.type.name ?? 'unknown'),
         timestamp: DateTime.now(),
         latitude: location?.lat,
         longitude: location?.lng,
@@ -132,7 +195,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Scan tersimpan'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('AWB tersimpan'), backgroundColor: Colors.green),
         );
         Navigator.pop(context, entry);
       }
@@ -149,13 +212,18 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    final barcode = _detectedBarcode;
+    final selectedValue = _selectedBarcodeValue;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scan Barcode'),
+        title: const Text('Scan AWB / Barcode'),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Input AWB Manual',
+            onPressed: _isSaving ? null : _inputManualBarcode,
+          ),
           IconButton(
             icon: Icon(_controller?.torchState.value == TorchState.on ? Icons.flash_on : Icons.flash_off),
             onPressed: () {
@@ -170,7 +238,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
             controller: _controller,
             onDetect: _handleScan,
           ),
-          if (barcode != null)
+          if (selectedValue != null)
             Align(
               alignment: Alignment.bottomCenter,
               child: Container(
@@ -186,11 +254,11 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.qr_code, color: Colors.white, size: 18),
+                        Icon(_manualBarcode != null ? Icons.edit_note : Icons.qr_code, color: Colors.white, size: 18),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            barcode.rawValue ?? '',
+                            selectedValue,
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,

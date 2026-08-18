@@ -40,3 +40,7 @@ lib/
     storage_service.dart
   theme/app_theme.dart
 ```
+
+## List Search Share
+- Setiap item pada hasil pencarian/riwayat memiliki tombol Share langsung.
+- Tombol Share memakai resolver storage yang sama dengan preview sehingga path foto lama tetap dapat dipulihkan.

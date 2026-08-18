@@ -100,7 +100,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     try {
       await Share.shareXFiles(
         [XFile(imagePath)],
-        text: 'Scan Result: ${entry.displayTitle}\nLocation: ${entry.address ?? "Unknown"}',
+        text: 'AWB: ${entry.displayTitle}\nLocation: ${entry.address ?? "Unknown"}',
       );
     } catch (e) {
       if (!mounted) return;
@@ -344,19 +344,43 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
             padding: const EdgeInsets.all(8),
             child: TextField(
               controller: _searchController,
+              style: const TextStyle(
+                color: Color(0xFFE6EDF3),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              cursorColor: Color(0xFF00E676),
               decoration: InputDecoration(
                 hintText: 'Search barcode, foto, lokasi, nama file, tanggal...',
-                prefixIcon: const Icon(Icons.search),
+                hintStyle: const TextStyle(
+                  color: Color(0xFF8B949E),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: Color(0xFF8B949E),
+                ),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () => _searchController.clear(),
                       ),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF30363D)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF30363D)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFF00E676), width: 1.5),
+                ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 filled: true,
-                fillColor: Colors.grey[100],
+                fillColor: Color(0xFF21262D),
               ),
             ),
           ),
@@ -405,7 +429,17 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                               ),
                           ],
                         ),
-                        trailing: const Icon(Icons.chevron_right),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Share',
+                              icon: const Icon(Icons.share_outlined),
+                              onPressed: () => unawaited(_shareEntry(entry)),
+                            ),
+                            const Icon(Icons.chevron_right),
+                          ],
+                        ),
                         onTap: () => _showDetail(entry),
                       );
                     },

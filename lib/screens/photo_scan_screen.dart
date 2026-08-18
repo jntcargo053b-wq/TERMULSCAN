@@ -377,7 +377,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
         final lines = <String>[];
         if (barcode != null && barcode.isNotEmpty) {
-          lines.add('Hasil Scan: $barcode');
+          lines.add('AWB: $barcode');
         }
         lines.add(DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp));
         lines.add(locationText);
@@ -628,7 +628,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
               ),
               const Gap(20),
               Text(
-                hasBarcode ? 'Ambil foto untuk hasil scan' : 'Dokumentasi Foto',
+                hasBarcode ? 'Ambil foto untuk AWB' : 'Dokumentasi Foto',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.displayMedium,
               ),
