@@ -27,10 +27,10 @@ def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
-def releaseStoreFile = keystoreProperties['storeFile'] ?: System.getenv('KEYSTORE_FILE')
-def releaseStorePassword = keystoreProperties['storePassword'] ?: System.getenv('KEYSTORE_PASSWORD')
-def releaseKeyAlias = keystoreProperties['keyAlias'] ?: System.getenv('KEY_ALIAS')
-def releaseKeyPassword = keystoreProperties['keyPassword'] ?: System.getenv('KEY_PASSWORD')
+def releaseStoreFile = keystoreProperties.getProperty('storeFile') ?: System.getenv('KEYSTORE_FILE')
+def releaseStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('KEYSTORE_PASSWORD')
+def releaseKeyAlias = keystoreProperties.getProperty('keyAlias') ?: System.getenv('KEY_ALIAS')
+def releaseKeyPassword = keystoreProperties.getProperty('keyPassword') ?: System.getenv('KEY_PASSWORD')
 def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 android {
