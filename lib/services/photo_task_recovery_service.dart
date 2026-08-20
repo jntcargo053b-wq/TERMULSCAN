@@ -40,12 +40,12 @@ class PhotoTaskRecoveryService {
 
   /// Jalur aktif setelah capture. Boleh memakai GPS saat ini hanya jika
   /// capture belum mendapatkan koordinat sama sekali.
-  Future<void> processEntry(String entryId) {
+  Future<void> processEntry(String entryId, {bool allowFreshLocation = true}) {
     final completer = Completer<void>();
     _chain = _chain.then((_) async {
       try {
         await _settings.load();
-        await _processOne(entryId, allowFreshLocation: true);
+        await _processOne(entryId, allowFreshLocation: allowFreshLocation);
         if (!completer.isCompleted) completer.complete();
       } catch (e, st) {
         debugPrint('Photo task $entryId gagal: $e\n$st');
