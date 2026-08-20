@@ -73,10 +73,12 @@ android {
 
     buildTypes {
         release {
-            if (!hasReleaseSigning) {
-                throw new GradleException('Release signing is not configured. Provide android/key.properties or CI signing environment variables.')
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            } else {
+                println "⚠️  Release signing belum dikonfigurasi (tidak ada key.properties / env KEYSTORE_*). Fallback ke debug signing — APK release ini TIDAK cocok untuk publish ke Play Store."
+                signingConfig signingConfigs.debug
             }
-            signingConfig signingConfigs.release
         }
     }
 }
