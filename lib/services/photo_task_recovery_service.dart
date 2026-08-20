@@ -51,19 +51,28 @@ class PhotoTaskRecoveryService {
     }
 
     await _storage.markPhotoTaskAttempt(entryId);
-    final coords = await _location.getCoordinatesOnly();
-    if (coords.lat == null || coords.lng == null) return;
+
+    // Recovery harus memakai koordinat yang disimpan saat capture. Jangan
+    // mengambil GPS baru di sini: saat app dibuka kembali, perangkat bisa
+    // sudah berpindah jauh dari lokasi foto. Jika koordinat capture tidak
+    // tersedia, biarkan task tetap pending daripada menulis watermark palsu.
+    final task = _storage.getPhotoTask(entryId);
+    final taskLat = task?['latitude'];
+    final taskLng = task?['longitude'];
+    final lat = taskLat is num ? taskLat.toDouble() : entry.latitude;
+    final lng = taskLng is num ? taskLng.toDouble() : entry.longitude;
+    if (lat == null || lng == null) return;
 
     var current = entry.copyWith(
-      latitude: coords.lat,
-      longitude: coords.lng,
+      latitude: lat,
+      longitude: lng,
     );
     await _storage.update(current);
 
     String locationText = current.coordinatesString;
     try {
       final address = await _location
-          .reverseGeocode(coords.lat!, coords.lng!, accuracy: coords.accuracy)
+          .reverseGeocode(lat, lng)
           .timeout(const Duration(seconds: 10), onTimeout: () => null);
       if (address != null && address.isNotEmpty) {
         locationText = address;

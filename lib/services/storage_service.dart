@@ -337,16 +337,31 @@ class StorageService {
   }
 
   /// Simpan task sebelum proses GPS/watermark background dimulai.
-  Future<void> enqueuePhotoTask(String entryId) async {
+  Future<void> enqueuePhotoTask(
+    String entryId, {
+    double? latitude,
+    double? longitude,
+  }) async {
+    final previous = _pendingPhotoTasks[entryId];
     _pendingPhotoTasks[entryId] = {
       'entryId': entryId,
-      'createdAt': DateTime.now().toIso8601String(),
-      'attempts': (_pendingPhotoTasks[entryId]?['attempts'] as int?) ?? 0,
+      'createdAt': previous?['createdAt'] ?? DateTime.now().toIso8601String(),
+      'attempts': (previous?['attempts'] as int?) ?? 0,
+      // Capture-time coordinates are persisted with the task. Recovery must
+      // never silently replace an old photo's location with the phone's
+      // current location after the process has been killed.
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     };
     await _persist();
   }
 
   List<String> get pendingPhotoTaskIds => List.unmodifiable(_pendingPhotoTasks.keys);
+
+  Map<String, dynamic>? getPhotoTask(String entryId) {
+    final task = _pendingPhotoTasks[entryId];
+    return task == null ? null : Map<String, dynamic>.from(task);
+  }
 
   Future<void> markPhotoTaskCompleted(String entryId) async {
     _pendingPhotoTasks.remove(entryId);

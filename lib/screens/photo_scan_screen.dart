@@ -193,12 +193,20 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final capturedAt = DateTime.now();
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
-      // Watermark awal dengan barcode (jika ada)
+      // Ambil posisi sedekat mungkin dengan waktu capture. Koordinat ini
+      // menjadi sumber kebenaran untuk recovery; jangan mengganti lokasi foto
+      // lama dengan posisi perangkat saat aplikasi dibuka kembali.
+      final captureCoords = await _loc.getCoordinatesOnly();
+
+      // Watermark awal dengan barcode (jika ada). Jika GPS belum tersedia,
+      // proses aktif akan mencoba lagi di background.
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
-        locationText: 'Mencari lokasi...',
+        locationText: captureCoords.lat != null && captureCoords.lng != null
+            ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
+            : 'Mencari lokasi...',
         barcode: _barcode,
       );
 
@@ -209,15 +217,19 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         value: savedPath,
         imagePath: savedPath,
         timestamp: capturedAt,
-        latitude: null,
-        longitude: null,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
         locationName: null,
         scanResult: _barcode, // simpan barcode di database
       );
       await _storage.add(entry);
       // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
       // process, startup dapat melanjutkan dari raw photo.
-      await _storage.enqueuePhotoTask(entry.id);
+      await _storage.enqueuePhotoTask(
+        entry.id,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
+      );
 
       setState(() {
         _photoCount++;
@@ -307,12 +319,16 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final capturedAt = DateTime.now();
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
-      // Watermark awal dengan barcode (yang sudah diperbarui dari scan)
+      final captureCoords = await _loc.getCoordinatesOnly();
+
+      // Watermark awal memakai koordinat capture bila tersedia.
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
-        locationText: 'Mencari lokasi...',
+        locationText: captureCoords.lat != null && captureCoords.lng != null
+            ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
+            : 'Mencari lokasi...',
         barcode: _barcode,
       );
 
@@ -322,15 +338,19 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         value: savedPath,
         imagePath: savedPath,
         timestamp: capturedAt,
-        latitude: null,
-        longitude: null,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
         locationName: null,
         scanResult: _barcode,
       );
       await _storage.add(entry);
       // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
       // process, startup dapat melanjutkan dari raw photo.
-      await _storage.enqueuePhotoTask(entry.id);
+      await _storage.enqueuePhotoTask(
+        entry.id,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
+      );
 
       setState(() {
         _photoCount++;
@@ -422,9 +442,21 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   // ============================================================================
 
   Future<void> _resolveLocationInBackground(String entryId) async {
-    // 1. Ambil koordinat
-    final coords = await _loc.getCoordinatesOnly();
-    if (coords.lat == null || coords.lng == null) {
+    // 1. Gunakan koordinat capture yang sudah tersimpan. Hanya bila proses
+    // masih hidup dan entry belum memiliki koordinat, ambil posisi baru.
+    // Recovery setelah app killed tidak boleh melakukan ini karena hasilnya
+    // bisa merupakan lokasi yang berbeda dari lokasi saat foto dibuat.
+    final saved = await _storage.getEntry(entryId);
+    if (saved == null) return;
+
+    var lat = saved.latitude;
+    var lng = saved.longitude;
+    if (lat == null || lng == null) {
+      final coords = await _loc.getCoordinatesOnly();
+      lat = coords.lat;
+      lng = coords.lng;
+    }
+    if (lat == null || lng == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -437,11 +469,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       return;
     }
 
-    final saved = await _storage.getEntry(entryId);
-    if (saved == null) return;
     final updatedWithCoords = saved.copyWith(
-      latitude: coords.lat,
-      longitude: coords.lng,
+      latitude: lat,
+      longitude: lng,
     );
     await _storage.update(updatedWithCoords);
 
@@ -449,7 +479,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     String finalLocationText;
     try {
       final address = await _loc
-          .reverseGeocode(coords.lat!, coords.lng!)
+          .reverseGeocode(lat!, lng!)
           .timeout(const Duration(seconds: 10), onTimeout: () => null);
       if (address != null && address.isNotEmpty) {
         finalLocationText = address;
