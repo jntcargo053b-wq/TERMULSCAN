@@ -21,6 +21,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
 
   List<ScanEntry> _filteredEntries = [];
   Timer? _debounceTimer;
+  final Map<String, String?> _resolvedPathCache = {};
 
   @override
   void initState() {
@@ -82,8 +83,12 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     _performSearch(_searchController.text);
   }
 
-  Future<String?> _resolveImagePath(ScanEntry entry) {
-    return _storage.resolveImagePath(entry);
+  Future<String?> _resolveImagePath(ScanEntry entry) async {
+    final cached = _resolvedPathCache[entry.id];
+    if (_resolvedPathCache.containsKey(entry.id)) return cached;
+    final path = await _storage.resolveImagePath(entry);
+    _resolvedPathCache[entry.id] = path;
+    return path;
   }
 
   Future<void> _shareEntry(ScanEntry entry) async {
@@ -208,6 +213,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                       );
                       if (confirm == true) {
                         await _storage.deleteEntry(entry.id);
+                        _resolvedPathCache.remove(entry.id);
                         _refreshList();
                         if (context.mounted) Navigator.pop(context);
                       }
@@ -320,6 +326,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     );
     if (confirm == true) {
       await _storage.clear();
+      _resolvedPathCache.clear();
       if (mounted) setState(() => _filteredEntries = []);
     }
   }

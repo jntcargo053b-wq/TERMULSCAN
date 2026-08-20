@@ -13,6 +13,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../models/scan_entry.dart';
 import '../services/location_service.dart';
+import '../services/photo_task_recovery_service.dart';
 import '../services/storage_service.dart';
 import '../services/watermark_service.dart';
 import '../theme/app_theme.dart';
@@ -138,7 +139,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         }
       });
 
-      final found = await controller.analyzeImage(imagePath);
+      final found = await controller
+          .analyzeImage(imagePath)
+          .timeout(const Duration(seconds: 5));
       if (!found) return null;
 
       return await completer.future.timeout(
@@ -193,13 +196,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final capturedAt = DateTime.now();
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
-      // Ambil posisi sedekat mungkin dengan waktu capture. Koordinat ini
-      // menjadi sumber kebenaran untuk recovery; jangan mengganti lokasi foto
-      // lama dengan posisi perangkat saat aplikasi dibuka kembali.
+      // Ambil koordinat sedekat mungkin dengan waktu capture dan simpan
+      // bersama task. Recovery tidak boleh mengganti foto lama dengan GPS
+      // lokasi perangkat saat aplikasi dibuka kembali.
       final captureCoords = await _loc.getCoordinatesOnly();
 
-      // Watermark awal dengan barcode (jika ada). Jika GPS belum tersedia,
-      // proses aktif akan mencoba lagi di background.
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
@@ -210,7 +211,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         barcode: _barcode,
       );
 
-      // Buat entry dan simpan
       final entry = ScanEntry(
         id: _storage.generateId(),
         type: ScanType.photo,
@@ -220,26 +220,23 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         latitude: captureCoords.lat,
         longitude: captureCoords.lng,
         locationName: null,
-        scanResult: _barcode, // simpan barcode di database
+        scanResult: _barcode,
       );
       await _storage.add(entry);
-      // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
-      // process, startup dapat melanjutkan dari raw photo.
       await _storage.enqueuePhotoTask(
         entry.id,
         latitude: captureCoords.lat,
         longitude: captureCoords.lng,
       );
 
+      if (!mounted) return;
       setState(() {
         _photoCount++;
         _isSaving = false;
       });
 
-      if (mounted) _showSuccess(entry);
-
-      // Proses lokasi di latar belakang (akan re-burn watermark)
-      unawaited(_resolveLocationInBackground(entry.id));
+      _showSuccess(entry);
+      unawaited(PhotoTaskRecoveryService.instance.processEntry(entry.id));
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal ambil foto: $e');
@@ -310,6 +307,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
+        _deleteTempFile(xfile.path);
         return;
       }
 
@@ -321,7 +319,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
       final captureCoords = await _loc.getCoordinatesOnly();
 
-      // Watermark awal memakai koordinat capture bila tersedia.
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
@@ -344,21 +341,20 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         scanResult: _barcode,
       );
       await _storage.add(entry);
-      // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
-      // process, startup dapat melanjutkan dari raw photo.
       await _storage.enqueuePhotoTask(
         entry.id,
         latitude: captureCoords.lat,
         longitude: captureCoords.lng,
       );
 
+      if (!mounted) return;
       setState(() {
         _photoCount++;
         _isSaving = false;
       });
 
-      if (mounted) _showSuccess(entry);
-      unawaited(_resolveLocationInBackground(entry.id));
+      _showSuccess(entry);
+      unawaited(PhotoTaskRecoveryService.instance.processEntry(entry.id));
     } catch (e) {
       setState(() => _isSaving = false);
       _showError('Gagal memilih foto: $e');
@@ -395,7 +391,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         if (_wmSettings.hasLogo) {
           final logoFile = File(_wmSettings.logoPath!);
           if (await logoFile.exists()) {
-            logoBytes = await logoFile.readAsBytes();
+            final length = await logoFile.length();
+            // Hindari menahan asset logo multi-MB di setiap item queue.
+            if (length <= 512 * 1024) {
+              logoBytes = await logoFile.readAsBytes();
+            }
           }
         }
 
@@ -435,109 +435,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       // `completer` di atas, terpisah dari resolusi _burnQueue).
     });
     return completer.future;
-  }
-
-  // ============================================================================
-  // Resolusi lokasi di background (re-burn watermark)
-  // ============================================================================
-
-  Future<void> _resolveLocationInBackground(String entryId) async {
-    // 1. Gunakan koordinat capture yang sudah tersimpan. Hanya bila proses
-    // masih hidup dan entry belum memiliki koordinat, ambil posisi baru.
-    // Recovery setelah app killed tidak boleh melakukan ini karena hasilnya
-    // bisa merupakan lokasi yang berbeda dari lokasi saat foto dibuat.
-    final saved = await _storage.getEntry(entryId);
-    if (saved == null) return;
-
-    var lat = saved.latitude;
-    var lng = saved.longitude;
-    if (lat == null || lng == null) {
-      final coords = await _loc.getCoordinatesOnly();
-      lat = coords.lat;
-      lng = coords.lng;
-    }
-    if (lat == null || lng == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ GPS tidak tersedia, foto tetap tersimpan tanpa lokasi'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-      return;
-    }
-
-    final updatedWithCoords = saved.copyWith(
-      latitude: lat,
-      longitude: lng,
-    );
-    await _storage.update(updatedWithCoords);
-
-    // 2. Reverse geocoding dengan timeout 10 detik
-    String finalLocationText;
-    try {
-      final address = await _loc
-          .reverseGeocode(lat!, lng!)
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (address != null && address.isNotEmpty) {
-        finalLocationText = address;
-        final current = await _storage.getEntry(entryId);
-        if (current != null) {
-          final updatedWithAddress = current.copyWith(locationName: address);
-          await _storage.update(updatedWithAddress);
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('📍 Lokasi terdeteksi: $address'),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.green.shade700,
-            ),
-          );
-        }
-      } else {
-        finalLocationText = updatedWithCoords.coordinatesString;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Gagal mengambil alamat, gunakan koordinat'),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      finalLocationText = updatedWithCoords.coordinatesString;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ Gagal mengambil alamat: $e'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    }
-
-    // 3. Re-burn watermark dengan lokasi final dan barcode yang tersimpan
-    final currentEntry = await _storage.getEntry(entryId);
-    if (currentEntry == null) return;
-    try {
-      await _burnWatermark(
-        sourcePath: _storage.rawPathFor(currentEntry.value),
-        destPath: currentEntry.value,
-        timestamp: currentEntry.timestamp,
-        locationText: finalLocationText,
-        barcode: currentEntry.scanResult, // ambil barcode dari database
-      );
-      await FileImage(File(currentEntry.value)).evict();
-      await _storage.markPhotoTaskCompleted(entryId);
-    } catch (_) {
-      // Sudah ditangani (snackbar) di dalam _burnWatermark.
-    }
   }
 
   // ============================================================================

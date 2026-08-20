@@ -28,6 +28,7 @@ class WatermarkService {
   static const int _logoPadding = 16;
   static const int _barAlpha = 150;
   static const int _jpegQuality = 88;
+  static const int _maxWorkingDimension = 1920;
 
   static Future<void> burn({
     required String sourcePath,
@@ -96,6 +97,19 @@ class WatermarkService {
       // ditampilkan/dibagikan (yang menghormati EXIF), watermark pindah ke
       // SAMPING gambar alih-alih di bawah.
       image = img.bakeOrientation(image);
+
+      // Jangan mempertahankan bitmap camera/gallery yang sangat besar selama
+      // proses watermark. Setelah orientasi benar, turunkan ke maksimum 1920px
+      // agar peak RAM jauh lebih rendah pada perangkat dengan RAM kecil.
+      final largest = image.width > image.height ? image.width : image.height;
+      if (largest > _maxWorkingDimension) {
+        final scale = _maxWorkingDimension / largest;
+        image = img.copyResize(
+          image,
+          width: (image.width * scale).round().clamp(1, _maxWorkingDimension),
+          height: (image.height * scale).round().clamp(1, _maxWorkingDimension),
+        );
+      }
 
       final hasText = req.lines.isNotEmpty;
       final hasLogo = req.logoBytes != null;

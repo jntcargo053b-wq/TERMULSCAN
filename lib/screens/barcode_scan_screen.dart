@@ -156,12 +156,26 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   Future<void> _goTakePhoto() async {
     final barcodeValue = _selectedBarcodeValue;
     if (barcodeValue == null) return;
+
+    // Route baru juga meminta kamera. Stop MobileScanner sebelum push agar
+    // tidak ada dua consumer kamera aktif bersamaan.
+    await _controller?.stop();
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
       ),
     );
+    if (!mounted) return;
+
+    // Jika user kembali dari PhotoScanScreen tanpa menutup scanner ini,
+    // hidupkan kembali controller sebelum meneruskan hasil ke parent.
+    try {
+      await _controller?.start();
+    } catch (e) {
+      debugPrint('Gagal restart MobileScanner setelah PhotoScanScreen: $e');
+    }
     if (!mounted) return;
     Navigator.pop(context, result);
   }
