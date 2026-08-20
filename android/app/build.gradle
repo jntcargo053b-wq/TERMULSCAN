@@ -63,7 +63,14 @@ android {
     signingConfigs {
         release {
             if (hasReleaseSigning) {
-                storeFile file(releaseStoreFile)
+                // Resolve both absolute paths and paths relative to android/.
+                // key.properties is stored in android/, while this block executes
+                // from the android/app project directory.
+                def signingFile = new File(releaseStoreFile)
+                if (!signingFile.isAbsolute()) {
+                    signingFile = rootProject.file(releaseStoreFile)
+                }
+                storeFile signingFile
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
                 keyPassword releaseKeyPassword

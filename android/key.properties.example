@@ -1,4 +1,7 @@
-storeFile=upload-keystore.jks
+# This file is only an example. Do NOT commit real passwords.
+# The CI workflow creates android/key.properties automatically from GitHub Secrets.
+# For local builds, use a keystore located under android/ or provide KEYSTORE_FILE.
+storeFile=termulscan-release.jks
 storePassword=YOUR_KEYSTORE_PASSWORD
 keyAlias=YOUR_KEY_ALIAS
 keyPassword=YOUR_KEY_PASSWORD
