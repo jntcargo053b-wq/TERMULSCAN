@@ -125,7 +125,7 @@ class LocationService {
         '?lat=$lat&lon=$lng&format=json&addressdetails=1&zoom=$zoom',
       );
       final response = await http.get(uri, headers: {
-        'User-Agent': 'WHScanner/1.0',
+        'User-Agent': 'TERMULScan/1.0 (https://github.com/termulscan/termulscan)',
         'Accept-Language': 'id',
       }).timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) return null;

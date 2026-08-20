@@ -1,14 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'services/storage_service.dart';
+import 'services/photo_task_recovery_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Tanpa ini, riwayat scan yang tersimpan tidak pernah dimuat balik dari
   // disk — StorageService akan selalu tampak kosong setiap app dibuka ulang.
   await StorageService().init();
+  // Lanjutkan foto yang tertinggal saat Android menghentikan proses ketika
+  // GPS/reverse-geocode/watermark masih berjalan. Tidak memblokir UI startup.
+  unawaited(PhotoTaskRecoveryService.instance.recoverPending());
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,

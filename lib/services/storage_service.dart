@@ -44,12 +44,14 @@ class StorageService {
   StorageService._internal();
 
   static const _entriesKey = 'scan_entries';
+  static const _photoTasksKey = 'pending_photo_tasks_v1';
 
   final List<ScanEntry> _entries = [];
+  final Map<String, Map<String, dynamic>> _pendingPhotoTasks = {};
   final LRUCache _geoCache = LRUCache(capacity: 100);
 
   Timer? _saveDebounceTimer;
-  bool _isSaving = false;
+  Future<void> _persistChain = Future.value();
   bool _initialized = false;
   int _idCounter = 0;
 
@@ -59,6 +61,7 @@ class StorageService {
     if (_initialized) return;
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString(_entriesKey);
+    final taskData = prefs.getString(_photoTasksKey);
     if (data != null && data.isNotEmpty) {
       try {
         final List<dynamic> jsonList = json.decode(data);
@@ -69,6 +72,18 @@ class StorageService {
               .map((e) => ScanEntry.fromMap(Map<String, dynamic>.from(e))));
       } catch (_) {
         // Jangan crash saat startup bila history lama korup.
+      }
+    }
+    if (taskData != null && taskData.isNotEmpty) {
+      try {
+        final List<dynamic> tasks = json.decode(taskData);
+        for (final raw in tasks.whereType<Map>()) {
+          final task = Map<String, dynamic>.from(raw);
+          final id = task['entryId']?.toString();
+          if (id != null && id.isNotEmpty) _pendingPhotoTasks[id] = task;
+        }
+      } catch (_) {
+        // Task recovery korup tidak boleh menggagalkan startup.
       }
     }
 
@@ -114,6 +129,7 @@ class StorageService {
     if (index == -1) return;
 
     final entry = _entries.removeAt(index);
+    _pendingPhotoTasks.remove(id);
     await _deleteEntryFiles(entry);
     _triggerSave();
   }
@@ -121,6 +137,7 @@ class StorageService {
   Future<void> clear() async {
     final oldEntries = List<ScanEntry>.from(_entries);
     _entries.clear();
+    _pendingPhotoTasks.clear();
     _geoCache.clear();
     for (final entry in oldEntries) {
       await _deleteEntryFiles(entry);
@@ -289,6 +306,8 @@ class StorageService {
     }
   }
 
+  /// Jadwalkan snapshot terbaru. Jika write sebelumnya masih berjalan,
+  /// snapshot baru diantrikan setelahnya — tidak pernah dibuang.
   void _triggerSave() {
     _saveDebounceTimer?.cancel();
     _saveDebounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -301,20 +320,45 @@ class StorageService {
     await _persist();
   }
 
-  Future<void> _persist() async {
-    if (_isSaving) return;
-    _isSaving = true;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _entriesKey,
-        json.encode(_entries.map((e) => e.toMap()).toList()),
-      );
-    } catch (e) {
-      print('Error saving scan entries: $e');
-    } finally {
-      _isSaving = false;
-    }
+  Future<void> _persist() {
+    final entriesJson = json.encode(_entries.map((e) => e.toMap()).toList());
+    final tasksJson = json.encode(_pendingPhotoTasks.values.toList());
+
+    _persistChain = _persistChain.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_entriesKey, entriesJson);
+        await prefs.setString(_photoTasksKey, tasksJson);
+      } catch (e) {
+        print('Error saving scan storage: $e');
+      }
+    });
+    return _persistChain;
+  }
+
+  /// Simpan task sebelum proses GPS/watermark background dimulai.
+  Future<void> enqueuePhotoTask(String entryId) async {
+    _pendingPhotoTasks[entryId] = {
+      'entryId': entryId,
+      'createdAt': DateTime.now().toIso8601String(),
+      'attempts': (_pendingPhotoTasks[entryId]?['attempts'] as int?) ?? 0,
+    };
+    await _persist();
+  }
+
+  List<String> get pendingPhotoTaskIds => List.unmodifiable(_pendingPhotoTasks.keys);
+
+  Future<void> markPhotoTaskCompleted(String entryId) async {
+    _pendingPhotoTasks.remove(entryId);
+    await _persist();
+  }
+
+  Future<void> markPhotoTaskAttempt(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['attempts'] = ((task['attempts'] as int?) ?? 0) + 1;
+    task['lastAttemptAt'] = DateTime.now().toIso8601String();
+    await _persist();
   }
 
   String? getCachedLocation(double lat, double lng) {

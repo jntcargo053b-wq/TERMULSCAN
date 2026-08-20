@@ -183,7 +183,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       if (!mounted) return;
       if (!confirmed) {
         _deleteTempFile(xfile.path);
-        await _takePhoto();
         return;
       }
 
@@ -216,6 +215,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         scanResult: _barcode, // simpan barcode di database
       );
       await _storage.add(entry);
+      // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
+      // process, startup dapat melanjutkan dari raw photo.
+      await _storage.enqueuePhotoTask(entry.id);
 
       setState(() {
         _photoCount++;
@@ -296,7 +298,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
-        await _pickFromGallery();
         return;
       }
 
@@ -327,6 +328,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         scanResult: _barcode,
       );
       await _storage.add(entry);
+      // Persist task sebelum fire-and-forget GPS dimulai. Jika Android kill
+      // process, startup dapat melanjutkan dari raw photo.
+      await _storage.enqueuePhotoTask(entry.id);
 
       setState(() {
         _photoCount++;
@@ -500,6 +504,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         barcode: currentEntry.scanResult, // ambil barcode dari database
       );
       await FileImage(File(currentEntry.value)).evict();
+      await _storage.markPhotoTaskCompleted(entryId);
     } catch (_) {
       // Sudah ditangani (snackbar) di dalam _burnWatermark.
     }
