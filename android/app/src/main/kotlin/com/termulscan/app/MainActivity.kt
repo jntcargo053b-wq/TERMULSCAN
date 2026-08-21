@@ -6,10 +6,9 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
-import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
-import androidx.core.app.ActivityCompat
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -19,6 +18,16 @@ import io.flutter.plugin.common.MethodChannel.Result
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.termulscan.app/location"
     private lateinit var locationManager: LocationManager
+
+    companion object {
+        private const val TARGET_ACCURACY_METERS = 20f
+        private const val MAX_FALLBACK_ACCURACY_METERS = 30f
+        private const val MAX_LAST_KNOWN_AGE_MS = 20_000L
+        private const val LOCK_SAMPLES = 5
+        private const val MIN_STABLE_SAMPLES = 3
+        private const val STABILITY_RADIUS_METERS = 15f
+        private const val TIMEOUT_MS = 7_000L
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -35,7 +44,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getCurrentLocation(result: Result) {
-        // Cek permission
         val hasFineLocation = ContextCompat.checkSelfPermission(
             this, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -48,80 +56,103 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 1. Cek last known location (sangat cepat) — tolak jika stale atau tidak akurat
-        val maxAgeMillis = 120_000L
-        val maxAccuracyMeters = 50f
+        // Capture/POD tidak menggunakan cache Flutter/native. Last-known hanya
+        // fallback terakhir dan harus benar-benar baru serta cukup akurat.
+        val gpsLast = safeLastKnown(LocationManager.GPS_PROVIDER)
+        val netLast = safeLastKnown(LocationManager.NETWORK_PROVIDER)
+        val cachedBest = listOfNotNull(gpsLast, netLast)
+            .filter { isFreshAndAccurate(it, MAX_LAST_KNOWN_AGE_MS, MAX_FALLBACK_ACCURACY_METERS) }
+            .minByOrNull { providerScore(it) }
 
-        fun isUsable(loc: Location?): Boolean {
-            if (loc == null) return false
-            val ageMillis = if (loc.elapsedRealtimeNanos > 0L) {
-                (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
-            } else {
-                Long.MAX_VALUE
-            }
-            return ageMillis <= maxAgeMillis && loc.accuracy <= maxAccuracyMeters
-        }
-
-        val gpsLast = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        val netLast = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-
-        val cachedBest: Location? = listOfNotNull(gpsLast, netLast)
-            .filter { isUsable(it) }
-            .minByOrNull { it.accuracy }
-
-        if (cachedBest != null) {
-            val map = mapOf(
-                "lat" to cachedBest.latitude,
-                "lng" to cachedBest.longitude,
-                "accuracy" to cachedBest.accuracy
-            )
-            result.success(map)
-            return
-        }
-
-        // 2. Tidak ada cache – request update dari semua provider yang aktif,
-        // pakai fix pertama yang sudah cukup akurat, atau fix terbaik yang
-        // sempat diterima sampai timeout (bukan asal fix tercepat).
-        val providers = listOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
-            LocationManager.PASSIVE_PROVIDER
-        )
-        var requested = false
+        // Jangan langsung menerima last-known yang masih bisa stale. Jika ada,
+        // gunakan hanya sebagai fast fallback sementara tetap mencoba fresh fix.
+        // Untuk POD, fresh GNSS diberi prioritas.
+        val samples = mutableListOf<Location>()
         var resultSent = false
-        var bestLocation: Location? = null
+        var requested = false
+        val handler = Handler(Looper.getMainLooper())
 
-        fun sendResult(location: Location) {
+        fun cleanup(listener: LocationListener) {
+            try { locationManager.removeUpdates(listener) } catch (_: Exception) {}
+            handler.removeCallbacksAndMessages(null)
+        }
+
+        fun send(location: Location, locked: Boolean, fallback: Boolean) {
+            if (resultSent) return
             resultSent = true
             val ageMillis = if (location.elapsedRealtimeNanos > 0L) {
-                (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+                ((SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
             } else {
                 -1L
             }
-            result.success(
-                mapOf(
-                    "lat" to location.latitude,
-                    "lng" to location.longitude,
-                    "accuracy" to location.accuracy,
-                    "ageMillis" to ageMillis
-                )
-            )
+            result.success(mapOf(
+                "lat" to location.latitude,
+                "lng" to location.longitude,
+                "accuracy" to location.accuracy,
+                "ageMillis" to ageMillis,
+                "provider" to (location.provider ?: "unknown"),
+                "locked" to locked,
+                "fallback" to fallback
+            ))
         }
 
-        val locationListener = object : LocationListener {
+        fun chooseBest(): Location? {
+            val fresh = samples.filter {
+                isFreshAndAccurate(it, 3_000L, MAX_FALLBACK_ACCURACY_METERS)
+            }
+            if (fresh.isEmpty()) return null
+
+            // GNSS/GPS selalu diprioritaskan jika kualitasnya sebanding.
+            return fresh.minByOrNull { providerScore(it) }
+        }
+
+        fun hasStableCluster(): Location? {
+            val qualified = samples.filter { it.accuracy <= TARGET_ACCURACY_METERS }
+            if (qualified.size < MIN_STABLE_SAMPLES) return null
+
+            val recent = qualified.takeLast(MIN_STABLE_SAMPLES)
+            val center = recent.first()
+            val stable = recent.all { distanceMeters(center, it) <= STABILITY_RADIUS_METERS }
+            if (!stable) return null
+
+            // Weighted centroid: sample dengan accuracy lebih baik punya bobot lebih besar.
+            var sumLat = 0.0
+            var sumLng = 0.0
+            var sumWeight = 0.0
+            for (loc in recent) {
+                val sigma = loc.accuracy.coerceAtLeast(3f).toDouble()
+                val weight = 1.0 / (sigma * sigma)
+                sumLat += loc.latitude * weight
+                sumLng += loc.longitude * weight
+                sumWeight += weight
+            }
+            val lat = sumLat / sumWeight
+            val lng = sumLng / sumWeight
+            val locked = Location(center).apply {
+                latitude = lat
+                longitude = lng
+                accuracy = recent.map { it.accuracy }.minOrNull() ?: center.accuracy
+                provider = "locked"
+            }
+            return locked
+        }
+
+        val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 if (resultSent) return
+                if (!location.hasAccuracy()) return
 
-                if (bestLocation == null || location.accuracy < bestLocation!!.accuracy) {
-                    bestLocation = location
-                }
+                // Ignore very old callbacks and wildly inaccurate fixes.
+                if (!isFreshAndAccurate(location, 3_000L, 50f)) return
 
-                // Fix ini sudah cukup akurat — langsung pakai, tidak perlu tunggu provider lain
-                if (location.accuracy <= maxAccuracyMeters) {
-                    sendResult(location)
-                    try { locationManager.removeUpdates(this) } catch (_: Exception) {}
+                samples.add(location)
+                if (samples.size > LOCK_SAMPLES) samples.removeAt(0)
+
+                val locked = hasStableCluster()
+                if (locked != null) {
+                    send(locked, locked = true, fallback = false)
+                    cleanup(this)
                 }
-                // Kalau belum cukup akurat, jangan resolve — tunggu provider lain atau timeout
             }
 
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -129,14 +160,26 @@ class MainActivity : FlutterActivity() {
             override fun onProviderDisabled(provider: String) {}
         }
 
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        )
+
         for (provider in providers) {
-            if (locationManager.isProviderEnabled(provider)) {
-                try {
-                    locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
-                    requested = true
-                } catch (_: Exception) {
-                    // Provider mungkin tidak support requestSingleUpdate, abaikan
-                }
+            if (!locationManager.isProviderEnabled(provider)) continue
+            try {
+                locationManager.requestLocationUpdates(
+                    provider,
+                    700L,
+                    0f,
+                    listener,
+                    Looper.getMainLooper()
+                )
+                requested = true
+            } catch (_: SecurityException) {
+                // Permission may have changed between the check and request.
+            } catch (_: Exception) {
+                // Provider may be unavailable on this device.
             }
         }
 
@@ -145,23 +188,55 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 3. Timeout 5 detik – pakai fix terbaik yang sempat diterima (walau
-        // di atas ambang akurasi), atau null kalau tidak ada sama sekali.
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!resultSent) {
-                val fallback = bestLocation
-                if (fallback != null) {
-                    sendResult(fallback)
-                } else {
-                    resultSent = true
-                    result.success(mapOf(
-                        "lat" to null,
-                        "lng" to null,
-                        "accuracy" to null
-                    ))
-                }
-                try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+        handler.postDelayed({
+            if (resultSent) return@postDelayed
+
+            val best = chooseBest()
+            if (best != null && best.accuracy <= MAX_FALLBACK_ACCURACY_METERS) {
+                // If a fresh GNSS/network fix exists but did not converge, expose
+                // it explicitly as fallback so Flutter can decide whether to accept.
+                send(best, locked = false, fallback = true)
+            } else if (cachedBest != null) {
+                send(cachedBest, locked = false, fallback = true)
+            } else {
+                resultSent = true
+                result.success(mapOf(
+                    "lat" to null,
+                    "lng" to null,
+                    "accuracy" to null,
+                    "locked" to false,
+                    "fallback" to false
+                ))
             }
-        }, 5000)
+            cleanup(listener)
+        }, TIMEOUT_MS)
+    }
+
+    private fun safeLastKnown(provider: String): Location? {
+        return try {
+            if (locationManager.isProviderEnabled(provider)) {
+                locationManager.getLastKnownLocation(provider)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isFreshAndAccurate(location: Location, maxAgeMs: Long, maxAccuracy: Float): Boolean {
+        if (!location.hasAccuracy() || location.accuracy > maxAccuracy) return false
+        if (location.elapsedRealtimeNanos <= 0L) return false
+        val age = (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+        return age in 0..maxAgeMs
+    }
+
+    private fun providerScore(location: Location): Double {
+        val providerPenalty = if (location.provider == LocationManager.GPS_PROVIDER) 0.0 else 100.0
+        return location.accuracy.toDouble() + providerPenalty
+    }
+
+    private fun distanceMeters(a: Location, b: Location): Float {
+        val out = FloatArray(1)
+        Location.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude, out)
+        return out[0]
     }
 }

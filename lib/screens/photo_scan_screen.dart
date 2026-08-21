@@ -182,7 +182,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       HapticFeedback.mediumImpact();
 
       // Preview dan konfirmasi
-      final confirmed = await // PREVIEW NOTE: this path is the raw capture; final watermark is burned after confirmation.
+      final confirmed = await
         _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -201,14 +201,24 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       // bersama task. Recovery tidak boleh mengganti foto lama dengan GPS
       // lokasi perangkat saat aplikasi dibuka kembali.
       final captureCoords = await _loc.getCoordinatesOnly();
+      final gpsAccuracy = captureCoords.accuracy;
+      final gpsValid = captureCoords.lat != null &&
+          captureCoords.lng != null &&
+          gpsAccuracy != null &&
+          gpsAccuracy <= 20.0;
+      if (!gpsValid) {
+        throw Exception(
+          'GPS belum cukup stabil/akurat (target ≤20 m). Tunggu beberapa detik di area terbuka lalu ambil foto lagi.'
+          '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
+        );
+      }
 
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
-        locationText: captureCoords.lat != null && captureCoords.lng != null
-            ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
-            : 'Mencari lokasi...',
+        locationText:
+            '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}',
         barcode: _barcode,
       );
 
@@ -305,7 +315,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       }
 
       // Preview
-      final confirmed = await // PREVIEW NOTE: this path is the raw capture; final watermark is burned after confirmation.
+      final confirmed = await
         _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -320,14 +330,24 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       await _storage.savePhotoRawCopy(xfile.path, savedPath);
 
       final captureCoords = await _loc.getCoordinatesOnly();
+      final gpsAccuracy = captureCoords.accuracy;
+      final gpsValid = captureCoords.lat != null &&
+          captureCoords.lng != null &&
+          gpsAccuracy != null &&
+          gpsAccuracy <= 20.0;
+      if (!gpsValid) {
+        throw Exception(
+          'GPS belum cukup stabil/akurat (target ≤20 m). Tunggu beberapa detik di area terbuka lalu ambil foto lagi.'
+          '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
+        );
+      }
 
       await _burnWatermark(
         sourcePath: savedPath,
         destPath: savedPath,
         timestamp: capturedAt,
-        locationText: captureCoords.lat != null && captureCoords.lng != null
-            ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
-            : 'Mencari lokasi...',
+        locationText:
+            '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}',
         barcode: _barcode,
       );
 
