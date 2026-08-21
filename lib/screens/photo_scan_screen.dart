@@ -182,7 +182,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       HapticFeedback.mediumImpact();
 
       // Preview dan konfirmasi
-      final confirmed = await _showPreviewAndConfirm(xfile.path);
+      final confirmed = await // PREVIEW NOTE: this path is the raw capture; final watermark is burned after confirmation.
+        _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
         _deleteTempFile(xfile.path);
@@ -304,7 +305,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       }
 
       // Preview
-      final confirmed = await _showPreviewAndConfirm(xfile.path);
+      final confirmed = await // PREVIEW NOTE: this path is the raw capture; final watermark is burned after confirmation.
+        _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
         _deleteTempFile(xfile.path);

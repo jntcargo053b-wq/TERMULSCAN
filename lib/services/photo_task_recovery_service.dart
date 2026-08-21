@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:intl/intl.dart';
 
 import '../models/scan_entry.dart';
@@ -125,6 +126,9 @@ class PhotoTaskRecoveryService {
       lines: lines,
       logoBytes: logoBytes,
     );
+
+      // The publicPath is rewritten by the recovery burn. Evict Flutter's ImageCache so readers see the new bytes.
+      await FileImage(File(publicPath)).evict();
 
     await _storage.markPhotoTaskCompleted(entryId);
   }
