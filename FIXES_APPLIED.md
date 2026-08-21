@@ -65,3 +65,7 @@
 - Gallery capture now uses `markPhotoWatermarkCompleted(addressResolved: ...)`, matching camera flow.
 - Recovery retry timer is started only while the app is resumed/foreground.
 - Timer is stopped on paused/inactive/detached and recreated on resume.
+
+## Version 21 — compile fix
+- Restored `_gpsMaxAcceptedMeters = 30.0` inside `_PhotoScanScreenState`.
+- Kept 20m as quality target and 30m as accepted GPS ceiling.
