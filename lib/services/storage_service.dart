@@ -2,10 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/scan_entry.dart';
+
+Future<List<String>> _encodeStorageSnapshot(Map<String, dynamic> snapshot) async {
+  final entriesJson = json.encode(snapshot['entries']);
+  final tasksJson = json.encode(snapshot['tasks']);
+  return [entriesJson, tasksJson];
+}
 
 class LRUCache {
   final int capacity;
@@ -321,16 +329,30 @@ class StorageService {
   }
 
   Future<void> _persist() {
-    final entriesJson = json.encode(_entries.map((e) => e.toMap()).toList());
-    final tasksJson = json.encode(_pendingPhotoTasks.values.toList());
+    final snapshot = <String, dynamic>{
+      'entries': _entries.map((e) => e.toMap()).toList(growable: false),
+      'tasks': _pendingPhotoTasks.values
+          .map((task) => Map<String, dynamic>.from(task))
+          .toList(growable: false),
+    };
 
     _persistChain = _persistChain.then((_) async {
       try {
+        final List<String> encoded;
+        if (_entries.length >= 300) {
+          encoded = await compute(_encodeStorageSnapshot, snapshot);
+        } else {
+          encoded = [
+            json.encode(snapshot['entries']),
+            json.encode(snapshot['tasks']),
+          ];
+        }
+
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_entriesKey, entriesJson);
-        await prefs.setString(_photoTasksKey, tasksJson);
+        await prefs.setString(_entriesKey, encoded[0]);
+        await prefs.setString(_photoTasksKey, encoded[1]);
       } catch (e) {
-        print('Error saving scan storage: $e');
+        debugPrint('Error saving scan storage: $e');
       }
     });
     return _persistChain;
@@ -347,6 +369,9 @@ class StorageService {
       'entryId': entryId,
       'createdAt': previous?['createdAt'] ?? DateTime.now().toIso8601String(),
       'attempts': (previous?['attempts'] as int?) ?? 0,
+      'addressAttempts': (previous?['addressAttempts'] as int?) ?? 0,
+      'watermarkCompleted': previous?['watermarkCompleted'] == true,
+      'addressResolved': previous?['addressResolved'] == true,
       // Capture-time coordinates are persisted with the task. Recovery must
       // never silently replace an old photo's location with the phone's
       // current location after the process has been killed.
@@ -361,6 +386,42 @@ class StorageService {
   Map<String, dynamic>? getPhotoTask(String entryId) {
     final task = _pendingPhotoTasks[entryId];
     return task == null ? null : Map<String, dynamic>.from(task);
+  }
+
+  Future<void> markPhotoWatermarkCompleted(
+    String entryId, {
+    required bool addressResolved,
+  }) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['watermarkCompleted'] = true;
+    task['addressResolved'] = addressResolved;
+    task['addressAttempts'] = (task['addressAttempts'] as int?) ?? 0;
+    task['updatedAt'] = DateTime.now().toIso8601String();
+
+    // A task is removable only after the final watermark contains a resolved
+    // address. Coordinate-only watermark tasks remain pending for enrichment.
+    if (addressResolved) {
+      _pendingPhotoTasks.remove(entryId);
+    }
+    await _persist();
+  }
+
+  Future<void> markPhotoAddressResolved(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['addressResolved'] = true;
+    task['updatedAt'] = DateTime.now().toIso8601String();
+    _pendingPhotoTasks.remove(entryId);
+    await _persist();
+  }
+
+  Future<void> markPhotoAddressAttempt(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['addressAttempts'] = ((task['addressAttempts'] as int?) ?? 0) + 1;
+    task['lastAddressAttemptAt'] = DateTime.now().toIso8601String();
+    await _persist();
   }
 
   Future<void> markPhotoTaskCompleted(String entryId) async {

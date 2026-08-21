@@ -24,7 +24,7 @@ class MainActivity : FlutterActivity() {
         // stale/poor fixes; they do not add a multi-sample lock or Kalman loop.
         private const val MAX_LAST_KNOWN_AGE_MS = 20_000L
         private const val TARGET_ACCURACY_METERS = 20f
-        private const val MAX_FALLBACK_ACCURACY_METERS = 30f
+        private const val MAX_FALLBACK_ACCURACY_METERS = 30f // 20m target, 30m accepted fallback
         private const val TIMEOUT_MS = 5_000L
     }
 
@@ -72,7 +72,7 @@ class MainActivity : FlutterActivity() {
         // Prefer a good recent GPS fix. If none exists, a good network fix is
         // still valid and keeps capture fast.
         val cachedBest = listOfNotNull(gpsLast, netLast)
-            .filter { isUsable(it, MAX_LAST_KNOWN_AGE_MS, TARGET_ACCURACY_METERS) }
+            .filter { isUsable(it, MAX_LAST_KNOWN_AGE_MS, MAX_FALLBACK_ACCURACY_METERS) }
             .minWithOrNull(compareBy<Location> {
                 if (it.provider == LocationManager.GPS_PROVIDER) 0 else 1
             }.thenBy { it.accuracy })
@@ -86,8 +86,7 @@ class MainActivity : FlutterActivity() {
         // lightweight — no rolling window, Kalman filter, or repeated polling.
         val providers = listOf(
             LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER,
-            LocationManager.PASSIVE_PROVIDER
+            LocationManager.NETWORK_PROVIDER
         )
 
         var requested = false
@@ -110,7 +109,7 @@ class MainActivity : FlutterActivity() {
 
                 // Fast acceptance: once a reasonably accurate fix arrives,
                 // return immediately rather than waiting for more samples.
-                if (location.accuracy <= TARGET_ACCURACY_METERS) {
+                if (location.accuracy <= MAX_FALLBACK_ACCURACY_METERS) {
                     resultSent = true
                     sendResult(result, location)
                     cleanup(this)

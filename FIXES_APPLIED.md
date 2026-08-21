@@ -15,3 +15,53 @@
 
 ## Preview
 - The preview flow remains the existing raw-photo preview; final watermark-preview redesign is intentionally not mixed into this lightweight GPS patch.
+
+## GPS light final
+- 20m changed from hard failure to quality target.
+- 30m is the maximum accepted lightweight POD accuracy.
+- Removed stale unused `com/gudang/scanner/MainActivity.kt` if present.
+- Kept the original single-update GPS architecture; no heavy lock/filtering.
+
+## GPS/performance fixes v14
+- Cached GPS acceptance aligned to the 30m maximum.
+- Removed passive provider from capture provider list.
+- Preserved lightweight single-update GPS architecture.
+- Updated capture quality wording to 30m maximum / 20m target.
+- Added shutter timestamp field where the existing camera capture callback permits.
+
+## GPS/light-flow correction v15
+- Cached GPS acceptance aligned with the 30m maximum.
+- Camera GPS acquisition now starts before the native camera UI opens.
+- Camera capture timestamp is recorded immediately before opening the camera.
+- Persisted photo/raw-copy files are created only after GPS validation.
+- Updated GPS error text to 30m maximum / 20m target.
+
+## Version 17 complete maintenance fixes
+- Removed stale root `build.yml`.
+- Photo/task recovery now retries on app resume and drains successful watermark tasks even when address lookup is unavailable.
+- Burn failure UX distinguishes persisted photos from total capture failures.
+- Barcode entry IDs use `StorageService.generateId()`.
+- Gallery barcode state update is guarded by `mounted`.
+- Search formats dates only after cheap field checks fail.
+- `WatermarkSettings.hasLogo` is cached.
+- Large history JSON snapshots are encoded off the UI isolate (threshold 300 entries).
+
+## Version 18 correction
+- Definitively declared `bool _hasLogo = false;` in `WatermarkSettings`.
+- Normalized `hasLogo` getter to use the cached field.
+- Removed any stale root `build.yml`.
+- Preserved existing `.github/workflows/*` project build flow; legacy `flutter create` commands removed if present.
+- Repacked with a clean project root name (`TERMULSCAN-main-18-clean`) to avoid carrying forward the v13 root name.
+- Added BUILD_VERIFICATION.md for CI verification.
+
+## Version 19 — address retry completion
+- Added explicit watermarkCompleted/addressResolved task state.
+- Coordinate-only watermark remains pending when reverse geocoding fails.
+- Added automatic retry on cold start, app resume, and every 2 minutes while active.
+- Prevented repeated coordinate-only burns while offline.
+- Final address burn removes the task only after successful enrichment.
+
+## Version 20 — recovery lifecycle consistency
+- Gallery capture now uses `markPhotoWatermarkCompleted(addressResolved: ...)`, matching camera flow.
+- Recovery retry timer is started only while the app is resumed/foreground.
+- Timer is stopped on paused/inactive/detached and recreated on resume.

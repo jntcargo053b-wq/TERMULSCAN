@@ -32,7 +32,12 @@ class PhotoTaskRecoveryService {
     try {
       await _settings.load();
       for (final entryId in List<String>.from(_storage.pendingPhotoTaskIds)) {
-        await processEntry(entryId, allowFreshLocation: false);
+        try {
+          await processEntry(entryId, allowFreshLocation: false);
+        } catch (e, st) {
+          debugPrint('Pending photo recovery $entryId gagal: $e\n$st');
+          // Continue with the next task so one broken photo cannot block the queue.
+        }
       }
     } finally {
       _runningRecovery = false;
@@ -56,6 +61,8 @@ class PhotoTaskRecoveryService {
     return completer.future;
   }
 
+  static const int _maxRecoveryAttempts = 3;
+
   Future<void> _processOne(
     String entryId, {
     required bool allowFreshLocation,
@@ -67,12 +74,30 @@ class PhotoTaskRecoveryService {
     }
 
     final publicPath = entry.displayImagePath;
-    if (publicPath == null || publicPath.isEmpty) return;
+    if (publicPath == null || publicPath.isEmpty) {
+      await _storage.markPhotoTaskCompleted(entryId);
+      return;
+    }
 
     final rawPath = _storage.rawPathFor(publicPath);
-    if (!await File(rawPath).exists()) return;
+    if (!await File(rawPath).exists() || !await File(publicPath).exists()) {
+      // Nothing recoverable remains; prevent an endless pending task loop.
+      await _storage.markPhotoTaskCompleted(entryId);
+      return;
+    }
 
     final task = _storage.getPhotoTask(entryId);
+    final watermarkCompleted = task?['watermarkCompleted'] == true;
+    final attempts = (task?['attempts'] as int?) ?? 0;
+
+    // The three-attempt limit applies only to actually burning the image.
+    // Address enrichment is a separate state and may retry later when the
+    // network becomes available.
+    if (!watermarkCompleted && attempts >= _maxRecoveryAttempts) {
+      debugPrint('Photo task $entryId reached watermark retry limit; stopping recovery.');
+      await _storage.markPhotoTaskCompleted(entryId);
+      return;
+    }
     final taskLat = task?['latitude'];
     final taskLng = task?['longitude'];
     double? lat = taskLat is num ? taskLat.toDouble() : entry.latitude;
@@ -91,46 +116,94 @@ class PhotoTaskRecoveryService {
 
     if (lat == null || lng == null) return;
 
-    await _storage.markPhotoTaskAttempt(entryId);
+    if (!watermarkCompleted) {
+      await _storage.markPhotoTaskAttempt(entryId);
+    }
 
     var current = entry.copyWith(latitude: lat, longitude: lng);
     await _storage.update(current);
 
+    final taskState = _storage.getPhotoTask(entryId);
+    final addressResolvedState = taskState?['addressResolved'] == true;
+
     String locationText = current.coordinatesString;
+    String? resolvedAddress;
     try {
       final cached = _storage.getCachedLocation(lat, lng);
-      final address = cached ?? await _location
-          .reverseGeocode(lat, lng)
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (address != null && address.isNotEmpty) {
-        locationText = address;
-        _storage.updateGeoCache(lat, lng, address);
-        current = current.copyWith(locationName: address);
+      resolvedAddress = cached ??
+          await _location.reverseGeocode(lat, lng).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => null,
+          );
+
+      if (resolvedAddress != null && resolvedAddress!.isNotEmpty) {
+        locationText = resolvedAddress!;
+        _storage.updateGeoCache(lat, lng, resolvedAddress!);
+        current = current.copyWith(locationName: resolvedAddress);
         await _storage.update(current);
+        await _storage.markPhotoAddressAttempt(entryId);
+      } else {
+        await _storage.markPhotoAddressAttempt(entryId);
       }
     } catch (e) {
       debugPrint('Reverse geocode $entryId gagal: $e');
+      try {
+        await _storage.markPhotoAddressAttempt(entryId);
+      } catch (_) {}
     }
 
-    final logoBytes = await _loadCompactLogo();
-    final lines = <String>[
-      if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
-      DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
-      locationText,
-      if (_settings.operatorName.isNotEmpty) 'Operator: ${_settings.operatorName}',
-    ];
+    final hasAddress = resolvedAddress != null && resolvedAddress!.isNotEmpty;
 
-    await WatermarkService.burn(
-      sourcePath: rawPath,
-      destPath: publicPath,
-      lines: lines,
-      logoBytes: logoBytes,
-    );
+    // If the image was already burned with coordinates, do not burn it again
+    // merely because reverse-geocoding is temporarily unavailable.
+    if (!watermarkCompleted) {
+      final logoBytes = await _loadCompactLogo();
+      final lines = <String>[
+        if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
+        DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
+        locationText,
+        if (_settings.operatorName.isNotEmpty)
+          'Operator: ${_settings.operatorName}',
+      ];
 
-      // The publicPath is rewritten by the recovery burn. Evict Flutter's ImageCache so readers see the new bytes.
+      await WatermarkService.burn(
+        sourcePath: rawPath,
+        destPath: publicPath,
+        lines: lines,
+        logoBytes: logoBytes,
+      );
+
       await FileImage(File(publicPath)).evict();
 
-    await _storage.markPhotoTaskCompleted(entryId);
+      await _storage.markPhotoWatermarkCompleted(
+        entryId,
+        addressResolved: hasAddress,
+      );
+      return;
+    }
+
+    // Watermark already exists. Only an address enrichment is needed now.
+    if (hasAddress && !addressResolvedState) {
+      final logoBytes = await _loadCompactLogo();
+      final lines = <String>[
+        if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
+        DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
+        resolvedAddress!,
+        if (_settings.operatorName.isNotEmpty)
+          'Operator: ${_settings.operatorName}',
+      ];
+
+      await WatermarkService.burn(
+        sourcePath: rawPath,
+        destPath: publicPath,
+        lines: lines,
+        logoBytes: logoBytes,
+      );
+
+      await FileImage(File(publicPath)).evict();
+
+      await _storage.markPhotoAddressResolved(entryId);
+    }
   }
 
   Future<Uint8List?> _loadCompactLogo() async {
