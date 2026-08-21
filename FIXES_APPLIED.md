@@ -1,9 +1,17 @@
 # Fixes applied
 
-1. Added Flutter ImageCache eviction after the recovery watermark burn rewrites the same publicPath.
-2. Removed redundant `lib/models/watermark_settings.dart` when no imports referenced it.
-3. Marked the raw-image preview flow for follow-up; the preview currently occurs before final watermark burn.
+## Watermark/cache
+- Added `FileImage(File(publicPath)).evict()` after the recovery watermark burn and before marking the photo task completed.
+- Removed the redundant `lib/models/watermark_settings.dart` because no Dart source referenced it.
 
-4. Reworked Android GPS acquisition for POD: fresh multi-sample lock, 5-sample rolling window, 3-sample stability cluster within 15 m, weighted centroid, GPS provider priority, 20 s last-known limit, and 7 s acquisition timeout.
-5. Photo capture now requires GPS accuracy <=20 m before committing/burning the watermark; stale/poor GPS is rejected instead of writing misleading coordinates.
-6. Capture coordinate requests bypass the Dart location cache; UI/address cache remains short-lived.
+## GPS — lightweight POD tuning
+- Kept the original fast one-shot GPS architecture; no rolling window, Kalman filter, or repeated polling.
+- Reduced acceptable last-known age from 120 seconds to 20 seconds.
+- A fast cached fix is accepted only when accuracy is <= 20 m.
+- Fresh one-shot location is accepted immediately when accuracy is <= 20 m.
+- After the original 5-second timeout, only a <= 30 m fix is returned as fallback; otherwise location is null.
+- GPS is preferred over network when both recent cached fixes are good.
+- Restored the Flutter location cache to 8 seconds because photo capture uses the native `getLocation` channel directly.
+
+## Preview
+- The preview flow remains the existing raw-photo preview; final watermark-preview redesign is intentionally not mixed into this lightweight GPS patch.

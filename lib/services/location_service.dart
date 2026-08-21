@@ -15,7 +15,7 @@ class LocationService {
   // Diperpendek dari 30 detik ke 8 detik atas permintaan — cache 30 detik
   // terlalu lama untuk skenario user berpindah lokasi cepat antar scan,
   // bisa nempelin koordinat/alamat basi ke entry yang sebenarnya beda titik.
-  static const _cacheDuration = Duration(seconds: 5);
+  static const _cacheDuration = Duration(seconds: 8);
 
   Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
     try {
