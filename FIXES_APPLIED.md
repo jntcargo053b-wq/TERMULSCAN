@@ -69,3 +69,8 @@
 ## Version 21 — compile fix
 - Restored `_gpsMaxAcceptedMeters = 30.0` inside `_PhotoScanScreenState`.
 - Kept 20m as quality target and 30m as accepted GPS ceiling.
+
+## Version 22 — GPS constant scope compile fix
+- Moved `_gpsQualityTargetMeters` and `_gpsMaxAcceptedMeters` into `_PhotoScanScreenState`.
+- Removed the duplicate/incorrect widget-level declaration.
+- This fixes the build error where `_gpsMaxAcceptedMeters` was undefined in state methods.

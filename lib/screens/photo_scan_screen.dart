@@ -22,10 +22,6 @@ import 'watermark_settings_sheet.dart';
 
 class PhotoScanScreen extends StatefulWidget {
 
-  // Lightweight POD GPS policy: 20m is the quality target; 30m is the maximum accepted capture accuracy.
-  static const double _gpsQualityTargetMeters = 20.0;
-  static const double _gpsMaxAcceptedMeters = 30.0;
-
   /// Hasil barcode/QR yang didapat dari layar scan sebelumnya (opsional).
   /// Jika diset, kamera akan langsung terbuka tanpa menampilkan tombol.
   final String? initialBarcode;
@@ -38,6 +34,10 @@ class PhotoScanScreen extends StatefulWidget {
 
 class _PhotoScanScreenState extends State<PhotoScanScreen>
     with WidgetsBindingObserver {
+  // Lightweight POD GPS policy: 20m is the quality target; 30m is the
+  // maximum accepted capture accuracy.
+  static const double _gpsQualityTargetMeters = 20.0;
+  static const double _gpsMaxAcceptedMeters = 30.0;
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
