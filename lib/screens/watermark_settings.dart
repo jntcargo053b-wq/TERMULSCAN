@@ -8,12 +8,11 @@ class WatermarkSettings extends ChangeNotifier {
 
   String _operatorName = '';
   String? _logoPath;
-  bool _hasLogo = false;
 
   String get operatorName => _operatorName;
   String? get logoPath => _logoPath;
 
-  bool get hasLogo => _hasLogo;
+  bool get hasLogo => _logoPath != null && File(_logoPath!).existsSync();
 
   static final WatermarkSettings _instance = WatermarkSettings._internal();
   factory WatermarkSettings() => _instance;
@@ -23,7 +22,6 @@ class WatermarkSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
-    _hasLogo = _logoPath != null && _logoPath!.isNotEmpty && File(_logoPath!).existsSync();
     notifyListeners();
   }
 
@@ -36,7 +34,6 @@ class WatermarkSettings extends ChangeNotifier {
 
   Future<void> setLogoPath(String? path) async {
     _logoPath = path;
-    _hasLogo = path != null && path.isNotEmpty && File(path).existsSync();
     final prefs = await SharedPreferences.getInstance();
     if (path == null) {
       await prefs.remove(_keyLogoPath);

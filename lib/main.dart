@@ -35,51 +35,26 @@ class WHScannerApp extends StatefulWidget {
 }
 
 class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver {
-  Timer? _recoveryRetryTimer;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _startRecoveryRetryTimer();
-  }
-
-  void _startRecoveryRetryTimer() {
-    _recoveryRetryTimer?.cancel();
-    _recoveryRetryTimer = Timer.periodic(
-      const Duration(minutes: 2),
-      (_) => unawaited(
-        PhotoTaskRecoveryService.instance.recoverPending(),
-      ),
-    );
-  }
-
-  void _stopRecoveryRetryTimer() {
-    _recoveryRetryTimer?.cancel();
-    _recoveryRetryTimer = null;
   }
 
   @override
   void dispose() {
-    _stopRecoveryRetryTimer();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _startRecoveryRetryTimer();
-      unawaited(PhotoTaskRecoveryService.instance.recoverPending());
-      return;
-    }
-
+    // Pastikan perubahan log yang masih menunggu debounce tetap tersimpan
+    // saat app pindah ke background / ditutup.
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
-      _stopRecoveryRetryTimer();
-      // Pastikan perubahan log yang masih menunggu debounce tetap tersimpan
-      // saat app pindah ke background / ditutup.
-      unawaited(StorageService().flush());
+      StorageService().flush();
     }
   }
 

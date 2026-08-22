@@ -196,7 +196,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       }
 
       final entry = ScanEntry(
-        id: _storage.generateId(),
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
         barcodeValue: barcodeValue,
         barcodeType: _manualBarcode != null ? 'manual' : (_detectedBarcode?.type.name ?? 'unknown'),
         timestamp: DateTime.now(),

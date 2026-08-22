@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
@@ -16,8 +17,11 @@ class LocationService {
   // terlalu lama untuk skenario user berpindah lokasi cepat antar scan,
   // bisa nempelin koordinat/alamat basi ke entry yang sebenarnya beda titik.
   static const _cacheDuration = Duration(seconds: 8);
-  static final Map<String, String> _addressCache = <String, String>{};
+  static const _addressCacheCapacity = 100;
   static const _addressGridMeters = 10.0;
+  final Map<String, String> _addressCache = {};
+  final List<String> _addressCacheOrder = [];
+  final Map<String, Future<String?>> _inFlightGeocodes = {};
 
   Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
     try {
@@ -30,15 +34,6 @@ class LocationService {
     } catch (e) {
       return (lat: null, lng: null, accuracy: null);
     }
-  }
-
-  String _addressKey(double lat, double lng) {
-    const metersPerDegree = 111320.0;
-    final latStep = _addressGridMeters / metersPerDegree;
-    final lonStep = _addressGridMeters / metersPerDegree;
-    final latBin = (lat / latStep).round();
-    final lonBin = (lng / lonStep).round();
-    return '$latBin:$lonBin';
   }
 
   Future<({double? lat, double? lng, String? address})> getLocation({
@@ -62,19 +57,7 @@ class LocationService {
 
     String? address;
     if (withAddress) {
-      final key = _addressKey(coords.lat!, coords.lng!);
-      address = _addressCache[key];
-      address ??= await _reverseGeocode(
-        coords.lat!,
-        coords.lng!,
-        accuracy: coords.accuracy,
-      );
-      if (address != null && address.isNotEmpty) {
-        _addressCache[key] = address;
-        if (_addressCache.length > 500) {
-          _addressCache.remove(_addressCache.keys.first);
-        }
-      }
+      address = await _reverseGeocode(coords.lat!, coords.lng!, accuracy: coords.accuracy);
     }
 
     final result = (lat: coords.lat, lng: coords.lng, address: address);
@@ -97,7 +80,6 @@ class LocationService {
     try {
       final address = await _reverseGeocode(lat, lng, accuracy: accuracy);
       if (address != null) {
-        _addressCache[_addressKey(lat, lng)] = address;
         await onAddressReceived(entryId, address);
         if (_cachedLocation != null &&
             _cachedLocation!.lat == lat &&
@@ -122,7 +104,21 @@ class LocationService {
   static const _minGeocodeGap = Duration(milliseconds: 1100);
 
   Future<String?> _reverseGeocode(double lat, double lng, {double? accuracy}) {
+    final key = _addressKey(lat, lng);
+    final cached = _getCachedAddress(key);
+    if (cached != null) return Future.value(cached);
+
+    final inFlight = _inFlightGeocodes[key];
+    if (inFlight != null) return inFlight;
+
     final completer = Completer<String?>();
+    final request = completer.future;
+    _inFlightGeocodes[key] = request;
+    request.whenComplete(() {
+      if (identical(_inFlightGeocodes[key], request)) {
+        _inFlightGeocodes.remove(key);
+      }
+    });
     _geocodeChain = _geocodeChain.then((_) async {
       final now = DateTime.now();
       if (_lastGeocodeStart != null) {
@@ -133,11 +129,43 @@ class LocationService {
       }
       _lastGeocodeStart = DateTime.now();
       final result = await _doReverseGeocode(lat, lng, accuracy: accuracy);
+      if (result != null && result.isNotEmpty) _putCachedAddress(key, result);
       if (!completer.isCompleted) completer.complete(result);
     }).catchError((_) {
       if (!completer.isCompleted) completer.complete(null);
     });
-    return completer.future;
+    return request;
+  }
+
+  /// A 10 m grid in metres. Longitude cells scale with latitude so the
+  /// cache remains approximately square outside the equator.
+  String _addressKey(double lat, double lng) {
+    const metresPerDegreeLatitude = 111320.0;
+    final metresPerDegreeLongitude =
+        (metresPerDegreeLatitude * math.cos(lat * math.pi / 180)).abs();
+    final latCell = (lat * metresPerDegreeLatitude / _addressGridMeters).round();
+    final lngCell =
+        (lng * math.max(1.0, metresPerDegreeLongitude) / _addressGridMeters)
+            .round();
+    return '$latCell,$lngCell';
+  }
+
+  String? _getCachedAddress(String key) {
+    final value = _addressCache[key];
+    if (value == null) return null;
+    _addressCacheOrder.remove(key);
+    _addressCacheOrder.add(key);
+    return value;
+  }
+
+  void _putCachedAddress(String key, String address) {
+    if (_addressCache.containsKey(key)) {
+      _addressCacheOrder.remove(key);
+    } else if (_addressCache.length >= _addressCacheCapacity) {
+      _addressCache.remove(_addressCacheOrder.removeAt(0));
+    }
+    _addressCache[key] = address;
+    _addressCacheOrder.add(key);
   }
 
   Future<String?> _doReverseGeocode(double lat, double lng, {double? accuracy}) async {

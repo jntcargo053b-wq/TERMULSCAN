@@ -21,7 +21,6 @@ import 'watermark_settings.dart';
 import 'watermark_settings_sheet.dart';
 
 class PhotoScanScreen extends StatefulWidget {
-
   /// Hasil barcode/QR yang didapat dari layar scan sebelumnya (opsional).
   /// Jika diset, kamera akan langsung terbuka tanpa menampilkan tombol.
   final String? initialBarcode;
@@ -34,9 +33,7 @@ class PhotoScanScreen extends StatefulWidget {
 
 class _PhotoScanScreenState extends State<PhotoScanScreen>
     with WidgetsBindingObserver {
-  // Lightweight POD GPS policy: 20m is the quality target; 30m is the
-  // maximum accepted capture accuracy.
-final _picker = ImagePicker();
+  final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
   final _wmSettings = WatermarkSettings();
@@ -173,17 +170,7 @@ final _picker = ImagePicker();
       }
     }
 
-    String? previewPath;
-    String? sourcePath;
-    String? savedPath;
-    String? entryId;
-    bool taskCreated = false;
     try {
-      // ImagePicker controls the native camera UI, so the earliest reliable
-      // capture timestamp we can obtain is immediately after it returns the
-      // captured file. GPS acquisition also starts only after capture, keeping
-      // the coordinate close to the actual photo rather than stale from the
-      // moment the camera UI opened.
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1024,
@@ -192,118 +179,23 @@ final _picker = ImagePicker();
       );
       if (xfile == null) return;
 
-      sourcePath = xfile.path;
-      final capturedAt = DateTime.now();
       HapticFeedback.mediumImpact();
 
-      // One lightweight native GPS request. No multi-sample lock/Kalman.
-      final captureCoords = await _loc.getCoordinatesOnly();
-      final gpsAccuracy = captureCoords.accuracy;
-      debugPrint('GPS capture: lat=${captureCoords.lat}, lng=${captureCoords.lng}, accuracy=${gpsAccuracy}');
-      final gpsValid = captureCoords.lat != null &&
-          captureCoords.lng != null &&
-          gpsAccuracy != null &&
-          gpsAccuracy >= 0;
-      if (!gpsValid) {
-        throw Exception(
-          'GPS belum cukup akurat (batas nominal 30 m, target 20 m). '
-          'Tunggu beberapa detik di area terbuka lalu ambil foto lagi.'
-          '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
-        );
-      }
-
-      // Resolve the address in parallel with the temporary preview burn. The
-      // preview must be watermarked before confirmation, but it should not
-      // block capture on reverse geocoding/network latency.
-      final addressFuture = _loc
-          .reverseGeocode(captureCoords.lat!, captureCoords.lng!, accuracy: gpsAccuracy)
-          .timeout(const Duration(seconds: 5), onTimeout: () => null);
-
-      previewPath = await _createPreviewWatermark(
-        sourcePath: sourcePath!,
-        timestamp: capturedAt,
-        latitude: captureCoords.lat!,
-        longitude: captureCoords.lng!,
-        barcode: _barcode,
-      );
-
-      final confirmed = await _showPreviewAndConfirm(previewPath);
+      // Preview dan konfirmasi
+      final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
-      if (!confirmed) return;
+      if (!confirmed) {
+        _deleteTempFile(xfile.path);
+        return;
+      }
 
       setState(() => _isSaving = true);
 
-      final address = await addressFuture;
-      final locationText = (address != null && address.isNotEmpty)
-          ? address
-          : '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}';
-
-      // Persist the raw/source photo first; the pending task is created before
-      // the final burn so a process death during burn can be recovered later.
-      savedPath = await _storage.savePhoto(sourcePath!);
-      await _storage.savePhotoRawCopy(sourcePath!, savedPath!);
-
-      final entry = ScanEntry(
-        id: _storage.generateId(),
-        type: ScanType.photo,
-        value: savedPath,
-        imagePath: savedPath,
-        timestamp: capturedAt,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
-        locationName: address,
-        scanResult: _barcode,
-      );
-      entryId = entry.id;
-      await _storage.add(entry);
-      await _storage.enqueuePhotoTask(
-        entry.id,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
-      );
-      taskCreated = true;
-
-      try {
-        await _burnWatermark(
-          sourcePath: savedPath,
-          destPath: savedPath,
-          timestamp: capturedAt,
-          locationText: locationText,
-          barcode: _barcode,
-        );
-        await _storage.markPhotoWatermarkCompleted(
-          entry.id,
-          addressResolved: address != null && address.isNotEmpty,
-        );
-      } catch (_) {
-        // Keep the task pending so startup recovery can retry the final burn.
-        rethrow;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _photoCount++;
-        _isSaving = false;
-      });
-
-      _showSuccess(entry);
+      final entry = await _savePhotoWithCaptureLocation(xfile.path);
+      _finishSavingPhoto(entry);
     } catch (e) {
-      if (!taskCreated && entryId != null) {
-        try { await _storage.deleteEntry(entryId!); } catch (_) {}
-      }
-      if (!taskCreated && savedPath != null) {
-        try { await File(savedPath!).delete(); } catch (_) {}
-        try { await File(_storage.rawPathFor(savedPath!)).delete(); } catch (_) {}
-      }
       if (mounted) setState(() => _isSaving = false);
-      if (taskCreated) {
-        _showError('Foto tersimpan. Watermark belum selesai dan akan diproses ulang otomatis.');
-      } else {
-        _showError('Gagal ambil foto: $e');
-      }
-    } finally {
-      if (previewPath != null) _deleteTempFile(previewPath);
-      if (sourcePath != null) _deleteTempFile(sourcePath);
+      _showError('Gagal ambil foto: $e');
     }
   }
 
@@ -320,11 +212,6 @@ final _picker = ImagePicker();
       }
     }
 
-    String? previewPath;
-    String? sourcePath;
-    String? savedPath;
-    String? entryId;
-    bool taskCreated = false;
     try {
       final xfile = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -333,18 +220,11 @@ final _picker = ImagePicker();
       );
       if (xfile == null) return;
 
-      sourcePath = xfile.path;
-      final capturedAt = DateTime.now();
-
-      // Start the one-shot GPS request immediately after the user selects the
-      // image, while barcode scanning runs. No persisted file is created until
-      // GPS has passed the 30m acceptance threshold.
-      final captureCoordsFuture = _loc.getCoordinatesOnly();
-
+      // Scan barcode/QR dari gambar yang dipilih (menggantikan _barcode jika ada)
       String? scannedBarcode;
       try {
         scannedBarcode = await _scanBarcodeFromImage(xfile.path);
-        if (scannedBarcode != null && scannedBarcode.isNotEmpty && mounted) {
+        if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
           setState(() => _barcode = scannedBarcode);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -355,6 +235,17 @@ final _picker = ImagePicker();
               ),
             );
           }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
+                duration: Duration(seconds: 2),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          // Tetap lanjut tanpa barcode
         }
       } catch (e) {
         if (mounted) {
@@ -368,106 +259,70 @@ final _picker = ImagePicker();
         }
       }
 
-      final captureCoords = await captureCoordsFuture;
-      final gpsAccuracy = captureCoords.accuracy;
-      final gpsValid = captureCoords.lat != null &&
-          captureCoords.lng != null &&
-          gpsAccuracy != null &&
-          gpsAccuracy >= 0;
-      if (!gpsValid) {
-        throw Exception(
-          'GPS belum cukup akurat (batas nominal 30 m, target 20 m). '
-          'Tunggu beberapa detik di area terbuka lalu pilih foto lagi.'
-          '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
-        );
-      }
-
-      final addressFuture = _loc
-          .reverseGeocode(captureCoords.lat!, captureCoords.lng!, accuracy: gpsAccuracy)
-          .timeout(const Duration(seconds: 5), onTimeout: () => null);
-
-      previewPath = await _createPreviewWatermark(
-        sourcePath: sourcePath!,
-        timestamp: capturedAt,
-        latitude: captureCoords.lat!,
-        longitude: captureCoords.lng!,
-        barcode: _barcode,
-      );
-
-      final confirmed = await _showPreviewAndConfirm(previewPath);
+      // Preview
+      final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
-      if (!confirmed) return;
+      if (!confirmed) {
+        _deleteTempFile(xfile.path);
+        return;
+      }
 
       setState(() => _isSaving = true);
 
-      final address = await addressFuture;
-      final locationText = (address != null && address.isNotEmpty)
-          ? address
-          : '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}';
-
-      savedPath = await _storage.savePhoto(sourcePath!);
-      await _storage.savePhotoRawCopy(sourcePath!, savedPath!);
-
-      final entry = ScanEntry(
-        id: _storage.generateId(),
-        type: ScanType.photo,
-        value: savedPath,
-        imagePath: savedPath,
-        timestamp: capturedAt,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
-        locationName: address,
-        scanResult: _barcode,
-      );
-      entryId = entry.id;
-      await _storage.add(entry);
-      await _storage.enqueuePhotoTask(
-        entry.id,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
-      );
-      taskCreated = true;
-
-      try {
-        await _burnWatermark(
-          sourcePath: savedPath,
-          destPath: savedPath,
-          timestamp: capturedAt,
-          locationText: locationText,
-          barcode: _barcode,
-        );
-        await _storage.markPhotoWatermarkCompleted(
-          entry.id,
-          addressResolved: address != null && address.isNotEmpty,
-        );
-      } catch (_) {
-        rethrow;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _photoCount++;
-        _isSaving = false;
-      });
-      _showSuccess(entry);
+      final entry = await _savePhotoWithCaptureLocation(xfile.path);
+      _finishSavingPhoto(entry);
     } catch (e) {
-      if (!taskCreated && entryId != null) {
-        try { await _storage.deleteEntry(entryId!); } catch (_) {}
-      }
-      if (!taskCreated && savedPath != null) {
-        try { await File(savedPath!).delete(); } catch (_) {}
-        try { await File(_storage.rawPathFor(savedPath!)).delete(); } catch (_) {}
-      }
       if (mounted) setState(() => _isSaving = false);
-      if (taskCreated) {
-        _showError('Foto tersimpan. Watermark belum selesai dan akan diproses ulang otomatis.');
-      } else {
-        _showError('Gagal memilih foto: $e');
-      }
-    } finally {
-      if (previewPath != null) _deleteTempFile(previewPath);
-      if (sourcePath != null) _deleteTempFile(sourcePath);
+      _showError('Gagal memilih foto: $e');
     }
+  }
+
+  /// Shared camera/gallery path. A valid latitude/longitude is captured as-is;
+  /// accuracy is informational and never blocks saving a photo.
+  Future<ScanEntry> _savePhotoWithCaptureLocation(String sourcePath) async {
+    final savedPath = await _storage.savePhoto(sourcePath);
+    final capturedAt = DateTime.now();
+    await _storage.savePhotoRawCopy(sourcePath, savedPath);
+    final captureCoords = await _loc.getCoordinatesOnly();
+
+    await _burnWatermark(
+      sourcePath: savedPath,
+      destPath: savedPath,
+      timestamp: capturedAt,
+      locationText: captureCoords.lat != null && captureCoords.lng != null
+          ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
+          : 'Mencari lokasi...',
+      barcode: _barcode,
+    );
+
+    final entry = ScanEntry(
+      id: _storage.generateId(),
+      type: ScanType.photo,
+      value: savedPath,
+      imagePath: savedPath,
+      timestamp: capturedAt,
+      latitude: captureCoords.lat,
+      longitude: captureCoords.lng,
+      locationName: null,
+      scanResult: _barcode,
+    );
+    await _storage.add(entry);
+    await _storage.enqueuePhotoTask(
+      entry.id,
+      latitude: captureCoords.lat,
+      longitude: captureCoords.lng,
+    );
+    return entry;
+  }
+
+  void _finishSavingPhoto(ScanEntry entry) {
+    unawaited(PhotoTaskRecoveryService.instance.processEntry(entry.id));
+    if (!mounted) return;
+    setState(() {
+      _photoCount++;
+      _isSaving = false;
+    });
+    _showSuccess(entry);
   }
 
   // ============================================================================
@@ -479,24 +334,6 @@ final _picker = ImagePicker();
   /// bersamaan). Setiap panggilan mengembalikan Future terpisah yang
   /// resolve/error sesuai hasil burn PANGGILAN INI SAJA; kegagalan satu burn
   /// tidak menghentikan antrian burn lain di belakangnya.
-  Future<String> _createPreviewWatermark({
-    required String sourcePath,
-    required DateTime timestamp,
-    required double latitude,
-    required double longitude,
-    String? barcode,
-  }) async {
-    final destPath = '${Directory.systemTemp.path}/termulscan_preview_${DateTime.now().microsecondsSinceEpoch}.jpg';
-    await _burnWatermark(
-      sourcePath: sourcePath,
-      destPath: destPath,
-      timestamp: timestamp,
-      locationText: '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
-      barcode: barcode,
-    );
-    return destPath;
-  }
-
   Future<void> _burnWatermark({
     required String sourcePath,
     required String destPath,

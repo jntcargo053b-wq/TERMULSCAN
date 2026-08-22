@@ -65,18 +65,15 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
         value != null && value.trim().toLowerCase().contains(q);
 
     final result = source.where((entry) {
-      if (contains(entry.displayTitle) ||
+      final date = DateFormat('dd MMM yyyy HH:mm yyyy-MM-dd').format(entry.timestamp);
+      return contains(entry.displayTitle) ||
           contains(entry.scanResult) ||
           contains(entry.barcodeValue) ||
           contains(entry.barcodeType) ||
           contains(entry.address) ||
           contains(entry.imageFileName) ||
-          contains(entry.displayImagePath)) {
-        return true;
-      }
-
-      final date = DateFormat('dd MMM yyyy HH:mm yyyy-MM-dd').format(entry.timestamp);
-      return date.toLowerCase().contains(q);
+          contains(entry.displayImagePath) ||
+          date.toLowerCase().contains(q);
     }).toList();
 
     if (mounted) setState(() => _filteredEntries = result);
