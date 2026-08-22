@@ -74,3 +74,22 @@
 - Moved `_gpsQualityTargetMeters` and `_gpsMaxAcceptedMeters` into `_PhotoScanScreenState`.
 - Removed the duplicate/incorrect widget-level declaration.
 - This fixes the build error where `_gpsMaxAcceptedMeters` was undefined in state methods.
+
+## Version 23 — 30m GPS boundary fix
+- Android and Flutter acceptance limits aligned at 30.5m.
+- The extra 0.5m is only a floating-point/display boundary tolerance so a fix shown as 30.0m is not rejected due to an internal value such as 30.04m.
+- Added GPS capture diagnostic logging (lat/lng/accuracy) for troubleshooting.
+
+## Version 24 — Legacy Light GPS
+- Removed hard 20m/30m accuracy capture gating.
+- Valid coordinates are sufficient for capture.
+- Accuracy remains informational only.
+- Kept existing lightweight GPS/address architecture.
+
+## Version 25 — restored legacy-light GPS model
+- Removed accuracy thresholds from Android cached/fresh location acceptance.
+- Recent last-known GPS/network coordinates are accepted regardless of accuracy.
+- Fresh one-shot location returns the first valid coordinate.
+- Accuracy is metadata only.
+- Added a lightweight 10m address grid cache to speed repeated reverse-geocoding.
+- Preserved Nominatim request serialization/throttling.

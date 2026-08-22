@@ -36,9 +36,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     with WidgetsBindingObserver {
   // Lightweight POD GPS policy: 20m is the quality target; 30m is the
   // maximum accepted capture accuracy.
-  static const double _gpsQualityTargetMeters = 20.0;
-  static const double _gpsMaxAcceptedMeters = 30.0;
-  final _picker = ImagePicker();
+final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
   final _wmSettings = WatermarkSettings();
@@ -201,13 +199,14 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       // One lightweight native GPS request. No multi-sample lock/Kalman.
       final captureCoords = await _loc.getCoordinatesOnly();
       final gpsAccuracy = captureCoords.accuracy;
+      debugPrint('GPS capture: lat=${captureCoords.lat}, lng=${captureCoords.lng}, accuracy=${gpsAccuracy}');
       final gpsValid = captureCoords.lat != null &&
           captureCoords.lng != null &&
           gpsAccuracy != null &&
-          gpsAccuracy <= _gpsMaxAcceptedMeters;
+          gpsAccuracy >= 0;
       if (!gpsValid) {
         throw Exception(
-          'GPS belum cukup akurat (maksimal 30 m, target 20 m). '
+          'GPS belum cukup akurat (batas nominal 30 m, target 20 m). '
           'Tunggu beberapa detik di area terbuka lalu ambil foto lagi.'
           '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
         );
@@ -374,10 +373,10 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       final gpsValid = captureCoords.lat != null &&
           captureCoords.lng != null &&
           gpsAccuracy != null &&
-          gpsAccuracy <= _gpsMaxAcceptedMeters;
+          gpsAccuracy >= 0;
       if (!gpsValid) {
         throw Exception(
-          'GPS belum cukup akurat (maksimal 30 m, target 20 m). '
+          'GPS belum cukup akurat (batas nominal 30 m, target 20 m). '
           'Tunggu beberapa detik di area terbuka lalu pilih foto lagi.'
           '${gpsAccuracy != null ? ' Akurasi saat ini: ${gpsAccuracy.toStringAsFixed(1)} m.' : ''}',
         );

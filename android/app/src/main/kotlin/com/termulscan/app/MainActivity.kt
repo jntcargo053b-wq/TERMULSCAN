@@ -23,8 +23,8 @@ class MainActivity : FlutterActivity() {
         // Keep the old fast single-fix design. These limits only reject clearly
         // stale/poor fixes; they do not add a multi-sample lock or Kalman loop.
         private const val MAX_LAST_KNOWN_AGE_MS = 20_000L
-        private const val TARGET_ACCURACY_METERS = 20f
-        private const val MAX_FALLBACK_ACCURACY_METERS = 30f // 20m target, 30m accepted fallback
+        private const val TARGET_ACCURACY_METERS = 0f
+        private const val MAX_FALLBACK_ACCURACY_METERS = Float.MAX_VALUE
         private const val TIMEOUT_MS = 5_000L
     }
 
@@ -58,12 +58,19 @@ class MainActivity : FlutterActivity() {
         // Fast path: use a genuinely recent, good last-known fix.
         // This preserves the old app's speed while preventing a stale 2-minute
         // position from being stamped onto a new POD photo.
-        fun isUsable(loc: Location?, maxAgeMs: Long, maxAccuracy: Float): Boolean {
-            if (loc == null || !loc.hasAccuracy()) return false
-            if (loc.accuracy > maxAccuracy) return false
-            if (loc.elapsedRealtimeNanos <= 0L) return false
-            val ageMillis = (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
-            return ageMillis in 0..maxAgeMs
+        fun isUsable(loc: Location?, maxAgeMs: Long): Boolean {
+            if (loc == null) return false
+            if (loc.latitude !in -90.0..90.0 || loc.longitude !in -180.0..180.0) {
+                return false
+            }
+            if (loc.elapsedRealtimeNanos > 0L) {
+                val ageMillis =
+                    (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
+                return ageMillis in 0..maxAgeMs
+            }
+            // Some Android providers do not expose elapsedRealtime. The
+            // coordinates are still usable; do not reject them only for that.
+            return true
         }
 
         val gpsLast = safeLastKnown(LocationManager.GPS_PROVIDER)
@@ -72,10 +79,12 @@ class MainActivity : FlutterActivity() {
         // Prefer a good recent GPS fix. If none exists, a good network fix is
         // still valid and keeps capture fast.
         val cachedBest = listOfNotNull(gpsLast, netLast)
-            .filter { isUsable(it, MAX_LAST_KNOWN_AGE_MS, MAX_FALLBACK_ACCURACY_METERS) }
+            .filter { isUsable(it, MAX_LAST_KNOWN_AGE_MS) }
             .minWithOrNull(compareBy<Location> {
                 if (it.provider == LocationManager.GPS_PROVIDER) 0 else 1
-            }.thenBy { it.accuracy })
+            }.thenBy {
+                if (it.hasAccuracy()) it.accuracy else Float.MAX_VALUE
+            })
 
         if (cachedBest != null) {
             sendResult(result, cachedBest)
@@ -107,13 +116,11 @@ class MainActivity : FlutterActivity() {
                     bestLocation = location
                 }
 
-                // Fast acceptance: once a reasonably accurate fix arrives,
-                // return immediately rather than waiting for more samples.
-                if (location.accuracy <= MAX_FALLBACK_ACCURACY_METERS) {
-                    resultSent = true
-                    sendResult(result, location)
-                    cleanup(this)
-                }
+                // Legacy-light behavior: a valid coordinate is enough.
+                // Accuracy is returned as metadata and never blocks capture.
+                resultSent = true
+                sendResult(result, location)
+                cleanup(this)
             }
 
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -146,13 +153,9 @@ class MainActivity : FlutterActivity() {
             if (resultSent) return@postDelayed
             resultSent = true
 
-            // Do not stamp obviously poor GPS. A 20–30m fix is retained as a
-            // transparent fallback for difficult indoor/urban conditions; the
-            // Flutter layer receives the real accuracy value.
-            val fallback = bestLocation?.takeIf {
-                it.hasAccuracy() && it.accuracy <= MAX_FALLBACK_ACCURACY_METERS
-            }
-
+            // Legacy-light fallback: if a provider produced any coordinate,
+            // return it. Accuracy is metadata only.
+            val fallback = bestLocation
             if (fallback != null) {
                 sendResult(result, fallback)
             } else {

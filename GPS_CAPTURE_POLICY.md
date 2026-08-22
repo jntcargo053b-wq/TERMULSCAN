@@ -1,9 +1,11 @@
-# GPS capture policy — lightweight final
+# GPS Capture Policy — Legacy Light (final)
 
-- Preserve single-update GPS acquisition; no Kalman/rolling lock.
-- 20 m is the preferred quality target, not a hard failure.
-- 30 m is the maximum accepted accuracy.
-- Cached locations up to 30 m may be used when fresh enough.
-- Passive provider is not used for POD capture.
-- Capture timestamp is taken at shutter where the camera callback supports it.
-- GPS should be obtained before creating the final persisted photo so a failed GPS fix does not leave orphan output files.
+1. Do not hard-block capture by GPS accuracy.
+2. A valid latitude/longitude is sufficient to capture.
+3. Use recent OS last-known GPS/network location first for speed.
+4. If no recent last-known position exists, request a single fresh update.
+5. Accept the first valid fresh coordinate; accuracy is metadata only.
+6. Reverse-geocode immediately from the available coordinate.
+7. Use a small address grid cache to make repeated Kecamatan/Kota lookups fast.
+8. Fresh GPS can update the coordinate/address later; no Kalman, rolling lock,
+   multi-sample gate, or accuracy threshold is introduced.

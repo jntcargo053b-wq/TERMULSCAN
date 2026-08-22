@@ -16,6 +16,8 @@ class LocationService {
   // terlalu lama untuk skenario user berpindah lokasi cepat antar scan,
   // bisa nempelin koordinat/alamat basi ke entry yang sebenarnya beda titik.
   static const _cacheDuration = Duration(seconds: 8);
+  static final Map<String, String> _addressCache = <String, String>{};
+  static const _addressGridMeters = 10.0;
 
   Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
     try {
@@ -28,6 +30,15 @@ class LocationService {
     } catch (e) {
       return (lat: null, lng: null, accuracy: null);
     }
+  }
+
+  String _addressKey(double lat, double lng) {
+    const metersPerDegree = 111320.0;
+    final latStep = _addressGridMeters / metersPerDegree;
+    final lonStep = _addressGridMeters / metersPerDegree;
+    final latBin = (lat / latStep).round();
+    final lonBin = (lng / lonStep).round();
+    return '$latBin:$lonBin';
   }
 
   Future<({double? lat, double? lng, String? address})> getLocation({
@@ -51,7 +62,19 @@ class LocationService {
 
     String? address;
     if (withAddress) {
-      address = await _reverseGeocode(coords.lat!, coords.lng!, accuracy: coords.accuracy);
+      final key = _addressKey(coords.lat!, coords.lng!);
+      address = _addressCache[key];
+      address ??= await _reverseGeocode(
+        coords.lat!,
+        coords.lng!,
+        accuracy: coords.accuracy,
+      );
+      if (address != null && address.isNotEmpty) {
+        _addressCache[key] = address;
+        if (_addressCache.length > 500) {
+          _addressCache.remove(_addressCache.keys.first);
+        }
+      }
     }
 
     final result = (lat: coords.lat, lng: coords.lng, address: address);
@@ -74,6 +97,7 @@ class LocationService {
     try {
       final address = await _reverseGeocode(lat, lng, accuracy: accuracy);
       if (address != null) {
+        _addressCache[_addressKey(lat, lng)] = address;
         await onAddressReceived(entryId, address);
         if (_cachedLocation != null &&
             _cachedLocation!.lat == lat &&
