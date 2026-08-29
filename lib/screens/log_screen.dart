@@ -9,6 +9,100 @@ import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
+class _FullImagePreviewScreen extends StatelessWidget {
+  final ScanEntry entry;
+  final String imagePath;
+  final Future<void> Function() onShare;
+
+  const _FullImagePreviewScreen({
+    required this.entry,
+    required this.imagePath,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(
+          entry.displayTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Share',
+            icon: const Icon(Icons.share_outlined),
+            onPressed: onShare,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: SizedBox.expand(
+                  child: Image.file(
+                    File(imagePath),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white70,
+                        size: 64,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.72),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                      if (entry.address != null && entry.address!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            entry.address!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LogScreen extends StatefulWidget {
   const LogScreen({Key? key}) : super(key: key);
 
@@ -114,6 +208,28 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
         SnackBar(content: Text('Share failed: $e')),
       );
     }
+  }
+
+  Future<void> _showFullPreview(ScanEntry entry) async {
+    final imagePath = await _resolveImagePath(entry);
+    if (!mounted) return;
+
+    if (imagePath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto tidak ditemukan di penyimpanan aplikasi')),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FullImagePreviewScreen(
+          entry: entry,
+          imagePath: imagePath,
+          onShare: () => _shareEntry(entry),
+        ),
+      ),
+    );
   }
 
   void _showDetail(ScanEntry entry) {
@@ -253,8 +369,8 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SizedBox(
-            width: 52,
-            height: 52,
+            width: 64,
+            height: 64,
             child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
           );
         }
@@ -262,8 +378,8 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
         final path = snapshot.data;
         if (path == null) {
           return Container(
-            width: 52,
-            height: 52,
+            width: 64,
+            height: 64,
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(8),
@@ -273,16 +389,16 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
         }
 
         return SizedBox(
-          width: 52,
-          height: 52,
+          width: 64,
+          height: 64,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.file(
               File(path),
-              width: 52,
-              height: 52,
+              width: 64,
+              height: 64,
               fit: BoxFit.cover,
-              cacheWidth: 156,
+              cacheWidth: 192,
               errorBuilder: (_, __, ___) => Container(
                 color: AppTheme.surface,
                 child: Icon(Icons.broken_image_outlined, color: AppTheme.textSecondary),
@@ -411,44 +527,78 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                     itemCount: _filteredEntries.length,
                     itemBuilder: (ctx, i) {
                       final entry = _filteredEntries[i];
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        leading: _buildThumbnail(entry),
-                        title: Text(
-                          entry.displayTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.border),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 4),
-                            Text(
-                              DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
-                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                            ),
-                            if (entry.address != null && entry.address!.isNotEmpty)
-                              Text(
-                                entry.address!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          minVerticalPadding: 4,
+                          leading: _buildThumbnail(entry),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.displayTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
-                          ],
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Share',
-                              icon: const Icon(Icons.share_outlined),
-                              onPressed: () => unawaited(_shareEntry(entry)),
+                              const SizedBox(width: 8),
+                              Icon(
+                                entry.isPhoto ? Icons.photo_camera_outlined : Icons.qr_code_2,
+                                size: 16,
+                                color: entry.isPhoto ? AppTheme.accentOrange : AppTheme.accent,
+                              ),
+                            ],
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                ),
+                                if (entry.address != null && entry.address!.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.location_on_outlined, size: 13, color: AppTheme.textSecondary),
+                                        const SizedBox(width: 3),
+                                        Expanded(
+                                          child: Text(
+                                            entry.address!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
                             ),
-                            const Icon(Icons.chevron_right),
-                          ],
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Share',
+                            icon: const Icon(Icons.share_outlined, size: 21),
+                            onPressed: () => unawaited(_shareEntry(entry)),
+                          ),
+                          onTap: () => entry.isPhoto
+                              ? unawaited(_showFullPreview(entry))
+                              : _showDetail(entry),
                         ),
-                        onTap: () => _showDetail(entry),
                       );
                     },
                   ),

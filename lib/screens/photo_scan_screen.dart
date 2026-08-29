@@ -581,16 +581,25 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.add_a_photo_outlined,
-                size: 72,
-                color: AppTheme.accent,
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: AppTheme.accent.withOpacity(0.25)),
+                ),
+                child: const Icon(
+                  Icons.add_a_photo_outlined,
+                  size: 38,
+                  color: AppTheme.accent,
+                ),
               ),
-              const Gap(20),
+              const Gap(18),
               Text(
                 hasBarcode ? 'Ambil foto untuk AWB' : 'Dokumentasi Foto',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.displayMedium,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 21),
               ),
               const Gap(10),
               Text(
@@ -639,7 +648,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
               const Gap(28),
               SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 56,
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _takePhoto,
                   icon: const Icon(Icons.camera_alt),

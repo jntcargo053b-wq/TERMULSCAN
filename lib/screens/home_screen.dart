@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
@@ -82,11 +84,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openPhoto() async {
-    final result = await Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const PhotoScanScreen()),
     );
-    if (result != null) _loadStats();
+    _loadStats();
   }
 
   Future<void> _openLog() async {
@@ -310,30 +312,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 letterSpacing: 1.5,
               )),
           const Gap(12),
-          Row(
-            children: [
-              // Barcode button
-              Expanded(
-                child: _BigScanButton(
-                  icon: Icons.qr_code_scanner,
-                  label: 'Scan Barcode',
-                  sublabel: 'QR · EAN · Code128',
-                  color: AppTheme.accent,
-                  onTap: _openBarcode,
-                ),
-              ),
-              const Gap(12),
-              // Photo button
-              Expanded(
-                child: _BigScanButton(
-                  icon: Icons.camera_alt,
-                  label: 'Ambil Foto',
-                  sublabel: 'Kamera · Galeri',
-                  color: AppTheme.accentOrange,
-                  onTap: _openPhoto,
-                ),
-              ),
-            ],
+          _PrimaryScanButton(
+            icon: Icons.qr_code_scanner,
+            label: 'Scan Barcode',
+            sublabel: 'Scan AWB untuk mulai proses',
+            onTap: _openBarcode,
+          ),
+          const Gap(10),
+          _SecondaryScanButton(
+            icon: Icons.camera_alt_outlined,
+            label: 'Ambil Foto',
+            sublabel: 'Kamera atau galeri',
+            onTap: _openPhoto,
           ),
         ],
       ),
@@ -422,54 +412,99 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ── Big scan button ────────────────────────────────────────────────────────
-class _BigScanButton extends StatelessWidget {
+// ── Primary / secondary scan actions ──────────────────────────────────────
+class _PrimaryScanButton extends StatelessWidget {
   final IconData icon;
   final String label, sublabel;
-  final Color color;
   final VoidCallback onTap;
 
-  const _BigScanButton({
+  const _PrimaryScanButton({
     required this.icon,
     required this.label,
     required this.sublabel,
-    required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.35), width: 1.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
+    return Material(
+      color: AppTheme.accent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: Colors.black, size: 25),
               ),
-              child: Icon(icon, color: color, size: 26),
-            ),
-            const Gap(14),
-            Text(label,
-                style: TextStyle(
-                    color: color,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700)),
-            const Gap(3),
-            Text(sublabel,
-                style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 11)),
-          ],
+              const Gap(13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(sublabel, style: const TextStyle(color: Colors.black87, fontSize: 11)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 22),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryScanButton extends StatelessWidget {
+  final IconData icon;
+  final String label, sublabel;
+  final VoidCallback onTap;
+
+  const _SecondaryScanButton({
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Icon(icon, color: AppTheme.accentOrange, size: 24),
+              const Gap(13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(sublabel, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+            ],
+          ),
         ),
       ),
     );
@@ -484,9 +519,10 @@ class _RecentItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = entry.isBarcode ? AppTheme.accent : AppTheme.accentOrange;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(10),
@@ -494,12 +530,8 @@ class _RecentItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            entry.isBarcode ? Icons.qr_code_scanner : Icons.camera_alt,
-            size: 18,
-            color: color,
-          ),
-          const Gap(12),
+          _RecentThumbnail(entry: entry, color: color),
+          const Gap(10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,24 +539,31 @@ class _RecentItem extends StatelessWidget {
                 Text(
                   entry.isBarcode
                       ? entry.value
-                      : 'Foto: ${entry.value.split('/').last}',
+                      : (entry.scanResult?.trim().isNotEmpty == true
+                          ? entry.scanResult!
+                          : 'Foto tanpa barcode'),
                   style: const TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
+                    color: AppTheme.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 2),
                 Text(
                   '${entry.timestampShort}  •  ${entry.locationName ?? entry.coordinatesString}',
                   style: const TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 10),
+                    color: AppTheme.textSecondary,
+                    fontSize: 10,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
+          const Gap(6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
@@ -534,13 +573,72 @@ class _RecentItem extends StatelessWidget {
             child: Text(
               entry.isBarcode ? (entry.barcodeFormat ?? 'BC') : 'IMG',
               style: TextStyle(
-                  color: color,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800),
+                color: color,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RecentThumbnail extends StatelessWidget {
+  final ScanEntry entry;
+  final Color color;
+
+  const _RecentThumbnail({required this.entry, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!entry.isPhoto) {
+      return _placeholder(Icons.qr_code_scanner);
+    }
+
+    return FutureBuilder<String?>(
+      future: StorageService().resolveImagePath(entry),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _placeholder(Icons.image_outlined, loading: true);
+        }
+        final path = snapshot.data;
+        if (path == null || path.isEmpty) {
+          return _placeholder(Icons.broken_image_outlined);
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(
+            File(path),
+            width: 48,
+            height: 48,
+            fit: BoxFit.cover,
+            cacheWidth: 144,
+            errorBuilder: (_, __, ___) => _placeholder(Icons.broken_image_outlined),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _placeholder(IconData icon, {bool loading = false}) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: loading
+          ? const Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : Icon(icon, color: color, size: 20),
     );
   }
 }

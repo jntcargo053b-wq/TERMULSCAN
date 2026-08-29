@@ -4,6 +4,7 @@ import 'package:gap/gap.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'watermark_settings.dart';
+import '../theme/app_theme.dart';
 
 class WatermarkSettingsSheet extends StatefulWidget {
   const WatermarkSettingsSheet({super.key});
@@ -93,7 +94,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             child: Container(
               width: 40, height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[600],
+                color: AppTheme.textSecondary,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -116,14 +117,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           const Gap(4),
           const Text(
             'Tampil di setiap foto yang disimpan',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
           const Gap(20),
 
           // ── NAMA OPERATOR ──────────────────────────────────────────────
           const Text('NAMA OPERATOR',
               style: TextStyle(
-                color: Colors.grey,
+                color: AppTheme.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
@@ -134,7 +135,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Contoh: Budi Santoso',
-              hintStyle: const TextStyle(color: Colors.grey),
+              hintStyle: const TextStyle(color: AppTheme.textSecondary),
               filled: true,
               fillColor: const Color(0xFF2A2A2A),
               border: OutlineInputBorder(
@@ -145,10 +146,10 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: const BorderSide(color: Colors.amber, width: 1.5),
               ),
-              prefixIcon: const Icon(Icons.person_outline, color: Colors.grey),
+              prefixIcon: const Icon(Icons.person_outline, color: AppTheme.textSecondary),
               suffixIcon: _operatorController.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, color: Colors.grey, size: 16),
+                      icon: const Icon(Icons.clear, color: AppTheme.textSecondary, size: 16),
                       onPressed: () {
                         _operatorController.clear();
                         setState(() {});
@@ -163,7 +164,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           // ── LOGO PERUSAHAAN ────────────────────────────────────────────
           const Text('LOGO PERUSAHAAN',
               style: TextStyle(
-                color: Colors.grey,
+                color: AppTheme.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
@@ -208,7 +209,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                             )),
                         Gap(2),
                         Text('Posisi: kanan bawah foto',
-                            style: TextStyle(color: Colors.grey, fontSize: 11)),
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
                       ],
                     ),
                   ),
@@ -263,7 +264,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                     const Gap(2),
                     const Text(
                       'PNG/JPG · Disarankan background transparan',
-                      style: TextStyle(color: Colors.grey, fontSize: 11),
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                     ),
                   ],
                 ),
@@ -287,7 +288,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
               children: [
                 const Text('PREVIEW WATERMARK',
                     style: TextStyle(
-                      color: Colors.grey,
+                      color: AppTheme.textSecondary,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.2,
