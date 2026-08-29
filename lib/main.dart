@@ -39,11 +39,13 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    PhotoTaskRecoveryService.instance.startMonitoring();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    PhotoTaskRecoveryService.instance.disposeMonitoring();
     super.dispose();
   }
 
@@ -51,9 +53,14 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Pastikan perubahan log yang masih menunggu debounce tetap tersimpan
     // saat app pindah ke background / ditutup.
+    if (state == AppLifecycleState.resumed) {
+      PhotoTaskRecoveryService.instance.startMonitoring();
+      unawaited(PhotoTaskRecoveryService.instance.recoverPending());
+    }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
+      PhotoTaskRecoveryService.instance.disposeMonitoring();
       StorageService().flush();
     }
   }

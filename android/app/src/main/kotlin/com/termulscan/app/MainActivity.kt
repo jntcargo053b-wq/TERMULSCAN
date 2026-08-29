@@ -49,7 +49,7 @@ class MainActivity : FlutterActivity() {
 
         // 1. Cek last-known location (sangat cepat). Accuracy is metadata:
         // a usable recent coordinate is preferable to waiting for a "better" fix.
-        val maxAgeMillis = 120_000L
+        val maxAgeMillis = 20_000L
 
         fun isUsable(loc: Location?): Boolean {
             if (loc == null) return false
@@ -58,7 +58,8 @@ class MainActivity : FlutterActivity() {
             } else {
                 Long.MAX_VALUE
             }
-            return ageMillis <= maxAgeMillis
+            return ageMillis <= maxAgeMillis &&
+                loc.latitude.isFinite() && loc.longitude.isFinite()
         }
 
         val gpsLast = try {
@@ -72,15 +73,11 @@ class MainActivity : FlutterActivity() {
             null
         }
 
-        val cachedBest: Location? = listOfNotNull(gpsLast, netLast)
-            .filter { isUsable(it) }
-            .minByOrNull {
-                if (it.elapsedRealtimeNanos > 0L) {
-                    SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos
-                } else {
-                    Long.MAX_VALUE
-                }
-            }
+        val cachedBest: Location? = when {
+            gpsLast != null && isUsable(gpsLast) -> gpsLast
+            netLast != null && isUsable(netLast) -> netLast
+            else -> null
+        }
 
         if (cachedBest != null) {
             val map = mapOf(
@@ -121,6 +118,7 @@ class MainActivity : FlutterActivity() {
         val locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 if (resultSent) return
+                if (!location.latitude.isFinite() || !location.longitude.isFinite()) return
                 sendResult(location)
                 try { locationManager.removeUpdates(this) } catch (_: Exception) {}
             }

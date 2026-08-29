@@ -19,7 +19,7 @@
 ## GPS light final
 - 20m changed from hard failure to quality target.
 - 30m is the maximum accepted lightweight POD accuracy.
-- Removed stale unused `com/gudang/scanner/MainActivity.kt` if present.
+- Removed the stale unused `com/gudang/scanner/MainActivity.kt`.
 - Kept the original single-update GPS architecture; no heavy lock/filtering.
 
 ## GPS/performance fixes v14
@@ -50,7 +50,7 @@
 - Definitively declared `bool _hasLogo = false;` in `WatermarkSettings`.
 - Normalized `hasLogo` getter to use the cached field.
 - Removed any stale root `build.yml`.
-- Preserved existing `.github/workflows/*` project build flow; legacy `flutter create` commands removed if present.
+- The active workflow is deterministic and contains no `flutter create`, repository mutation, or automatic git push/pull.
 - Repacked with a clean project root name (`TERMULSCAN-main-18-clean`) to avoid carrying forward the v13 root name.
 - Added BUILD_VERIFICATION.md for CI verification.
 
@@ -93,3 +93,17 @@
 - Accuracy is metadata only.
 - Added a lightweight 10m address grid cache to speed repeated reverse-geocoding.
 - Preserved Nominatim request serialization/throttling.
+
+
+## Version 22 — final address/recovery hardening (28 Aug 2026)
+- Normal photo capture reverse-geocodes capture coordinates before the first watermark when possible.
+- Photo tasks persist separate `watermarkCompleted`, `addressResolved`, and `retryExhausted` states.
+- Address retry runs on cold start, app resume, and every 2 minutes while the app process is alive.
+- Recovery always burns from the immutable RAW source, never from an already-watermarked public image.
+- Recovery stops after 3 failed attempts without deleting the history entry.
+- Watermark settings from PhotoScanScreen now use the same modal bottom-sheet presentation as HomeScreen.
+- LogScreen dark-theme secondary/empty-state text uses AppTheme colors for readable contrast.
+- Removed the duplicate unused `lib/models/watermark_settings.dart`.
+- Barcode-only entries use `StorageService.generateId()`.
+- Large history JSON encoding uses a background isolate at 300+ entries.
+- Legacy-light native GPS accepts recent cached fixes up to 20 seconds old and 30 m accuracy, preferring GPS over network.

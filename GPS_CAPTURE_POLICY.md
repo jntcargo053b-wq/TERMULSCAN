@@ -9,3 +9,9 @@
 7. Use a small address grid cache to make repeated Kecamatan/Kota lookups fast.
 8. Fresh GPS can update the coordinate/address later; no Kalman, rolling lock,
    multi-sample gate, or accuracy threshold is introduced.
+
+
+## Current implementation note (29 Aug 2026)
+- GPS accuracy is metadata only; there is no Android-side 30 m hard gate.
+- Recent cached coordinates (maximum age 20 seconds) and the first valid fresh coordinate are accepted even when accuracy is poor or unknown.
+- Latitude/longitude must be finite; accuracy does not block capture.

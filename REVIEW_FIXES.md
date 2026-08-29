@@ -17,15 +17,26 @@
 - Orphan persisted files are cleaned up when save/add-task fails before a recovery task exists.
 - Normal successful captures do one final persisted watermark burn; recovery is reserved for incomplete tasks.
 - If reverse geocoding is unavailable, the coordinate-watermarked photo remains valid and the pending task can retry address enrichment later.
-- Recovery tasks stop after 3 failed attempts and one broken task no longer blocks later pending tasks.
-- Missing public/raw files are removed from the pending queue to avoid infinite retries.
+- Recovery tasks stop after 3 failed recovery attempts and one broken task no longer blocks later pending tasks.
+- Missing public/raw files consume a recovery attempt and are marked retry-exhausted after 3 attempts.
 - Flutter ImageCache eviction remains in recovery after the public file is rewritten.
 
 ## CI
-- Removed `flutter create` from GitHub Actions so checked-in native Android files are not regenerated or overwritten during builds.
+- Removed `flutter create` and repository mutation from GitHub Actions so checked-in native Android files are not regenerated or overwritten during builds.
 - CI now verifies the checked-in Gradle wrapper before building.
 
 ## Validation
 - ZIP archive passes `zipfile.testzip()`.
 - Static source sanity checks passed for brace/parenthesis/bracket balance in the modified Dart files.
 - Flutter/Dart SDK is not installed in this execution environment, so `flutter analyze` and `flutter build apk` could not be executed locally.
+
+## Final recheck hardening — 28 Aug 2026
+
+- Prevented successful photo captures from being watermark-processed twice: the capture path now marks its persisted recovery task complete immediately after a successful watermark.
+- Recovery remains pending only when watermark processing fails or task-state persistence cannot be completed.
+- Removed the now-unused direct recovery trigger from `PhotoScanScreen`; recovery is handled at app startup from persisted pending tasks.
+
+
+## Final hardening — address pipeline (28 Aug 2026)
+
+Restored reverse-geocoding to the normal capture path. Photo tasks now persist independent `watermarkCompleted` and `addressResolved` states, allowing address retry without watermark stacking. Address retry is triggered at cold start, app resume, and every 2 minutes, with a 3-attempt ceiling. Recovery always uses the immutable RAW photo as its watermark source.

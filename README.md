@@ -1,6 +1,6 @@
 # WH Scanner — Scanner Gudang & Ekspedisi
 
-Aplikasi Flutter profesional untuk kebutuhan gudang dan ekspedisi.
+Aplikasi Flutter untuk scan barcode/QR, dokumentasi foto POD, timestamp, GPS, watermark, history, search, dan share.
 
 ## Fitur
 - **Scan Barcode / QR Code** — realtime, support QR, EAN-13, Code-128, dll
@@ -21,7 +21,7 @@ flutter build apk --release
 ## Dependencies
 - `mobile_scanner` — kamera barcode/QR
 - `image_picker` — ambil foto
-- `geolocator` + `geocoding` — GPS & nama lokasi
+- `LocationManager` native Android + `http`/Nominatim — GPS & nama lokasi
 - `path_provider` + `share_plus` — simpan & bagikan file
 - `permission_handler` — manajemen izin
 
@@ -44,3 +44,10 @@ lib/
 ## List Search Share
 - Setiap item pada hasil pencarian/riwayat memiliki tombol Share langsung.
 - Tombol Share memakai resolver storage yang sama dengan preview sehingga path foto lama tetap dapat dipulihkan.
+
+
+## Catatan CI
+
+GitHub Actions membangun project Android yang sudah ada di repository secara langsung. Workflow **tidak** menjalankan `flutter create`, tidak melakukan `git pull/push`, dan tidak memodifikasi source repository saat build.
+
+Build CI menjalankan `flutter pub get`, `flutter analyze`, `flutter test`, lalu `flutter build apk --release`.

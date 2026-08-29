@@ -13,7 +13,6 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../models/scan_entry.dart';
 import '../services/location_service.dart';
-import '../services/photo_task_recovery_service.dart';
 import '../services/storage_service.dart';
 import '../services/watermark_service.dart';
 import '../theme/app_theme.dart';
@@ -282,41 +281,106 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   Future<ScanEntry> _savePhotoWithCaptureLocation(String sourcePath) async {
     final savedPath = await _storage.savePhoto(sourcePath);
     final capturedAt = DateTime.now();
-    await _storage.savePhotoRawCopy(sourcePath, savedPath);
-    final captureCoords = await _loc.getCoordinatesOnly();
 
-    await _burnWatermark(
-      sourcePath: savedPath,
-      destPath: savedPath,
-      timestamp: capturedAt,
-      locationText: captureCoords.lat != null && captureCoords.lng != null
-          ? '${captureCoords.lat!.toStringAsFixed(5)}, ${captureCoords.lng!.toStringAsFixed(5)}'
-          : 'Mencari lokasi...',
-      barcode: _barcode,
-    );
+    try {
+      // Raw copy is the immutable recovery source. If anything fails before
+      // an entry is persisted, clean up both copies so no orphan files remain.
+      await _storage.savePhotoRawCopy(sourcePath, savedPath);
+      final captureCoords = await _loc.getCoordinatesOnly();
 
-    final entry = ScanEntry(
-      id: _storage.generateId(),
-      type: ScanType.photo,
-      value: savedPath,
-      imagePath: savedPath,
-      timestamp: capturedAt,
-      latitude: captureCoords.lat,
-      longitude: captureCoords.lng,
-      locationName: null,
-      scanResult: _barcode,
-    );
-    await _storage.add(entry);
-    await _storage.enqueuePhotoTask(
-      entry.id,
-      latitude: captureCoords.lat,
-      longitude: captureCoords.lng,
-    );
-    return entry;
+      // Persist the history entry and recovery task BEFORE burning the
+      // watermark. If Android kills the process during image processing, the
+      // next launch can recover the exact capture using the raw file and the
+      // capture-time coordinates.
+      final entry = ScanEntry(
+        id: _storage.generateId(),
+        type: ScanType.photo,
+        value: savedPath,
+        imagePath: savedPath,
+        timestamp: capturedAt,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
+        locationName: null,
+        scanResult: _barcode,
+      );
+      await _storage.add(entry);
+      await _storage.enqueuePhotoTask(
+        entry.id,
+        latitude: captureCoords.lat,
+        longitude: captureCoords.lng,
+      );
+
+      String locationText = entry.coordinatesString;
+      bool addressResolved = false;
+      if (captureCoords.lat != null && captureCoords.lng != null) {
+        try {
+          final address = await _loc
+              .reverseGeocode(
+                captureCoords.lat!,
+                captureCoords.lng!,
+                accuracy: captureCoords.accuracy,
+              )
+              .timeout(const Duration(seconds: 3), onTimeout: () => null);
+          if (address != null && address.trim().isNotEmpty) {
+            locationText = address.trim();
+            addressResolved = true;
+            await _storage.update(entry.copyWith(locationName: locationText));
+          }
+        } catch (e) {
+          debugPrint('Reverse geocode capture gagal: $e');
+        }
+      }
+
+      try {
+        await _burnWatermark(
+          sourcePath: savedPath,
+          destPath: savedPath,
+          timestamp: capturedAt,
+          locationText: locationText,
+          barcode: _barcode,
+        );
+      } catch (_) {
+        // Keep the entry + recovery task. The raw file is intentionally kept
+        // so PhotoTaskRecoveryService can retry after the next app start.
+        rethrow;
+      }
+
+      // Watermark sudah berhasil. Task hanya boleh dihapus bila alamat juga
+      // sudah berhasil; jika geocoding gagal, recovery akan retry alamat
+      // menggunakan koordinat capture yang tersimpan tanpa menggeser lokasi.
+      await _storage.markPhotoTaskWatermarkCompleted(entry.id);
+      if (addressResolved) {
+        await _storage.markPhotoTaskAddressResolved(entry.id);
+        try {
+          await _storage.markPhotoTaskCompleted(entry.id);
+        } catch (e) {
+          // Jika persist status gagal, task tetap pending dan aman untuk di-retry
+          // pada startup berikutnya. Jangan menganggap penyimpanan foto gagal.
+          debugPrint('Gagal menandai photo task selesai: $e');
+        }
+      }
+
+      return await _storage.getEntry(entry.id) ?? entry;
+    } catch (_) {
+      // If the entry was not persisted yet, remove the public/raw files.
+      // Once an entry exists, recovery owns those files and must keep them.
+      final rawPath = _storage.rawPathFor(savedPath);
+      final persisted = (await _storage.getEntryByImagePath(savedPath)) != null;
+      if (!persisted) {
+        try {
+          final f = File(savedPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+        try {
+          final f = File(rawPath);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
+      rethrow;
+    }
   }
 
   void _finishSavingPhoto(ScanEntry entry) {
-    unawaited(PhotoTaskRecoveryService.instance.processEntry(entry.id));
     if (!mounted) return;
     setState(() {
       _photoCount++;
@@ -594,11 +658,17 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
               ),
               const Gap(12),
               TextButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
                     builder: (_) => const WatermarkSettingsSheet(),
-                  ),
-                ),
+                  );
+                },
                 icon: const Icon(Icons.settings_outlined),
                 label: const Text('Pengaturan watermark'),
               ),

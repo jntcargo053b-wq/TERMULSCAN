@@ -24,6 +24,19 @@ class PhotoTaskRecoveryService {
   final _settings = WatermarkSettings();
   Future<void> _chain = Future.value();
   bool _runningRecovery = false;
+  Timer? _monitorTimer;
+
+  void startMonitoring() {
+    _monitorTimer?.cancel();
+    _monitorTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      unawaited(recoverPending());
+    });
+  }
+
+  void disposeMonitoring() {
+    _monitorTimer?.cancel();
+    _monitorTimer = null;
+  }
 
   Future<void> recoverPending() async {
     if (_runningRecovery) return;
@@ -65,20 +78,38 @@ class PhotoTaskRecoveryService {
       return;
     }
 
+    final task = _storage.getPhotoTask(entryId);
+    if (task == null) return;
+    if (task['retryExhausted'] == true) return;
+
+    final attempts = (task['attempts'] as int?) ?? 0;
+    if (attempts >= 3) {
+      await _storage.markPhotoTaskRetryExhausted(entryId);
+      return;
+    }
+    await _storage.markPhotoTaskAttempt(entryId);
+
     final publicPath = entry.displayImagePath;
-    if (publicPath == null || publicPath.isEmpty) return;
+    if (publicPath == null || publicPath.isEmpty) {
+      if (attempts + 1 >= 3) {
+        await _storage.markPhotoTaskRetryExhausted(entryId);
+      }
+      return;
+    }
 
     final rawPath = _storage.rawPathFor(publicPath);
-    if (!await File(rawPath).exists()) return;
+    if (!await File(rawPath).exists()) {
+      if (attempts + 1 >= 3) {
+        await _storage.markPhotoTaskRetryExhausted(entryId);
+      }
+      return;
+    }
 
-    final task = _storage.getPhotoTask(entryId);
-    final taskLat = task?['latitude'];
-    final taskLng = task?['longitude'];
+    final taskLat = task['latitude'];
+    final taskLng = task['longitude'];
     double? lat = taskLat is num ? taskLat.toDouble() : entry.latitude;
     double? lng = taskLng is num ? taskLng.toDouble() : entry.longitude;
 
-    // Hanya task yang masih hidup pada proses capture boleh meminta lokasi
-    // baru. Recovery setelah process death tidak boleh menggeser lokasi foto.
     if (allowFreshLocation && (lat == null || lng == null)) {
       final coords = await _location.getCoordinatesOnly();
       lat = coords.lat;
@@ -88,25 +119,82 @@ class PhotoTaskRecoveryService {
       }
     }
 
-    if (lat == null || lng == null) return;
+    var current = entry;
+    if (lat != null && lng != null &&
+        (current.latitude != lat || current.longitude != lng)) {
+      current = current.copyWith(latitude: lat, longitude: lng);
+      await _storage.update(current);
+    }
 
-    await _storage.markPhotoTaskAttempt(entryId);
+    final addressResolved = task['addressResolved'] == true;
+    final watermarkCompleted = task['watermarkCompleted'] == true;
 
-    var current = entry.copyWith(latitude: lat, longitude: lng);
-    await _storage.update(current);
+    // Jika watermark sudah selesai tetapi alamat belum, jangan membakar ulang
+    // kecuali reverse-geocode sekarang berhasil. Sumber tetap RAW sehingga
+    // watermark tidak pernah menumpuk.
+    if (watermarkCompleted && !addressResolved) {
+      if (lat == null || lng == null) return;
+      try {
+        final address = await _location
+            .reverseGeocode(lat, lng, accuracy: null)
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        if (address == null || address.trim().isEmpty) {
+          if (attempts + 1 >= 3) {
+            await _storage.markPhotoTaskRetryExhausted(entryId);
+          }
+          return;
+        }
+
+        final resolvedAddress = address.trim();
+        current = current.copyWith(locationName: resolvedAddress);
+        await _storage.update(current);
+
+        final logoBytes = await _loadCompactLogo();
+        final lines = <String>[
+          if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
+          DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
+          resolvedAddress,
+          if (_settings.operatorName.isNotEmpty) 'Operator: ${_settings.operatorName}',
+        ];
+        await WatermarkService.burn(
+          sourcePath: rawPath,
+          destPath: publicPath,
+          lines: lines,
+          logoBytes: logoBytes,
+        );
+        await _storage.markPhotoTaskAddressResolved(entryId);
+        await _storage.markPhotoTaskCompleted(entryId);
+        return;
+      } catch (e, st) {
+        debugPrint('Address retry $entryId gagal: $e\n$st');
+        if (attempts + 1 >= 3) {
+          await _storage.markPhotoTaskRetryExhausted(entryId);
+        }
+        return;
+      }
+    }
+
+    if (watermarkCompleted && addressResolved) {
+      await _storage.markPhotoTaskCompleted(entryId);
+      return;
+    }
 
     String locationText = current.coordinatesString;
-    try {
-      final address = await _location
-          .reverseGeocode(lat, lng)
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (address != null && address.isNotEmpty) {
-        locationText = address;
-        current = current.copyWith(locationName: address);
-        await _storage.update(current);
+    var resolvedNow = false;
+    if (lat != null && lng != null) {
+      try {
+        final address = await _location
+            .reverseGeocode(lat, lng, accuracy: null)
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        if (address != null && address.trim().isNotEmpty) {
+          locationText = address.trim();
+          resolvedNow = true;
+          current = current.copyWith(locationName: locationText);
+          await _storage.update(current);
+        }
+      } catch (e) {
+        debugPrint('Reverse geocode $entryId gagal: $e');
       }
-    } catch (e) {
-      debugPrint('Reverse geocode $entryId gagal: $e');
     }
 
     final logoBytes = await _loadCompactLogo();
@@ -124,7 +212,11 @@ class PhotoTaskRecoveryService {
       logoBytes: logoBytes,
     );
 
-    await _storage.markPhotoTaskCompleted(entryId);
+    await _storage.markPhotoTaskWatermarkCompleted(entryId);
+    if (resolvedNow) {
+      await _storage.markPhotoTaskAddressResolved(entryId);
+      await _storage.markPhotoTaskCompleted(entryId);
+    }
   }
 
   Future<Uint8List?> _loadCompactLogo() async {

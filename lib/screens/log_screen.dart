@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
+import '../theme/app_theme.dart';
 
 class LogScreen extends StatefulWidget {
   const LogScreen({Key? key}) : super(key: key);
@@ -65,7 +66,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
         value != null && value.trim().toLowerCase().contains(q);
 
     final result = source.where((entry) {
-      final date = DateFormat('dd MMM yyyy HH:mm yyyy-MM-dd').format(entry.timestamp);
+      final date = DateFormat('dd MMM yyyy HH:mm').format(entry.timestamp);
       return contains(entry.displayTitle) ||
           contains(entry.scanResult) ||
           contains(entry.barcodeValue) ||
@@ -170,7 +171,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                   if (path == null) {
                     return const Text(
                       'Image not available',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: AppTheme.textSecondary),
                     );
                   }
                   return ClipRRect(
@@ -264,10 +265,10 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: Colors.grey.shade200,
+              color: AppTheme.surface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade500),
+            child: Icon(Icons.broken_image_outlined, color: AppTheme.textSecondary),
           );
         }
 
@@ -283,8 +284,8 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
               fit: BoxFit.cover,
               cacheWidth: 156,
               errorBuilder: (_, __, ___) => Container(
-                color: Colors.grey.shade200,
-                child: Icon(Icons.broken_image_outlined, color: Colors.grey.shade500),
+                color: AppTheme.surface,
+                child: Icon(Icons.broken_image_outlined, color: AppTheme.textSecondary),
               ),
             ),
           ),
@@ -397,11 +398,11 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+                        Icon(Icons.inbox, size: 64, color: AppTheme.textSecondary),
                         const SizedBox(height: 16),
                         Text(
                           _searchController.text.trim().isEmpty ? 'No scans yet' : 'No matches found',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
                         ),
                       ],
                     ),
@@ -425,14 +426,14 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                             const SizedBox(height: 4),
                             Text(
                               DateFormat('dd MMM yyyy, HH:mm').format(entry.timestamp),
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                             ),
                             if (entry.address != null && entry.address!.isNotEmpty)
                               Text(
                                 entry.address!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+                                style: TextStyle(fontSize: 12, color: AppTheme.textPrimary),
                               ),
                           ],
                         ),

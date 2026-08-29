@@ -6,4 +6,4 @@ Before release, run in CI:
 - flutter test
 - flutter build apk --release
 
-The repository workflow should build the existing Android project directly and must not run `flutter create`.
+The repository workflow builds the existing Android project directly and does not run `flutter create`.

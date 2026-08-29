@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -48,7 +49,9 @@ class StorageService {
         for (final raw in tasks.whereType<Map>()) {
           final task = Map<String, dynamic>.from(raw);
           final id = task['entryId']?.toString();
-          if (id != null && id.isNotEmpty) _pendingPhotoTasks[id] = task;
+          if (id != null && id.isNotEmpty && task['retryExhausted'] != true) {
+            _pendingPhotoTasks[id] = task;
+          }
         }
       } catch (_) {
         // Task recovery korup tidak boleh menggagalkan startup.
@@ -77,6 +80,15 @@ class StorageService {
   Future<ScanEntry?> getEntry(String id) async {
     try {
       return _entries.firstWhere((e) => e.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<ScanEntry?> getEntryByImagePath(String path) async {
+    if (!_initialized) await init();
+    try {
+      return _entries.firstWhere((e) => e.displayImagePath == path);
     } catch (_) {
       return null;
     }
@@ -287,9 +299,20 @@ class StorageService {
     await _persist();
   }
 
-  Future<void> _persist() {
-    final entriesJson = json.encode(_entries.map((e) => e.toMap()).toList());
-    final tasksJson = json.encode(_pendingPhotoTasks.values.toList());
+  Future<void> _persist() async {
+    final entriesSnapshot = _entries.map((e) => e.toMap()).toList();
+    final tasksSnapshot = _pendingPhotoTasks.values
+        .map((task) => Map<String, dynamic>.from(task))
+        .toList();
+
+    // History kecil tetap lebih cepat di UI isolate; history besar memakai
+    // isolate agar json.encode() tidak membuat micro-jank pada layar.
+    final entriesJson = entriesSnapshot.length >= 300
+        ? await compute(_encodeJsonList, entriesSnapshot)
+        : json.encode(entriesSnapshot);
+    final tasksJson = tasksSnapshot.length >= 300
+        ? await compute(_encodeJsonList, tasksSnapshot)
+        : json.encode(tasksSnapshot);
 
     _persistChain = _persistChain.then((_) async {
       try {
@@ -314,6 +337,9 @@ class StorageService {
       'entryId': entryId,
       'createdAt': previous?['createdAt'] ?? DateTime.now().toIso8601String(),
       'attempts': (previous?['attempts'] as int?) ?? 0,
+      'watermarkCompleted': previous?['watermarkCompleted'] == true,
+      'addressResolved': previous?['addressResolved'] == true,
+      'retryExhausted': previous?['retryExhausted'] == true,
       // Capture-time coordinates are persisted with the task. Recovery must
       // never silently replace an old photo's location with the phone's
       // current location after the process has been killed.
@@ -335,6 +361,27 @@ class StorageService {
     await _persist();
   }
 
+  Future<void> markPhotoTaskWatermarkCompleted(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['watermarkCompleted'] = true;
+    await _persist();
+  }
+
+  Future<void> markPhotoTaskAddressResolved(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['addressResolved'] = true;
+    await _persist();
+  }
+
+  Future<void> markPhotoTaskRetryExhausted(String entryId) async {
+    // A task that has permanently failed is no longer recoverable. Remove it
+    // from the pending queue so it cannot accumulate or be revisited forever.
+    _pendingPhotoTasks.remove(entryId);
+    await _persist();
+  }
+
   Future<void> markPhotoTaskAttempt(String entryId) async {
     final task = _pendingPhotoTasks[entryId];
     if (task == null) return;
@@ -344,3 +391,6 @@ class StorageService {
   }
 
 }
+
+
+String _encodeJsonList(List<Map<String, dynamic>> value) => json.encode(value);
