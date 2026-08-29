@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -62,6 +63,7 @@ class StorageService {
     // Simpan ulang dengan imagePath yang eksplisit dan path yang sudah
     // direlokasi bila file masih dapat ditemukan.
     await _repairImageReferences();
+    await cleanupOrphanPhotoFiles();
     _initialized = true;
   }
 
@@ -127,6 +129,86 @@ class StorageService {
   String generateId() {
     _idCounter = (_idCounter + 1) % 1000000;
     return '${DateTime.now().millisecondsSinceEpoch}_$_idCounter';
+  }
+
+  static const MethodChannel _locationChannel =
+      MethodChannel('com.termulscan.app/location');
+
+  Future<int?> getAvailableStorageBytes() async {
+    try {
+      final result =
+          await _locationChannel.invokeMethod<Map<dynamic, dynamic>>('getStorageInfo');
+      return (result?['availableBytes'] as num?)?.toInt();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<int?> getTotalStorageBytes() async {
+    try {
+      final result =
+          await _locationChannel.invokeMethod<Map<dynamic, dynamic>>('getStorageInfo');
+      return (result?['totalBytes'] as num?)?.toInt();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> cleanupOrphanPhotoFiles() async {
+    Directory dir;
+    try {
+      dir = await _photosDir();
+    } catch (_) {
+      return;
+    }
+
+    final referenced = <String>{};
+    for (final entry in _entries) {
+      if (!entry.isPhoto) continue;
+      final path = entry.displayImagePath;
+      if (path != null && path.isNotEmpty) {
+        referenced.add(File(path).absolute.path);
+        // Keep RAW while the corresponding history entry still exists; this
+        // avoids deleting a recovery source if cleanup races with persistence.
+        referenced.add(File(rawPathFor(path)).absolute.path);
+      }
+    }
+
+    // A pending recovery task owns its RAW file even if the public path has
+    // temporarily disappeared from history.
+    for (final task in _pendingPhotoTasks.values) {
+      final entryId = task['entryId']?.toString();
+      if (entryId == null) continue;
+      try {
+        final entry = _entries.firstWhere((e) => e.id == entryId);
+        final publicPath = entry.displayImagePath;
+        if (publicPath != null && publicPath.isNotEmpty) {
+          referenced.add(File(publicPath).absolute.path);
+          referenced.add(File(rawPathFor(publicPath)).absolute.path);
+        }
+      } catch (_) {}
+    }
+
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.isNotEmpty
+            ? entity.uri.pathSegments.last
+            : '';
+        if (!name.startsWith('photo_')) continue;
+        final absolute = entity.absolute.path;
+        if (referenced.contains(absolute)) continue;
+        // Only remove files belonging to our own generated photo naming scheme.
+        if (!RegExp(r'^photo_\d+_\d+(_raw)?\.[a-z0-9]{2,5}$',
+                caseSensitive: false)
+            .hasMatch(name)) {
+          continue;
+        }
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   /// Storage foto aplikasi yang stabil. Android tetap memakai external app
@@ -356,7 +438,20 @@ class StorageService {
     return task == null ? null : Map<String, dynamic>.from(task);
   }
 
+  Future<void> _cleanupRawForEntry(String entryId) async {
+    try {
+      final entry = await getEntry(entryId);
+      final publicPath = entry?.displayImagePath;
+      if (publicPath == null || publicPath.isEmpty) return;
+      final raw = File(rawPathFor(publicPath));
+      if (await raw.exists()) await raw.delete();
+    } catch (_) {
+      // Kegagalan hapus RAW tidak boleh menggagalkan penyelesaian task.
+    }
+  }
+
   Future<void> markPhotoTaskCompleted(String entryId) async {
+    await _cleanupRawForEntry(entryId);
     _pendingPhotoTasks.remove(entryId);
     await _persist();
   }
@@ -378,6 +473,7 @@ class StorageService {
   Future<void> markPhotoTaskRetryExhausted(String entryId) async {
     // A task that has permanently failed is no longer recoverable. Remove it
     // from the pending queue so it cannot accumulate or be revisited forever.
+    await _cleanupRawForEntry(entryId);
     _pendingPhotoTasks.remove(entryId);
     await _persist();
   }

@@ -7,6 +7,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.os.SystemClock
+import android.os.StatFs
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
@@ -27,10 +28,31 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 if (call.method == "getLocation") {
                     getCurrentLocation(result)
+                } else if (call.method == "getStorageInfo") {
+                    getStorageInfo(result)
                 } else {
                     result.notImplemented()
                 }
             }
+    }
+
+    private fun getStorageInfo(result: Result) {
+        val dir = getExternalFilesDir(null)
+        if (dir == null) {
+            result.error("STORAGE_UNAVAILABLE", "Storage directory unavailable", null)
+            return
+        }
+        try {
+            val stat = StatFs(dir.absolutePath)
+            result.success(
+                mapOf(
+                    "availableBytes" to stat.availableBytes,
+                    "totalBytes" to stat.totalBytes
+                )
+            )
+        } catch (e: Exception) {
+            result.error("STORAGE_CHECK_FAILED", "Unable to query storage", e.message)
+        }
     }
 
     private fun getCurrentLocation(result: Result) {

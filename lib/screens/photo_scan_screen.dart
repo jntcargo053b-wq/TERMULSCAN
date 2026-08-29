@@ -161,15 +161,40 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   // ============================================================================
 
   Future<void> _takePhoto() async {
-    if (!_locationGranted) {
-      await _checkLocationPermission();
-      if (!_locationGranted) {
-        _showError('Izin lokasi diperlukan untuk menandai foto');
-        return;
-      }
-    }
+    if (_isSaving) return;
+    if (mounted) setState(() => _isSaving = true);
 
     try {
+      if (!_locationGranted) {
+        await _checkLocationPermission();
+        if (!_locationGranted) {
+          _showError('Izin lokasi diperlukan untuk menandai foto');
+          return;
+        }
+      }
+
+      final availableStorage = await _storage.getAvailableStorageBytes();
+      if (availableStorage != null && availableStorage < 100 * 1024 * 1024) {
+        _showError('Penyimpanan hampir penuh. Kosongkan ruang sebelum mengambil foto.');
+        return;
+      }
+      if (availableStorage != null && availableStorage < 300 * 1024 * 1024 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Penyimpanan sangat rendah. Foto mungkin gagal disimpan.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else if (availableStorage != null &&
+          availableStorage < 1024 * 1024 * 1024 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Penyimpanan mulai rendah.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1024,
@@ -179,8 +204,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       if (xfile == null) return;
 
       HapticFeedback.mediumImpact();
-
-      // Preview dan konfirmasi
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -188,13 +211,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         return;
       }
 
-      setState(() => _isSaving = true);
-
       final entry = await _savePhotoWithCaptureLocation(xfile.path);
       _finishSavingPhoto(entry);
     } catch (e) {
+      if (mounted) _showError('Gagal ambil foto: $e');
+    } finally {
       if (mounted) setState(() => _isSaving = false);
-      _showError('Gagal ambil foto: $e');
     }
   }
 
@@ -203,15 +225,40 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   // ============================================================================
 
   Future<void> _pickFromGallery() async {
-    if (!_locationGranted) {
-      await _checkLocationPermission();
-      if (!_locationGranted) {
-        _showError('Izin lokasi diperlukan untuk menandai foto');
-        return;
-      }
-    }
+    if (_isSaving) return;
+    if (mounted) setState(() => _isSaving = true);
 
     try {
+      if (!_locationGranted) {
+        await _checkLocationPermission();
+        if (!_locationGranted) {
+          _showError('Izin lokasi diperlukan untuk menandai foto');
+          return;
+        }
+      }
+
+      final availableStorage = await _storage.getAvailableStorageBytes();
+      if (availableStorage != null && availableStorage < 100 * 1024 * 1024) {
+        _showError('Penyimpanan hampir penuh. Kosongkan ruang sebelum mengambil foto.');
+        return;
+      }
+      if (availableStorage != null && availableStorage < 300 * 1024 * 1024 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Penyimpanan sangat rendah. Foto mungkin gagal disimpan.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else if (availableStorage != null &&
+          availableStorage < 1024 * 1024 * 1024 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Penyimpanan mulai rendah.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
       final xfile = await _picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1024,
@@ -219,32 +266,28 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       );
       if (xfile == null) return;
 
-      // Scan barcode/QR dari gambar yang dipilih (menggantikan _barcode jika ada)
       String? scannedBarcode;
       try {
         scannedBarcode = await _scanBarcodeFromImage(xfile.path);
         if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
-          setState(() => _barcode = scannedBarcode);
+          if (mounted) setState(() => _barcode = scannedBarcode);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('✓ Barcode terdeteksi: $scannedBarcode'),
                 duration: const Duration(seconds: 2),
-                backgroundColor: Colors.green.shade700,
+                backgroundColor: Colors.green,
               ),
             );
           }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
-                duration: Duration(seconds: 2),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          // Tetap lanjut tanpa barcode
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.orange,
+            ),
+          );
         }
       } catch (e) {
         if (mounted) {
@@ -258,7 +301,6 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         }
       }
 
-      // Preview
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -266,13 +308,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         return;
       }
 
-      setState(() => _isSaving = true);
-
       final entry = await _savePhotoWithCaptureLocation(xfile.path);
       _finishSavingPhoto(entry);
     } catch (e) {
+      if (mounted) _showError('Gagal memilih foto: $e');
+    } finally {
       if (mounted) setState(() => _isSaving = false);
-      _showError('Gagal memilih foto: $e');
     }
   }
 

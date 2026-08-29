@@ -154,34 +154,39 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
   /// menyimpan apa pun lagi — cukup teruskan hasilnya ke pemanggil layar
   /// scan ini lalu tutup layar scan.
   Future<void> _goTakePhoto() async {
-    final barcodeValue = _selectedBarcodeValue;
-    if (barcodeValue == null) return;
-
-    // Route baru juga meminta kamera. Stop MobileScanner sebelum push agar
-    // tidak ada dua consumer kamera aktif bersamaan.
-    await _controller?.stop();
-
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
-      ),
-    );
-    if (!mounted) return;
-
-    // Jika user kembali dari PhotoScanScreen tanpa menutup scanner ini,
-    // hidupkan kembali controller sebelum meneruskan hasil ke parent.
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
     try {
-      await _controller?.start();
-    } catch (e) {
-      debugPrint('Gagal restart MobileScanner setelah PhotoScanScreen: $e');
+
+      final barcodeValue = _selectedBarcodeValue;
+      if (barcodeValue == null) return;
+
+      // Route baru juga meminta kamera. Stop MobileScanner sebelum push agar
+      // tidak ada dua consumer kamera aktif bersamaan.
+      await _controller?.stop();
+
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
+        ),
+      );
+      if (!mounted) return;
+
+      // Jika user kembali dari PhotoScanScreen tanpa menutup scanner ini,
+      // hidupkan kembali controller sebelum meneruskan hasil ke parent.
+      try {
+        await _controller?.start();
+      } catch (e) {
+        debugPrint('Gagal restart MobileScanner setelah PhotoScanScreen: $e');
+      }
+      if (!mounted) return;
+      Navigator.pop(context, result);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-    if (!mounted) return;
-    Navigator.pop(context, result);
   }
 
-  /// User pilih "Simpan Tanpa Foto" — simpan entry barcode polos (tanpa
-  /// gambar), sama seperti alur lama sebelum ada fitur foto opsional ini.
   Future<void> _saveWithoutPhoto() async {
     final barcodeValue = _selectedBarcodeValue;
     if (barcodeValue == null) return;
