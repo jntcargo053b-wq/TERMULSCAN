@@ -64,3 +64,4 @@ jobs:
         with:
           name: TERMULScan-testing-apk
           path: output/TERMULScan-testing.apk
+          retention-days: 1
