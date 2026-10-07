@@ -47,18 +47,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initPermissionsAndLocation() async {
-    await Permission.camera.request();
-    final loc = await _loc.getLocation();
-    if (mounted) {
+    try {
+      await Permission.camera.request();
+      final loc = await _loc.getLocation();
+      if (!mounted) return;
       setState(() {
         _locationLabel = loc.address ?? (loc.lat != null
             ? '${loc.lat!.toStringAsFixed(4)}, ${loc.lng!.toStringAsFixed(4)}'
             : 'GPS tidak tersedia');
         _locLoading = false;
       });
+    } catch (_) {
+      // Plugin permission/location tidak selalu tersedia di test/widget
+      // environment. Gagal mengakses hardware tidak boleh membuat Home crash.
+      if (!mounted) return;
+      setState(() {
+        _locationLabel = 'GPS tidak tersedia';
+        _locLoading = false;
+      });
     }
   }
-
   Future<void> _loadStats() async {
     final all = await _storage.loadAll();
     if (mounted) {
