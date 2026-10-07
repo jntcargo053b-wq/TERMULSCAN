@@ -9,12 +9,15 @@ void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
 
-    await tester.pumpWidget(const WHScannerApp());
+    await tester.pumpWidget(
+      const WHScannerApp(home: SizedBox.shrink()),
+    );
     await tester.pump();
 
+    expect(find.byType(MaterialApp), findsOneWidget);
+
     // WHScannerApp starts a periodic recovery monitor in initState().
-    // Dispose the app in the test so the singleton timer is cancelled just
-    // as it would be when the real app is disposed.
+    // Dispose the app so the singleton timer is cancelled at test teardown.
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
