@@ -75,7 +75,7 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
       title: 'WH Scanner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: home ?? const HomeScreen(),
+      home: widget.home ?? const HomeScreen(),
     );
   }
 }
