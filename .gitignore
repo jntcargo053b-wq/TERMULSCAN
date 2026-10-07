@@ -1,0 +1,16 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Android / local machine
+android/.gradle/
+android/local.properties
+android/key.properties
+
+# Keystores
+*.jks
+*.keystore
+!android/debug-fixed.keystore
