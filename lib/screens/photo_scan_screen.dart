@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gal/gal.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gap/gap.dart';
@@ -626,9 +624,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
                 width: 76,
                 height: 76,
                 decoration: BoxDecoration(
-                  color: AppTheme.accent.withOpacity(0.10),
+                  color: AppTheme.accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: AppTheme.accent.withOpacity(0.25)),
+                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.25)),
                 ),
                 child: const Icon(
                   Icons.add_a_photo_outlined,
