@@ -49,10 +49,20 @@ android {
         multiDexEnabled true
     }
 
+    signingConfigs {
+        debug {
+            // Fixed repository-committed signing identity for CI/testing only.
+            // NEVER use this keystore for production distribution.
+            storeFile file("$rootDir/debug-fixed.keystore")
+            storePassword "termulscan-debug"
+            keyAlias "termulscan-debug"
+            keyPassword "termulscan-debug"
+        }
+    }
+
     buildTypes {
         release {
-            // Intentionally use the Android debug keystore for CI/testing builds.
-            // No production JKS or GitHub signing secrets are required.
+            // Testing release APKs intentionally use the fixed debug identity.
             signingConfig signingConfigs.debug
         }
     }
