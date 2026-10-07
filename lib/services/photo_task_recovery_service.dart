@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
-import '../models/scan_entry.dart';
 import '../screens/watermark_settings.dart';
 import 'location_service.dart';
 import 'storage_service.dart';
