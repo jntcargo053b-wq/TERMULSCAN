@@ -241,7 +241,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   color: const Color(0xFF2A2A2A),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: Colors.amber.withOpacity(0.3),
+                    color: Colors.amber.withValues(alpha: 0.3),
                     style: BorderStyle.solid,
                   ),
                 ),
@@ -281,7 +281,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             decoration: BoxDecoration(
               color: Colors.black,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -413,7 +413,7 @@ class _PreviewLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 10, color: color.withOpacity(0.7)),
+        Icon(icon, size: 10, color: color.withValues(alpha: 0.7)),
         const Gap(4),
         Expanded(
           child: Text(
