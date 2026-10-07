@@ -28,7 +28,11 @@ void main() async {
 }
 
 class WHScannerApp extends StatefulWidget {
-  const WHScannerApp({super.key});
+  const WHScannerApp({super.key, this.home});
+
+  /// Optional home widget used by widget tests to avoid invoking hardware
+  /// plugins while still exercising the real application shell.
+  final Widget? home;
 
   @override
   State<WHScannerApp> createState() => _WHScannerAppState();
@@ -71,7 +75,7 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
       title: 'WH Scanner',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const HomeScreen(),
+      home: home ?? const HomeScreen(),
     );
   }
 }
