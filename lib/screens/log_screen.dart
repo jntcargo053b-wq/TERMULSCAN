@@ -68,7 +68,7 @@ class _FullImagePreviewScreen extends StatelessWidget {
               bottom: 12,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.72),
+                  color: Colors.black.withValues(alpha: 0.72),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Padding(
