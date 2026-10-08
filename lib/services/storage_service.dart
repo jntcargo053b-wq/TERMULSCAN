@@ -195,6 +195,16 @@ class StorageService {
         final name = entity.uri.pathSegments.isNotEmpty
             ? entity.uri.pathSegments.last
             : '';
+        // WatermarkService writes through a temporary sibling file and then
+        // atomically renames it. A process kill can leave that temporary file
+        // behind; it is never a valid history/raw source and is safe to clean.
+        if (name.startsWith('photo_') && name.contains('.wm_tmp_')) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+          continue;
+        }
+
         if (!name.startsWith('photo_')) continue;
         final absolute = entity.absolute.path;
         if (referenced.contains(absolute)) continue;
