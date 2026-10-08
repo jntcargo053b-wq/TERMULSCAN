@@ -264,38 +264,47 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       );
       if (xfile == null) return;
 
-      String? scannedBarcode;
-      try {
-        scannedBarcode = await _scanBarcodeFromImage(xfile.path);
-        if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
-          if (mounted) setState(() => _barcode = scannedBarcode);
+      // Jika workflow berasal dari scanner, AWB awal adalah sumber kebenaran.
+      // Jangan biarkan barcode lain dari foto galeri mengganti AWB yang sedang
+      // diproses. Pada workflow foto mandiri, barcode boleh dideteksi dari foto.
+      if (widget.initialBarcode == null || widget.initialBarcode!.isEmpty) {
+        String? scannedBarcode;
+        try {
+          scannedBarcode = await _scanBarcodeFromImage(xfile.path);
+          if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
+            if (mounted) setState(() => _barcode = scannedBarcode);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('✓ Barcode terdeteksi: $scannedBarcode'),
+                  duration: const Duration(seconds: 2),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          } else {
+            // Jangan membawa barcode dari foto sebelumnya ke foto baru.
+            if (mounted) setState(() => _barcode = null);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
+        } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('✓ Barcode terdeteksi: $scannedBarcode'),
+                content: Text('⚠️ Gagal memindai gambar: $e'),
                 duration: const Duration(seconds: 2),
-                backgroundColor: Colors.green,
+                backgroundColor: Colors.orange,
               ),
             );
           }
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
-              duration: Duration(seconds: 2),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('⚠️ Gagal memindai gambar: $e'),
-              duration: const Duration(seconds: 2),
-              backgroundColor: Colors.orange,
-            ),
-          );
         }
       }
 
@@ -359,7 +368,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
                 captureCoords.lng!,
                 accuracy: captureCoords.accuracy,
               )
-              .timeout(const Duration(seconds: 3), onTimeout: () => null);
+              // Alamat hanya pelengkap; jangan menahan proses watermark terlalu lama.
+              .timeout(const Duration(milliseconds: 1500), onTimeout: () => null);
           if (address != null && address.trim().isNotEmpty) {
             locationText = address.trim();
             addressResolved = true;
