@@ -113,7 +113,10 @@ class StorageService {
     final entry = _entries.removeAt(index);
     _pendingPhotoTasks.remove(id);
     await _deleteEntryFiles(entry);
-    _triggerSave();
+    // Delete is destructive. Persist immediately instead of using the
+    // 500 ms debounce so a process kill right after the action cannot
+    // resurrect the deleted history entry on the next launch.
+    await _persist();
   }
 
   Future<void> clear() async {
