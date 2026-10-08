@@ -206,13 +206,39 @@ class WatermarkService {
         }
       }
 
-      // 7. Encode & simpan
+      // 7. Encode ke file sementara lalu commit ke file publik.
+      //
+      // Jangan menulis langsung ke [destPath]. Jika proses Android terbunuh
+      // saat write/encode, file publik bisa menjadi JPEG/PNG setengah jadi.
+      // RAW tetap menjadi sumber recovery, tetapi file publik yang rusak dapat
+      // langsung terlihat di History. File sementara membuat kegagalan write
+      // tidak merusak file publik yang sebelumnya valid.
       final destLower = req.destPath.toLowerCase();
       final outBytes = destLower.endsWith('.png')
           ? img.encodePng(image)
           : img.encodeJpg(image, quality: _jpegQuality);
 
-      File(req.destPath).writeAsBytesSync(outBytes);
+      final tempPath =
+          '${req.destPath}.wm_tmp_${DateTime.now().microsecondsSinceEpoch}';
+      final tempFile = File(tempPath);
+      try {
+        tempFile.writeAsBytesSync(outBytes, flush: true);
+        if (!tempFile.existsSync() || tempFile.lengthSync() == 0) {
+          throw Exception('File watermark sementara kosong');
+        }
+
+        final destination = File(req.destPath);
+        if (destination.existsSync()) {
+          destination.deleteSync();
+        }
+        tempFile.renameSync(req.destPath);
+      } finally {
+        if (tempFile.existsSync()) {
+          try {
+            tempFile.deleteSync();
+          } catch (_) {}
+        }
+      }
     } catch (e, stack) {
       // Tangkap error agar ada jejak yang jelas, lalu rethrow supaya
       // pemanggil (compute() future) benar-benar tahu proses gagal —
