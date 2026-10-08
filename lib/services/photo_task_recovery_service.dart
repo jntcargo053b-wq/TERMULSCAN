@@ -90,8 +90,6 @@ class PhotoTaskRecoveryService {
       await _storage.markPhotoTaskRetryExhausted(entryId);
       return;
     }
-    await _storage.markPhotoTaskAttempt(entryId);
-
     final publicPath = entry.displayImagePath;
     if (publicPath == null || publicPath.isEmpty) {
       if (attempts + 1 >= 3) {
@@ -136,17 +134,13 @@ class PhotoTaskRecoveryService {
     // kecuali reverse-geocode sekarang berhasil. Sumber tetap RAW sehingga
     // watermark tidak pernah menumpuk.
     if (watermarkCompleted && !addressResolved) {
+      // Geocoding adalah metadata pelengkap; jangan menghabiskan retry watermark.
       if (lat == null || lng == null) return;
       try {
         final address = await _location
             .reverseGeocode(lat, lng, accuracy: null)
             .timeout(const Duration(seconds: 3), onTimeout: () => null);
-        if (address == null || address.trim().isEmpty) {
-          if (attempts + 1 >= 3) {
-            await _storage.markPhotoTaskRetryExhausted(entryId);
-          }
-          return;
-        }
+        if (address == null || address.trim().isEmpty) return;
 
         final resolvedAddress = address.trim();
         current = current.copyWith(locationName: resolvedAddress);
@@ -181,6 +175,9 @@ class PhotoTaskRecoveryService {
       await _storage.markPhotoTaskCompleted(entryId);
       return;
     }
+
+    // Hanya proses watermark yang mengonsumsi retry counter.
+    await _storage.markPhotoTaskAttempt(entryId);
 
     String locationText = current.coordinatesString;
     var resolvedNow = false;
