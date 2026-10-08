@@ -117,6 +117,9 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
   List<ScanEntry> _filteredEntries = [];
   Timer? _debounceTimer;
   final Map<String, String?> _resolvedPathCache = {};
+  // Share one in-flight filesystem lookup when thumbnail/detail/preview
+  // requests for the same entry arrive at nearly the same time.
+  final Map<String, Future<String?>> _resolvingPath = {};
 
   @override
   void initState() {
@@ -181,12 +184,30 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     _performSearch(_searchController.text);
   }
 
-  Future<String?> _resolveImagePath(ScanEntry entry) async {
+  Future<String?> _resolveImagePath(ScanEntry entry) {
     final cached = _resolvedPathCache[entry.id];
-    if (_resolvedPathCache.containsKey(entry.id)) return cached;
-    final path = await _storage.resolveImagePath(entry);
-    _resolvedPathCache[entry.id] = path;
-    return path;
+    if (_resolvedPathCache.containsKey(entry.id)) {
+      return Future<String?>.value(cached);
+    }
+
+    final pending = _resolvingPath[entry.id];
+    if (pending != null) return pending;
+
+    final future = _storage.resolveImagePath(entry).then((path) {
+      _resolvedPathCache[entry.id] = path;
+      return path;
+    });
+    _resolvingPath[entry.id] = future;
+
+    // Keep only the in-flight deduplication state. The resolved value lives
+    // in _resolvedPathCache and is reused by later requests.
+    future.whenComplete(() {
+      if (identical(_resolvingPath[entry.id], future)) {
+        _resolvingPath.remove(entry.id);
+      }
+    });
+
+    return future;
   }
 
   Future<void> _evictImageCache(String imagePath) async {
@@ -349,6 +370,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                       if (confirm == true) {
                         await _storage.deleteEntry(entry.id);
                         _resolvedPathCache.remove(entry.id);
+                        _resolvingPath.remove(entry.id);
                         _refreshList();
                         if (context.mounted) Navigator.pop(context);
                       }
@@ -462,6 +484,7 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     if (confirm == true) {
       await _storage.clear();
       _resolvedPathCache.clear();
+      _resolvingPath.clear();
       if (mounted) setState(() => _filteredEntries = []);
     }
   }
