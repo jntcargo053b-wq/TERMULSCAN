@@ -58,12 +58,26 @@ android {
             keyAlias "termulscan-debug"
             keyPassword "termulscan-debug"
         }
+
+        // Production signing is injected only by TERMULSCAN-BUILD.
+        // Local/testing builds keep using the fixed testing identity.
+        if (System.getenv("TERMULSCAN_KEYSTORE_PATH")) {
+            release {
+                storeFile file(System.getenv("TERMULSCAN_KEYSTORE_PATH"))
+                storePassword System.getenv("TERMULSCAN_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("TERMULSCAN_KEY_ALIAS")
+                keyPassword System.getenv("TERMULSCAN_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            // Testing release APKs intentionally use the fixed debug identity.
-            signingConfig signingConfigs.debug
+            if (System.getenv("TERMULSCAN_KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 }
