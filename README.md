@@ -51,3 +51,12 @@ lib/
 GitHub Actions membangun project Android yang sudah ada di repository secara langsung. Workflow **tidak** menjalankan `flutter create`, tidak melakukan `git pull/push`, dan tidak memodifikasi source repository saat build.
 
 Build CI menjalankan `flutter pub get`, `flutter analyze`, `flutter test`, lalu `flutter build apk --release`.
+
+
+## Production CI/CD
+
+Set the repository secret `TERMULSCAN_BUILD_TOKEN` to a fine-grained GitHub token that has **Contents: write** access to `jntcargo053b-wq/TERMULSCAN-BUILD`.
+
+On every push to `main`, TERMULSCAN first runs analyze, tests, and its testing APK build. Only after those steps succeed does it dispatch the exact commit SHA to TERMULSCAN-BUILD for the production-signed APK.
+
+The production keystore is kept only in TERMULSCAN-BUILD GitHub Secrets and is never committed to this repository.
