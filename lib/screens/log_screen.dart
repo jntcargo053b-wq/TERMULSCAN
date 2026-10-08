@@ -189,6 +189,12 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     return path;
   }
 
+  Future<void> _evictImageCache(String imagePath) async {
+    try {
+      await FileImage(File(imagePath)).evict();
+    } catch (_) {}
+  }
+
   Future<void> _shareEntry(ScanEntry entry) async {
     final imagePath = await _resolveImagePath(entry);
     if (!mounted) return;
@@ -201,6 +207,10 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
     }
 
     try {
+      // Watermark recovery can replace the same public path. Evict the
+      // decoded Flutter image before sharing so an older cached frame is not
+      // reused.
+      await _evictImageCache(imagePath);
       await Share.shareXFiles(
         [XFile(imagePath)],
         text: 'AWB: ${entry.displayTitle}\nLocation: ${entry.address ?? "Unknown"}',
@@ -223,6 +233,11 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
       );
       return;
     }
+
+    // The watermark pipeline may atomically replace this exact path
+    // while recovery is finishing. Evict the decoded image before opening
+    // the preview so History always reflects the current file.
+    await _evictImageCache(imagePath);
 
     await Navigator.of(context).push(
       MaterialPageRoute(
