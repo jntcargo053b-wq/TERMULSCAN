@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../models/scan_entry.dart';
@@ -204,9 +206,11 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
     setState(() => _isSaving = true);
     try {
-      ({double? lat, double? lng, String? address})? location;
+      // Simpan barcode secepat mungkin. Reverse-geocoding tidak boleh
+      // menahan operator di layar scanner karena request jaringan bisa lambat.
+      ({double? lat, double? lng, double? accuracy})? coordinates;
       try {
-        location = await _locationService.getLocation();
+        coordinates = await _locationService.getCoordinatesOnly();
       } catch (e) {
         debugPrint('Location error: $e');
       }
@@ -216,12 +220,34 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         barcodeValue: barcodeValue,
         barcodeType: _manualBarcode != null ? 'manual' : (_detectedBarcode?.type.name ?? 'unknown'),
         timestamp: DateTime.now(),
-        latitude: location?.lat,
-        longitude: location?.lng,
-        address: location?.address ?? '',
+        latitude: coordinates?.lat,
+        longitude: coordinates?.lng,
+        address: '',
         imagePath: null,
       );
       await _storage.addEntry(entry);
+
+      // Alamat dilengkapi setelah entry tersimpan. Jika request gagal,
+      // koordinat tetap tersimpan dan tidak menghalangi scan berikutnya.
+      if (coordinates?.lat != null && coordinates?.lng != null) {
+        unawaited(
+          _locationService
+              .reverseGeocode(
+                coordinates!.lat!,
+                coordinates.lng!,
+                accuracy: coordinates.accuracy,
+              )
+              .then((address) async {
+                if (address == null || address.trim().isEmpty) return;
+                final latest = await _storage.getEntry(entry.id);
+                if (latest == null) return;
+                await _storage.update(latest.copyWith(locationName: address.trim()));
+              })
+              .catchError((e) {
+                debugPrint('Reverse geocode AWB gagal: $e');
+              }),
+        );
+      }
 
       if (mounted) {
         setState(() {
