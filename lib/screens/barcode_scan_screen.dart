@@ -237,15 +237,19 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
                 coordinates.lng!,
                 accuracy: coordinates.accuracy,
               )
-              .then((address) async {
-                if (address == null || address.trim().isEmpty) return;
-                final latest = await _storage.getEntry(entry.id);
-                if (latest == null) return;
-                await _storage.update(latest.copyWith(locationName: address.trim()));
-              })
-              .catchError((e) {
-                debugPrint('Reverse geocode AWB gagal: $e');
-              }),
+              .then(
+                (address) async {
+                  if (address == null || address.trim().isEmpty) return;
+                  final latest = await _storage.getEntry(entry.id);
+                  if (latest == null) return;
+                  await _storage.update(
+                    latest.copyWith(locationName: address.trim()),
+                  );
+                },
+                onError: (Object e, StackTrace st) {
+                  debugPrint('Reverse geocode AWB gagal: $e');
+                },
+              ),
         );
       }
 
