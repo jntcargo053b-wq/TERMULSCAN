@@ -142,6 +142,9 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
   }
 
   void _onSearchChanged() {
+    // Rebuild immediately so the clear button appears/disappears without
+    // waiting for the search debounce.
+    if (mounted) setState(() {});
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) _performSearch(_searchController.text);
