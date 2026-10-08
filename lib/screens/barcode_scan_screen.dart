@@ -163,7 +163,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       // tidak ada dua consumer kamera aktif bersamaan.
       await _controller?.stop();
 
-      await Navigator.push(
+      final result = await Navigator.push<ScanEntry>(
         context,
         MaterialPageRoute(
           builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
@@ -182,10 +182,14 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✓ Selesai. Siap scan AWB berikutnya.'),
-            duration: Duration(milliseconds: 900),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text(
+              result != null
+                  ? '✓ Foto tersimpan. Siap scan AWB berikutnya.'
+                  : 'Foto dibatalkan. Siap scan AWB berikutnya.',
+            ),
+            duration: const Duration(milliseconds: 900),
+            backgroundColor: result != null ? Colors.green : Colors.black87,
           ),
         );
       }
