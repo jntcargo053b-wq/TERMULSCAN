@@ -149,10 +149,8 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
 
   /// User pilih "Ambil Foto" — pindah ke PhotoScanScreen yang otomatis
   /// membuka kamera dan membakar nomor barcode ini ke watermark foto.
-  /// PhotoScanScreen sendiri yang menyimpan entry (dengan scanResult diisi
-  /// barcode ini) begitu foto dikonfirmasi, jadi di sini kita tidak perlu
-  /// menyimpan apa pun lagi — cukup teruskan hasilnya ke pemanggil layar
-  /// scan ini lalu tutup layar scan.
+  /// PhotoScanScreen menyimpan entry. Setelah selesai, layar scanner tetap
+  /// terbuka agar operator dapat langsung memproses AWB berikutnya.
   Future<void> _goTakePhoto() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -165,7 +163,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       // tidak ada dua consumer kamera aktif bersamaan.
       await _controller?.stop();
 
-      final result = await Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => PhotoScanScreen(initialBarcode: barcodeValue),
@@ -173,15 +171,24 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       );
       if (!mounted) return;
 
-      // Jika user kembali dari PhotoScanScreen tanpa menutup scanner ini,
-      // hidupkan kembali controller sebelum meneruskan hasil ke parent.
+      setState(() {
+        _detectedBarcode = null;
+        _manualBarcode = null;
+      });
       try {
         await _controller?.start();
       } catch (e) {
         debugPrint('Gagal restart MobileScanner setelah PhotoScanScreen: $e');
       }
-      if (!mounted) return;
-      Navigator.pop(context, result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Selesai. Siap scan AWB berikutnya.'),
+            duration: Duration(milliseconds: 900),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -213,10 +220,22 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
       await _storage.addEntry(entry);
 
       if (mounted) {
+        setState(() {
+          _detectedBarcode = null;
+          _manualBarcode = null;
+        });
+        try {
+          await _controller?.start();
+        } catch (e) {
+          debugPrint('Gagal restart scanner setelah simpan AWB: $e');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('AWB tersimpan'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('✓ AWB tersimpan. Siap scan berikutnya.'),
+            duration: Duration(milliseconds: 1000),
+            backgroundColor: Colors.green,
+          ),
         );
-        Navigator.pop(context, entry);
       }
     } catch (e) {
       if (mounted) {
