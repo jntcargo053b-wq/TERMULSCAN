@@ -425,6 +425,15 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       _photoCount++;
       _isSaving = false;
     });
+
+    // Jika foto berasal dari workflow Scan AWB, kembali ke scanner utama
+    // setelah berhasil. Scanner akan langsung aktif lagi untuk AWB berikutnya.
+    // Workflow foto mandiri tetap berada di layar ini seperti sebelumnya.
+    if (widget.initialBarcode != null && widget.initialBarcode!.isNotEmpty) {
+      Navigator.pop(context, entry);
+      return;
+    }
+
     _showSuccess(entry);
   }
 
