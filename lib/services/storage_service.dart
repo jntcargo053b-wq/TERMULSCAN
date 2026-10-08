@@ -392,22 +392,25 @@ class StorageService {
   }
 
   Future<void> _persist() async {
+    // Capture snapshot immediately, but serialize only inside the ordered
+    // persistence chain. This prevents a slower compute() from allowing an
+    // older snapshot to overwrite a newer snapshot.
     final entriesSnapshot = _entries.map((e) => e.toMap()).toList();
     final tasksSnapshot = _pendingPhotoTasks.values
         .map((task) => Map<String, dynamic>.from(task))
         .toList();
 
-    // History kecil tetap lebih cepat di UI isolate; history besar memakai
-    // isolate agar json.encode() tidak membuat micro-jank pada layar.
-    final entriesJson = entriesSnapshot.length >= 300
-        ? await compute(_encodeJsonList, entriesSnapshot)
-        : json.encode(entriesSnapshot);
-    final tasksJson = tasksSnapshot.length >= 300
-        ? await compute(_encodeJsonList, tasksSnapshot)
-        : json.encode(tasksSnapshot);
-
     _persistChain = _persistChain.then((_) async {
       try {
+        // History kecil tetap cepat; history besar memakai isolate tanpa
+        // mengubah urutan commit snapshot.
+        final entriesJson = entriesSnapshot.length >= 300
+            ? await compute(_encodeJsonList, entriesSnapshot)
+            : json.encode(entriesSnapshot);
+        final tasksJson = tasksSnapshot.length >= 300
+            ? await compute(_encodeJsonList, tasksSnapshot)
+            : json.encode(tasksSnapshot);
+
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_entriesKey, entriesJson);
         await prefs.setString(_photoTasksKey, tasksJson);
