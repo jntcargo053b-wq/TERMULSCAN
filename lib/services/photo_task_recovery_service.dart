@@ -210,6 +210,8 @@ class PhotoTaskRecoveryService {
       await _storage.markPhotoTaskAddressResolved(entryId);
       await _storage.markPhotoTaskCompleted(entryId);
       return;
+    }
+
     if (watermarkCompleted && addressResolved) {
       await _storage.markPhotoTaskCompleted(entryId);
       return;
