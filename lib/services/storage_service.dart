@@ -111,22 +111,33 @@ class StorageService {
     if (index == -1) return;
 
     final entry = _entries.removeAt(index);
-    _pendingPhotoTasks.remove(id);
-    await _deleteEntryFiles(entry);
-    // Delete is destructive. Persist immediately instead of using the
-    // 500 ms debounce so a process kill right after the action cannot
-    // resurrect the deleted history entry on the next launch.
+    final pendingTask = _pendingPhotoTasks.remove(id);
+
+    // Persist the removal before deleting files. If Android kills the process
+    // between these operations, startup cleanup can remove orphan files;
+    // deleting files first could instead resurrect a history row with a
+    // permanently missing photo.
+    _saveDebounceTimer?.cancel();
     await _persist();
+    await _deleteEntryFiles(entry);
+
+    // Keep the local variable explicit: task removal is part of the same
+    // persisted deletion snapshot even when the task was absent.
+    assert(pendingTask == null || pendingTask['entryId']?.toString() == id);
   }
 
   Future<void> clear() async {
     final oldEntries = List<ScanEntry>.from(_entries);
     _entries.clear();
     _pendingPhotoTasks.clear();
+
+    // Commit the empty history/task queue first. If the process stops during
+    // file cleanup, startup orphan cleanup can finish removing leftover files.
+    _saveDebounceTimer?.cancel();
+    await _persist();
     for (final entry in oldEntries) {
       await _deleteEntryFiles(entry);
     }
-    await _persist();
   }
 
   String generateId() {
