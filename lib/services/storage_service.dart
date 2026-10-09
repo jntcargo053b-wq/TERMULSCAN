@@ -397,7 +397,9 @@ class StorageService {
   void _triggerSave() {
     _saveDebounceTimer?.cancel();
     _saveDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      unawaited(_persist());
+      unawaited(_persist().catchError((Object error) {
+        debugPrint('Gagal menyimpan riwayat scan: $error');
+      }));
     });
   }
 
@@ -415,7 +417,11 @@ class StorageService {
         .map((task) => Map<String, dynamic>.from(task))
         .toList();
 
-    _persistChain = _persistChain.then((_) async {
+    // Recover the queue after a failed write, but preserve this operation's
+    // error for callers that must not proceed destructively (for example,
+    // deleting photo files before the history deletion is durable).
+    final previousWrite = _persistChain.catchError((Object _) {});
+    _persistChain = previousWrite.then((_) async {
       try {
         // History kecil tetap cepat; history besar memakai isolate tanpa
         // mengubah urutan commit snapshot.
@@ -427,10 +433,17 @@ class StorageService {
             : json.encode(tasksSnapshot);
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_entriesKey, entriesJson);
-        await prefs.setString(_photoTasksKey, tasksJson);
+        final entriesSaved = await prefs.setString(_entriesKey, entriesJson);
+        if (!entriesSaved) {
+          throw StateError('Riwayat scan gagal disimpan ke penyimpanan lokal');
+        }
+        final tasksSaved = await prefs.setString(_photoTasksKey, tasksJson);
+        if (!tasksSaved) {
+          throw StateError('Antrean pemulihan foto gagal disimpan');
+        }
       } catch (e) {
-        print('Error saving scan storage: $e');
+        debugPrint('Error saving scan storage: $e');
+        rethrow;
       }
     });
     return _persistChain;
