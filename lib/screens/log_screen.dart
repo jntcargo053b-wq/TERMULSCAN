@@ -368,11 +368,31 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                         ),
                       );
                       if (confirm == true) {
-                        await _storage.deleteEntry(entry.id);
-                        _resolvedPathCache.remove(entry.id);
-                        _resolvingPath.remove(entry.id);
-                        _refreshList();
-                        if (context.mounted) Navigator.pop(context);
+                        try {
+                          await _storage.deleteEntry(entry.id);
+                          _resolvedPathCache.remove(entry.id);
+                          _resolvingPath.remove(entry.id);
+                          _refreshList();
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Riwayat berhasil dihapus.'),
+                              ),
+                            );
+                          }
+                        } catch (e, stackTrace) {
+                          debugPrint('Gagal menghapus riwayat ${entry.id}: $e\n$stackTrace');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Riwayat belum dihapus karena penyimpanan gagal. Coba lagi.',
+                                ),
+                              ),
+                            );
+                          }
+                        }
                       }
                     },
                     child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -482,10 +502,28 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
       ),
     );
     if (confirm == true) {
-      await _storage.clear();
-      _resolvedPathCache.clear();
-      _resolvingPath.clear();
-      if (mounted) setState(() => _filteredEntries = []);
+      try {
+        await _storage.clear();
+        _resolvedPathCache.clear();
+        _resolvingPath.clear();
+        if (mounted) {
+          setState(() => _filteredEntries = []);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Seluruh riwayat berhasil dihapus.')),
+          );
+        }
+      } catch (e, stackTrace) {
+        debugPrint('Gagal menghapus seluruh riwayat: $e\n$stackTrace');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Riwayat belum dihapus karena penyimpanan gagal. Coba lagi.',
+              ),
+            ),
+          );
+        }
+      }
     }
   }
 
