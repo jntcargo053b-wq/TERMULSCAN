@@ -171,14 +171,18 @@ class StorageService {
       final path = entry.displayImagePath;
       if (path != null && path.isNotEmpty) {
         referenced.add(File(path).absolute.path);
-        // Keep RAW while the corresponding history entry still exists; this
-        // avoids deleting a recovery source if cleanup races with persistence.
-        referenced.add(File(rawPathFor(path)).absolute.path);
+        // RAW is needed only while a persisted recovery task is pending.
+        // Keeping it for every historical photo can silently double storage
+        // usage if a task was lost/corrupted after the public photo was saved.
+        if (_pendingPhotoTasks.containsKey(entry.id)) {
+          referenced.add(File(rawPathFor(path)).absolute.path);
+        }
       }
     }
 
     // A pending recovery task owns its RAW file even if the public path has
-    // temporarily disappeared from history.
+    // temporarily disappeared from history. Entries without a task no longer
+    // need RAW once startup has loaded and repaired the persisted state.
     for (final task in _pendingPhotoTasks.values) {
       final entryId = task['entryId']?.toString();
       if (entryId == null) continue;
