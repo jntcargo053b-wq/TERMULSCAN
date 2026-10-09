@@ -437,6 +437,7 @@ class StorageService {
       'attempts': (previous?['attempts'] as int?) ?? 0,
       'watermarkCompleted': previous?['watermarkCompleted'] == true,
       'addressResolved': previous?['addressResolved'] == true,
+      'addressAttempts': (previous?['addressAttempts'] as int?) ?? 0,
       'retryExhausted': previous?['retryExhausted'] == true,
       // Capture-time coordinates are persisted with the task. Recovery must
       // never silently replace an old photo's location with the phone's
@@ -499,6 +500,16 @@ class StorageService {
     if (task == null) return;
     task['attempts'] = ((task['attempts'] as int?) ?? 0) + 1;
     task['lastAttemptAt'] = DateTime.now().toIso8601String();
+    await _persist();
+  }
+
+  /// Address enrichment has its own retry budget so network failures do not
+  /// consume attempts reserved for watermark recovery.
+  Future<void> markPhotoTaskAddressAttempt(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    task['addressAttempts'] = ((task['addressAttempts'] as int?) ?? 0) + 1;
+    task['lastAddressAttemptAt'] = DateTime.now().toIso8601String();
     await _persist();
   }
 
