@@ -111,27 +111,72 @@ class StorageService {
     if (index == -1) return;
 
     final entry = _entries.removeAt(index);
-    _pendingPhotoTasks.remove(id);
+    final previousTask = _pendingPhotoTasks.remove(id);
 
     // Persist the removal before deleting files. If Android kills the process
     // between these operations, startup cleanup can remove orphan files;
     // deleting files first could instead resurrect a history row with a
     // permanently missing photo.
     _saveDebounceTimer?.cancel();
-    await _persist();
+    try {
+      await _persist();
+    } catch (_) {
+      // A failed write must not leave the UI's in-memory history deleted.
+      // Restore only this entry/task so unrelated changes made meanwhile stay.
+      if (!_entries.any((e) => e.id == id)) {
+        final restoreIndex = index > _entries.length ? _entries.length : index;
+        _entries.insert(restoreIndex, entry);
+      }
+      if (previousTask != null) {
+        _pendingPhotoTasks.putIfAbsent(
+          id,
+          () => Map<String, dynamic>.from(previousTask),
+        );
+      }
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan riwayat setelah penghapusan gagal: $repairError');
+      }
+      rethrow;
+    }
     await _deleteEntryFiles(entry);
-
   }
 
   Future<void> clear() async {
     final oldEntries = List<ScanEntry>.from(_entries);
+    final oldTasks = _pendingPhotoTasks.map(
+      (id, task) => MapEntry(id, Map<String, dynamic>.from(task)),
+    );
     _entries.clear();
     _pendingPhotoTasks.clear();
 
     // Commit the empty history/task queue first. If the process stops during
     // file cleanup, startup orphan cleanup can finish removing leftover files.
     _saveDebounceTimer?.cancel();
-    await _persist();
+    try {
+      await _persist();
+    } catch (_) {
+      // Restore the old history/task queue if the durable clear failed.
+      // Keep entries/tasks created concurrently while persistence was pending.
+      final existingIds = _entries.map((entry) => entry.id).toSet();
+      final missingEntries = oldEntries
+          .where((entry) => !existingIds.contains(entry.id))
+          .toList();
+      _entries.insertAll(0, missingEntries);
+      for (final item in oldTasks.entries) {
+        _pendingPhotoTasks.putIfAbsent(
+          item.key,
+          () => Map<String, dynamic>.from(item.value),
+        );
+      }
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan riwayat setelah hapus semua gagal: $repairError');
+      }
+      rethrow;
+    }
     for (final entry in oldEntries) {
       await _deleteEntryFiles(entry);
     }
