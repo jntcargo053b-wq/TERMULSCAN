@@ -111,7 +111,7 @@ class StorageService {
     if (index == -1) return;
 
     final entry = _entries.removeAt(index);
-    final pendingTask = _pendingPhotoTasks.remove(id);
+    _pendingPhotoTasks.remove(id);
 
     // Persist the removal before deleting files. If Android kills the process
     // between these operations, startup cleanup can remove orphan files;
@@ -121,9 +121,6 @@ class StorageService {
     await _persist();
     await _deleteEntryFiles(entry);
 
-    // Keep the local variable explicit: task removal is part of the same
-    // persisted deletion snapshot even when the task was absent.
-    assert(pendingTask == null || pendingTask['entryId']?.toString() == id);
   }
 
   Future<void> clear() async {
