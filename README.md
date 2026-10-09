@@ -25,39 +25,13 @@ flutter build apk --release
 - `path_provider` + `share_plus` — simpan & bagikan file
 - `permission_handler` — manajemen izin
 
-## Struktur
-```
-lib/
-  main.dart
-  models/scan_entry.dart
-  screens/
-    home_screen.dart
-    barcode_scan_screen.dart
-    photo_scan_screen.dart
-    log_screen.dart
-  services/
-    location_service.dart
-    storage_service.dart
-  theme/app_theme.dart
-```
-
 ## List Search Share
-- Setiap item pada hasil pencarian/riwayat memiliki tombol Share langsung.
-- Tombol Share memakai resolver storage yang sama dengan preview sehingga path foto lama tetap dapat dipulihkan.
+Setiap item pada hasil pencarian/riwayat memiliki tombol Share langsung. Tombol Share memakai resolver storage yang sama dengan preview sehingga path foto lama tetap dapat dipulihkan.
 
-## Catatan CI
+## CI dan Production CI/CD
 
-GitHub Actions membangun project Android yang sudah ada di repository secara langsung. Workflow tidak menjalankan `flutter create`, tidak melakukan `git pull/push`, dan tidak memodifikasi source repository saat build.
+Repository ini menjalankan `flutter pub get`, `flutter analyze`, dan `flutter test` pada push ke `main` dan pull request. Workflow CI tidak membuat atau mengunggah APK testing.
 
-Workflow CI menjalankan `flutter pub get`, `flutter analyze`, dan `flutter test`. APK production dibuat di repository TERMULSCAN-BUILD.
+TERMULSCAN-BUILD memeriksa commit `main` terbaru setiap 15 menit dan hanya membangun APK production bila commit itu memiliki workflow CI `push` yang berhasil. Jadi tidak dibutuhkan `TERMULSCAN_BUILD_TOKEN` atau pemindahan APK secara manual.
 
-## Production CI/CD
-
-Pada setiap push ke `main`, setelah analyze dan test sukses, TERMULSCAN meminta TERMULSCAN-BUILD menjalankan workflow production dengan SHA commit sumber yang tepat.
-
-Secret `TERMULSCAN_BUILD_TOKEN` di TERMULSCAN harus menggunakan token yang:
-- Dibuat oleh akun yang memiliki akses ke `jntcargo053b-wq/TERMULSCAN-BUILD`.
-- Memiliki akses repository ke `TERMULSCAN-BUILD`.
-- Memiliki permission **Actions: Read and write** (untuk endpoint workflow dispatch).
-
-TERMULSCAN-BUILD menyimpan keystore production hanya di GitHub Secrets dan mempublikasikan APK production sebagai artifact dan GitHub Release.
+Keystore production disimpan hanya sebagai GitHub Secrets di TERMULSCAN-BUILD. APK final diunggah sebagai Actions artifact dan GitHub Release.
