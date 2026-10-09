@@ -515,7 +515,25 @@ class StorageService {
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
     };
-    await _persist();
+
+    try {
+      await _persist();
+    } catch (_) {
+      // Do not report an in-memory recovery task as durable when enqueue
+      // failed. Restore the previous task (including capture coordinates),
+      // or remove the newly created task, then best-effort persist that state.
+      if (previous == null) {
+        _pendingPhotoTasks.remove(entryId);
+      } else {
+        _pendingPhotoTasks[entryId] = Map<String, dynamic>.from(previous);
+      }
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan task foto $entryId setelah enqueue gagal: $repairError');
+      }
+      rethrow;
+    }
   }
 
   List<String> get pendingPhotoTaskIds => List.unmodifiable(_pendingPhotoTasks.keys);
