@@ -153,19 +153,32 @@ class PhotoTaskRecoveryService {
       }
       await _storage.markPhotoTaskAddressAttempt(entryId);
 
+      String? address;
       try {
-        final address = await _location
+        address = await _location
             .reverseGeocode(lat, lng, accuracy: null)
             .timeout(const Duration(seconds: 3), onTimeout: () => null);
-        if (address == null || address.trim().isEmpty) {
-          if (addressAttempts + 1 >= 3) {
-            await _storage.markPhotoTaskRetryExhausted(entryId);
-          }
-          return;
+      } catch (e, st) {
+        // Hanya kegagalan reverse-geocode yang dihitung sebagai address retry.
+        // Kegagalan penyimpanan status task harus dibiarkan naik agar task dan
+        // RAW tetap tersedia untuk pemulihan berikutnya.
+        debugPrint('Address lookup $entryId gagal: $e\\n$st');
+        if (addressAttempts + 1 >= 3) {
+          await _storage.markPhotoTaskRetryExhausted(entryId);
         }
+        return;
+      }
 
-        final resolvedAddress = address.trim();
-        current = current.copyWith(locationName: resolvedAddress);
+      if (address == null || address.trim().isEmpty) {
+        if (addressAttempts + 1 >= 3) {
+          await _storage.markPhotoTaskRetryExhausted(entryId);
+        }
+        return;
+      }
+
+      final resolvedAddress = address.trim();
+      current = current.copyWith(locationName: resolvedAddress);
+      try {
         await _storage.update(current);
 
         final logoBytes = await _loadCompactLogo();
@@ -182,18 +195,21 @@ class PhotoTaskRecoveryService {
           logoBytes: logoBytes,
         );
         await _evictPublicImage(publicPath);
-        await _storage.markPhotoTaskAddressResolved(entryId);
-        await _storage.markPhotoTaskCompleted(entryId);
-        return;
       } catch (e, st) {
-        debugPrint('Address retry $entryId gagal: $e\\n$st');
+        // Kegagalan memproses watermark masih boleh mengonsumsi address retry,
+        // tetapi operasi persistensi status di bawah tidak berada di blok ini.
+        debugPrint('Address watermark $entryId gagal: $e\\n$st');
         if (addressAttempts + 1 >= 3) {
           await _storage.markPhotoTaskRetryExhausted(entryId);
         }
         return;
       }
-    }
 
+      // Harus di luar catch retry: bila persistensi gagal, biarkan exception
+      // naik. State helper akan rollback flag dan RAW tidak akan dihapus.
+      await _storage.markPhotoTaskAddressResolved(entryId);
+      await _storage.markPhotoTaskCompleted(entryId);
+      return;
     if (watermarkCompleted && addressResolved) {
       await _storage.markPhotoTaskCompleted(entryId);
       return;
