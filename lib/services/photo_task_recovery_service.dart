@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:intl/intl.dart';
 
 import '../screens/watermark_settings.dart';
@@ -92,6 +93,7 @@ class PhotoTaskRecoveryService {
     }
     final publicPath = entry.displayImagePath;
     if (publicPath == null || publicPath.isEmpty) {
+      await _storage.markPhotoTaskAttempt(entryId);
       if (attempts + 1 >= 3) {
         await _storage.markPhotoTaskRetryExhausted(entryId);
       }
@@ -100,6 +102,9 @@ class PhotoTaskRecoveryService {
 
     final rawPath = _storage.rawPathFor(publicPath);
     if (!await File(rawPath).exists()) {
+      // Count missing-source failures; otherwise attempts never advance and
+      // this unrecoverable task would be revisited forever.
+      await _storage.markPhotoTaskAttempt(entryId);
       if (attempts + 1 >= 3) {
         await _storage.markPhotoTaskRetryExhausted(entryId);
       }
@@ -134,13 +139,30 @@ class PhotoTaskRecoveryService {
     // kecuali reverse-geocode sekarang berhasil. Sumber tetap RAW sehingga
     // watermark tidak pernah menumpuk.
     if (watermarkCompleted && !addressResolved) {
-      // Geocoding adalah metadata pelengkap; jangan menghabiskan retry watermark.
-      if (lat == null || lng == null) return;
+      // Tanpa koordinat capture, alamat tidak bisa dipulihkan secara aman.
+      // Jangan mengganti lokasi foto lama dengan posisi perangkat saat ini.
+      if (lat == null || lng == null) {
+        await _storage.markPhotoTaskCompleted(entryId);
+        return;
+      }
+
+      final addressAttempts = (task['addressAttempts'] as int?) ?? 0;
+      if (addressAttempts >= 3) {
+        await _storage.markPhotoTaskRetryExhausted(entryId);
+        return;
+      }
+      await _storage.markPhotoTaskAddressAttempt(entryId);
+
       try {
         final address = await _location
             .reverseGeocode(lat, lng, accuracy: null)
             .timeout(const Duration(seconds: 3), onTimeout: () => null);
-        if (address == null || address.trim().isEmpty) return;
+        if (address == null || address.trim().isEmpty) {
+          if (addressAttempts + 1 >= 3) {
+            await _storage.markPhotoTaskRetryExhausted(entryId);
+          }
+          return;
+        }
 
         final resolvedAddress = address.trim();
         current = current.copyWith(locationName: resolvedAddress);
@@ -159,12 +181,13 @@ class PhotoTaskRecoveryService {
           lines: lines,
           logoBytes: logoBytes,
         );
+        await _evictPublicImage(publicPath);
         await _storage.markPhotoTaskAddressResolved(entryId);
         await _storage.markPhotoTaskCompleted(entryId);
         return;
       } catch (e, st) {
-        debugPrint('Address retry $entryId gagal: $e\n$st');
-        if (attempts + 1 >= 3) {
+        debugPrint('Address retry $entryId gagal: $e\\n$st');
+        if (addressAttempts + 1 >= 3) {
           await _storage.markPhotoTaskRetryExhausted(entryId);
         }
         return;
@@ -211,11 +234,20 @@ class PhotoTaskRecoveryService {
       lines: lines,
       logoBytes: logoBytes,
     );
+    await _evictPublicImage(publicPath);
 
     await _storage.markPhotoTaskWatermarkCompleted(entryId);
     if (resolvedNow) {
       await _storage.markPhotoTaskAddressResolved(entryId);
       await _storage.markPhotoTaskCompleted(entryId);
+    }
+  }
+
+  Future<void> _evictPublicImage(String path) async {
+    try {
+      await FileImage(File(path)).evict();
+    } catch (e) {
+      debugPrint('Gagal memperbarui cache foto $path: $e');
     }
   }
 
