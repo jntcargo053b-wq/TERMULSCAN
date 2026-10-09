@@ -562,19 +562,41 @@ class StorageService {
     await _cleanupRawForEntry(entryId);
   }
 
-  Future<void> markPhotoTaskWatermarkCompleted(String entryId) async {
+  Future<void> _setPhotoTaskFieldAndPersist(
+    String entryId,
+    String field,
+    Object value,
+  ) async {
     final task = _pendingPhotoTasks[entryId];
     if (task == null) return;
-    task['watermarkCompleted'] = true;
-    await _persist();
+
+    final hadPreviousValue = task.containsKey(field);
+    final previousValue = task[field];
+    task[field] = value;
+    try {
+      await _persist();
+    } catch (_) {
+      // Do not let an in-memory flag/counter advance when its durable write
+      // failed; recovery must continue to reflect the last confirmed state.
+      if (hadPreviousValue) {
+        task[field] = previousValue;
+      } else {
+        task.remove(field);
+      }
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan field $field pada task $entryId: $repairError');
+      }
+      rethrow;
+    }
   }
 
-  Future<void> markPhotoTaskAddressResolved(String entryId) async {
-    final task = _pendingPhotoTasks[entryId];
-    if (task == null) return;
-    task['addressResolved'] = true;
-    await _persist();
-  }
+  Future<void> markPhotoTaskWatermarkCompleted(String entryId) =>
+      _setPhotoTaskFieldAndPersist(entryId, 'watermarkCompleted', true);
+
+  Future<void> markPhotoTaskAddressResolved(String entryId) =>
+      _setPhotoTaskFieldAndPersist(entryId, 'addressResolved', true);
 
   Future<void> markPhotoTaskRetryExhausted(String entryId) async {
     // A task that has permanently failed is no longer recoverable. Persist its
@@ -606,9 +628,16 @@ class StorageService {
   Future<void> markPhotoTaskAttempt(String entryId) async {
     final task = _pendingPhotoTasks[entryId];
     if (task == null) return;
-    task['attempts'] = ((task['attempts'] as int?) ?? 0) + 1;
-    task['lastAttemptAt'] = DateTime.now().toIso8601String();
-    await _persist();
+    await _setPhotoTaskFieldAndPersist(
+      entryId,
+      'attempts',
+      ((task['attempts'] as int?) ?? 0) + 1,
+    );
+    await _setPhotoTaskFieldAndPersist(
+      entryId,
+      'lastAttemptAt',
+      DateTime.now().toIso8601String(),
+    );
   }
 
   /// Address enrichment has its own retry budget so network failures do not
@@ -616,9 +645,16 @@ class StorageService {
   Future<void> markPhotoTaskAddressAttempt(String entryId) async {
     final task = _pendingPhotoTasks[entryId];
     if (task == null) return;
-    task['addressAttempts'] = ((task['addressAttempts'] as int?) ?? 0) + 1;
-    task['lastAddressAttemptAt'] = DateTime.now().toIso8601String();
-    await _persist();
+    await _setPhotoTaskFieldAndPersist(
+      entryId,
+      'addressAttempts',
+      ((task['addressAttempts'] as int?) ?? 0) + 1,
+    );
+    await _setPhotoTaskFieldAndPersist(
+      entryId,
+      'lastAddressAttemptAt',
+      DateTime.now().toIso8601String(),
+    );
   }
 
 }
