@@ -538,9 +538,28 @@ class StorageService {
   }
 
   Future<void> markPhotoTaskCompleted(String entryId) async {
+    final previousTask = _pendingPhotoTasks.remove(entryId);
+    if (previousTask == null) {
+      await _cleanupRawForEntry(entryId);
+      return;
+    }
+
+    try {
+      // Persist task completion before deleting the only recovery source.
+      await _persist();
+    } catch (_) {
+      _pendingPhotoTasks.putIfAbsent(
+        entryId,
+        () => Map<String, dynamic>.from(previousTask),
+      );
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan antrean foto $entryId: $repairError');
+      }
+      rethrow;
+    }
     await _cleanupRawForEntry(entryId);
-    _pendingPhotoTasks.remove(entryId);
-    await _persist();
   }
 
   Future<void> markPhotoTaskWatermarkCompleted(String entryId) async {
@@ -558,11 +577,30 @@ class StorageService {
   }
 
   Future<void> markPhotoTaskRetryExhausted(String entryId) async {
-    // A task that has permanently failed is no longer recoverable. Remove it
-    // from the pending queue so it cannot accumulate or be revisited forever.
+    // A task that has permanently failed is no longer recoverable. Persist its
+    // removal before deleting the RAW source, so a failed write cannot leave
+    // a persisted task pointing at a missing recovery file.
+    final previousTask = _pendingPhotoTasks.remove(entryId);
+    if (previousTask == null) {
+      await _cleanupRawForEntry(entryId);
+      return;
+    }
+
+    try {
+      await _persist();
+    } catch (_) {
+      _pendingPhotoTasks.putIfAbsent(
+        entryId,
+        () => Map<String, dynamic>.from(previousTask),
+      );
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal memulihkan antrean foto gagal $entryId: $repairError');
+      }
+      rethrow;
+    }
     await _cleanupRawForEntry(entryId);
-    _pendingPhotoTasks.remove(entryId);
-    await _persist();
   }
 
   Future<void> markPhotoTaskAttempt(String entryId) async {
