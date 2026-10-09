@@ -45,18 +45,19 @@ lib/
 - Setiap item pada hasil pencarian/riwayat memiliki tombol Share langsung.
 - Tombol Share memakai resolver storage yang sama dengan preview sehingga path foto lama tetap dapat dipulihkan.
 
-
 ## Catatan CI
 
-GitHub Actions membangun project Android yang sudah ada di repository secara langsung. Workflow **tidak** menjalankan `flutter create`, tidak melakukan `git pull/push`, dan tidak memodifikasi source repository saat build.
+GitHub Actions membangun project Android yang sudah ada di repository secara langsung. Workflow tidak menjalankan `flutter create`, tidak melakukan `git pull/push`, dan tidak memodifikasi source repository saat build.
 
-Build CI menjalankan `flutter pub get`, `flutter analyze`, `flutter test`, lalu `flutter build apk --release`.
-
+Workflow CI menjalankan `flutter pub get`, `flutter analyze`, dan `flutter test`. APK production dibuat di repository TERMULSCAN-BUILD.
 
 ## Production CI/CD
 
-Set the repository secret `TERMULSCAN_BUILD_TOKEN` to a fine-grained GitHub token that has **Contents: write** access to `jntcargo053b-wq/TERMULSCAN-BUILD`.
+Pada setiap push ke `main`, setelah analyze dan test sukses, TERMULSCAN meminta TERMULSCAN-BUILD menjalankan workflow production dengan SHA commit sumber yang tepat.
 
-On every push to `main`, TERMULSCAN first runs analyze, tests, and its testing APK build. Only after those steps succeed does it dispatch the exact commit SHA to TERMULSCAN-BUILD for the production-signed APK.
+Secret `TERMULSCAN_BUILD_TOKEN` di TERMULSCAN harus menggunakan token yang:
+- Dibuat oleh akun yang memiliki akses ke `jntcargo053b-wq/TERMULSCAN-BUILD`.
+- Memiliki akses repository ke `TERMULSCAN-BUILD`.
+- Memiliki permission **Actions: Read and write** (untuk endpoint workflow dispatch).
 
-The production keystore is kept only in TERMULSCAN-BUILD GitHub Secrets and is never committed to this repository.
+TERMULSCAN-BUILD menyimpan keystore production hanya di GitHub Secrets dan mempublikasikan APK production sebagai artifact dan GitHub Release.
