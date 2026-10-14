@@ -48,6 +48,24 @@ void main() {
       expect(savedTask['addressAttempts'], 0);
     });
 
+    test('enqueue without coordinates preserves previously captured coordinates', () async {
+      const entryId = 'storage-test-preserve-coordinates';
+      await storage.enqueuePhotoTask(
+        entryId,
+        latitude: -7.98,
+        longitude: 112.63,
+      );
+
+      await storage.enqueuePhotoTask(entryId);
+      final task = storage.getPhotoTask(entryId)!;
+      expect(task['latitude'], -7.98);
+      expect(task['longitude'], 112.63);
+
+      final savedTask = await _readPersistedTask(entryId);
+      expect(savedTask['latitude'], -7.98);
+      expect(savedTask['longitude'], 112.63);
+    });
+
     test('watermark retry count and timestamp are persisted together', () async {
       const entryId = 'storage-test-watermark-retry';
       await storage.enqueuePhotoTask(entryId);
