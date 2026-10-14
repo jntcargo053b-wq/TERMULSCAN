@@ -44,11 +44,8 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final persisted = (json.decode(
         prefs.getString('pending_photo_tasks_v1')!,
-      ) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
-      final savedTask = persisted.singleWhere(
-        (item) => item['entryId'] == entryId,
-      );
+      ) as List<dynamic>).cast<Map<String, dynamic>>();
+      final savedTask = persisted.singleWhere((item) => item['entryId'] == entryId);
       expect(savedTask['latitude'], -7.98);
       expect(savedTask['longitude'], 112.63);
       expect(savedTask['attempts'], 0);
@@ -58,59 +55,42 @@ void main() {
     test('watermark retry count and timestamp are persisted together', () async {
       const entryId = 'storage-test-watermark-retry';
       await storage.enqueuePhotoTask(entryId);
-
       await storage.markPhotoTaskAttempt(entryId);
 
       final task = storage.getPhotoTask(entryId)!;
       expect(task['attempts'], 1);
-      expect(DateTime.tryParse(task['lastAttemptAt'] as String?), isNotNull);
+      expect(DateTime.tryParse(task['lastAttemptAt'] as String), isNotNull);
 
       final prefs = await SharedPreferences.getInstance();
       final persisted = (json.decode(
         prefs.getString('pending_photo_tasks_v1')!,
-      ) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
-      final savedTask = persisted.singleWhere(
-        (item) => item['entryId'] == entryId,
-      );
+      ) as List<dynamic>).cast<Map<String, dynamic>>();
+      final savedTask = persisted.singleWhere((item) => item['entryId'] == entryId);
       expect(savedTask['attempts'], 1);
-      expect(
-        DateTime.tryParse(savedTask['lastAttemptAt'] as String?),
-        isNotNull,
-      );
+      expect(DateTime.tryParse(savedTask['lastAttemptAt'] as String), isNotNull);
     });
 
     test('address retry metadata is separate from watermark retries', () async {
       const entryId = 'storage-test-address-retry';
       await storage.enqueuePhotoTask(entryId);
-
       await storage.markPhotoTaskAttempt(entryId);
       await storage.markPhotoTaskAddressAttempt(entryId);
 
       final task = storage.getPhotoTask(entryId)!;
       expect(task['attempts'], 1);
       expect(task['addressAttempts'], 1);
-      expect(DateTime.tryParse(task['lastAttemptAt'] as String?), isNotNull);
-      expect(
-        DateTime.tryParse(task['lastAddressAttemptAt'] as String?),
-        isNotNull,
-      );
+      expect(DateTime.tryParse(task['lastAttemptAt'] as String), isNotNull);
+      expect(DateTime.tryParse(task['lastAddressAttemptAt'] as String), isNotNull);
 
       final prefs = await SharedPreferences.getInstance();
       final persisted = (json.decode(
         prefs.getString('pending_photo_tasks_v1')!,
-      ) as List<dynamic>)
-          .cast<Map<String, dynamic>>();
-      final savedTask = persisted.singleWhere(
-        (item) => item['entryId'] == entryId,
-      );
+      ) as List<dynamic>).cast<Map<String, dynamic>>();
+      final savedTask = persisted.singleWhere((item) => item['entryId'] == entryId);
       expect(savedTask['attempts'], 1);
       expect(savedTask['addressAttempts'], 1);
-      expect(DateTime.tryParse(savedTask['lastAttemptAt'] as String?), isNotNull);
-      expect(
-        DateTime.tryParse(savedTask['lastAddressAttemptAt'] as String?),
-        isNotNull,
-      );
+      expect(DateTime.tryParse(savedTask['lastAttemptAt'] as String), isNotNull);
+      expect(DateTime.tryParse(savedTask['lastAddressAttemptAt'] as String), isNotNull);
     });
   });
 }
