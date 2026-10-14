@@ -512,8 +512,14 @@ class StorageService {
       // Capture-time coordinates are persisted with the task. Recovery must
       // never silently replace an old photo's location with the phone's
       // current location after the process has been killed.
-      if (latitude != null) 'latitude': latitude,
-      if (longitude != null) 'longitude': longitude,
+      if (latitude != null)
+        'latitude': latitude
+      else if (previous?['latitude'] != null)
+        'latitude': previous!['latitude'],
+      if (longitude != null)
+        'longitude': longitude
+      else if (previous?['longitude'] != null)
+        'longitude': previous!['longitude'],
     };
 
     try {
