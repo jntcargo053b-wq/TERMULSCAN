@@ -399,9 +399,9 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   right: 0,
                   top: _selectedStyle == 'top' ? 0 : null,
                   bottom: _selectedStyle == 'top' ? null : 0,
-                  width: _selectedStyle == 'compact'
-                      ? MediaQuery.of(context).size.width * 0.52
-                      : null,
+                  // Panel compact mengikuti lebar isi watermark, bukan
+                  // lebar tetap yang membuat pratinjau tampak terlalu besar.
+                  width: _selectedStyle == 'compact' ? null : null,
                   child: Container(
                     padding: EdgeInsets.all(previewPadding.toDouble()),
                     decoration: BoxDecoration(
@@ -524,23 +524,18 @@ class _PreviewLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: (fontSize * 0.75).clamp(5.0, 10.0).toDouble(), color: color.withValues(alpha: 0.7)),
-        const Gap(2),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: color,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+    // WatermarkService menggambar teks langsung ke bitmap tanpa ikon.
+    // Preview juga memakai teks polos agar tidak terlihat lebih padat/besar
+    // dibanding hasil foto yang benar-benar disimpan.
+    return Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontSize: fontSize,
+        fontWeight: FontWeight.normal,
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
