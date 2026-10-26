@@ -5,12 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 class WatermarkSettings extends ChangeNotifier {
   static const _keyOperator = 'wm_operator_name';
   static const _keyLogoPath = 'wm_logo_path';
+  static const _keyWatermarkStyle = 'wm_style';
 
   String _operatorName = '';
   String? _logoPath;
+  String _watermarkStyle = 'classic';
 
   String get operatorName => _operatorName;
   String? get logoPath => _logoPath;
+  String get watermarkStyle => _watermarkStyle;
 
   bool get hasLogo => _logoPath != null && File(_logoPath!).existsSync();
 
@@ -22,6 +25,10 @@ class WatermarkSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
+    final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'classic';
+    _watermarkStyle = const {'classic', 'compact', 'top'}.contains(savedStyle)
+        ? savedStyle
+        : 'classic';
     notifyListeners();
   }
 
@@ -42,4 +49,12 @@ class WatermarkSettings extends ChangeNotifier {
     }
     notifyListeners();
   }
+  Future<void> setWatermarkStyle(String style) async {
+    const supported = {'classic', 'compact', 'top'};
+    _watermarkStyle = supported.contains(style) ? style : 'classic';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyWatermarkStyle, _watermarkStyle);
+    notifyListeners();
+  }
 }
+
