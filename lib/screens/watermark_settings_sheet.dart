@@ -68,6 +68,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       await FileImage(File(dest)).evict();
 
       await _settings.setLogoPath(dest);
+      await _refreshPreview();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -76,6 +77,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   Future<void> _removeLogo() async {
     await _settings.setLogoPath(null);
     setState(() {});
+    await _refreshPreview();
   }
 
   /// Render pratinjau menggunakan renderer bitmap yang sama dengan foto final.
@@ -257,7 +259,10 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                     )
                   : null,
             ),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              setState(() {});
+              _refreshPreview();
+            },
           ),
           const Gap(20),
 
