@@ -236,7 +236,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                               fontWeight: FontWeight.w600,
                             )),
                         Gap(2),
-                        Text('Posisi: kanan bawah foto',
+                        Text('Logo berada di panel watermark',
                             style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
                       ],
                     ),
@@ -350,7 +350,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           ),
           const Gap(20),
 
-          // Preview watermark: meniru panel bawah yang dibakar ke foto.
+          // Pratinjau mengikuti model yang dipilih; sebelumnya selalu panel bawah.
           Container(
             width: double.infinity,
             height: 218,
@@ -364,83 +364,94 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 colors: [Color(0xFF667786), Color(0xFF39434D), Color(0xFF22282D)],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black26,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'CONTOH HASIL FOTO',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'CONTOH HASIL FOTO',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
                 ),
-                const Spacer(),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_settings.hasLogo) ...[
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Image.file(
-                            File(_settings.logoPath!),
-                            width: 44,
-                            height: 30,
-                            fit: BoxFit.contain,
-                            cacheWidth: (44 * MediaQuery.of(context).devicePixelRatio).round(),
-                            cacheHeight: (30 * MediaQuery.of(context).devicePixelRatio).round(),
+                Positioned(
+                  left: _selectedStyle == 'compact' ? null : 0,
+                  right: 0,
+                  top: _selectedStyle == 'top' ? 0 : null,
+                  bottom: _selectedStyle == 'top' ? null : 0,
+                  width: _selectedStyle == 'compact'
+                      ? MediaQuery.of(context).size.width * 0.52
+                      : null,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_settings.hasLogo) ...[
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Image.file(
+                              File(_settings.logoPath!),
+                              width: 44,
+                              height: 30,
+                              fit: BoxFit.contain,
+                              cacheWidth: (44 * MediaQuery.of(context).devicePixelRatio).round(),
+                              cacheHeight: (30 * MediaQuery.of(context).devicePixelRatio).round(),
+                            ),
                           ),
+                          const Gap(4),
+                        ],
+                        _PreviewLine(
+                          text: 'WAKTU: 2026-10-26 08:30:00',
+                          color: Colors.white,
+                          icon: Icons.access_time,
                         ),
-                        const Gap(4),
-                      ],
-                      _PreviewLine(
-                        text: 'WAKTU: 2026-10-26 08:30:00',
-                        color: Colors.white,
-                        icon: Icons.access_time,
-                      ),
-                      const Gap(3),
-                      _PreviewLine(
-                        text: 'GPS: -7.966620, 112.632630',
-                        color: Colors.white,
-                        icon: Icons.my_location,
-                      ),
-                      const Gap(3),
-                      _PreviewLine(
-                        text: 'ALAMAT: Jl. Contoh Gudang, Malang',
-                        color: Colors.white70,
-                        icon: Icons.location_on,
-                      ),
-                      const Gap(3),
-                      _PreviewLine(
-                        text: 'AWB: 8991234567890',
-                        color: Colors.white,
-                        icon: Icons.qr_code,
-                      ),
-                      if (_operatorController.text.trim().isNotEmpty) ...[
                         const Gap(3),
                         _PreviewLine(
-                          text: 'Operator: ${_operatorController.text.trim()}',
-                          color: Colors.white70,
-                          icon: Icons.person,
+                          text: 'GPS: -7.966620, 112.632630',
+                          color: Colors.white,
+                          icon: Icons.my_location,
                         ),
+                        const Gap(3),
+                        _PreviewLine(
+                          text: 'ALAMAT: Jl. Contoh Gudang, Malang',
+                          color: Colors.white70,
+                          icon: Icons.location_on,
+                        ),
+                        const Gap(3),
+                        _PreviewLine(
+                          text: 'AWB: 8991234567890',
+                          color: Colors.white,
+                          icon: Icons.qr_code,
+                        ),
+                        if (_operatorController.text.trim().isNotEmpty) ...[
+                          const Gap(3),
+                          _PreviewLine(
+                            text: 'Operator: ${_operatorController.text.trim()}',
+                            color: Colors.white70,
+                            icon: Icons.person,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],
