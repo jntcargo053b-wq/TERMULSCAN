@@ -199,7 +199,8 @@ class WatermarkService {
           if (resizedLogo != null && resizedLogo.width > contentWidth) {
             contentWidth = resizedLogo.width;
           }
-          final panelWidth = (contentWidth + 2 * padding)
+          final accentExtra = style == 'minimal' ? (4 * scale).round() : 0;
+          final panelWidth = (contentWidth + 2 * padding + accentExtra)
               .clamp(1, image.width).toInt();
           if (style == 'compact' || style == 'badge') {
             panelX = image.width - panelWidth - inset;
@@ -249,7 +250,10 @@ class WatermarkService {
           img.compositeImage(
             image,
             resizedLogo,
-            dstX: (image.width - resizedLogo.width - padding).clamp(panelX, image.width - 1).toInt(),
+            dstX: (style == 'minimal'
+                ? panelX + padding
+                : image.width - resizedLogo.width - padding)
+                .clamp(panelX, image.width - resizedLogo.width).toInt(),
             dstY: (barY + padding).clamp(0, image.height - 1).toInt(),
           );
         }
