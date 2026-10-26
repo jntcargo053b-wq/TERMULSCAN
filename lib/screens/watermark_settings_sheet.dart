@@ -334,21 +334,27 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                         const Gap(4),
                       ],
                       _PreviewLine(
-                        text: 'AWB: 8991234567890',
+                        text: 'WAKTU: 2026-10-26 08:30:00',
                         color: Colors.white,
                         icon: Icons.qr_code,
                       ),
                       const Gap(3),
                       _PreviewLine(
-                        text: '26/10/2026 08:30:00',
+                        text: 'GPS: -7.966620, 112.632630',
                         color: Colors.white,
                         icon: Icons.access_time,
                       ),
                       const Gap(3),
                       _PreviewLine(
-                        text: 'Jl. Contoh Gudang, Malang',
+                        text: 'ALAMAT: Jl. Contoh Gudang, Malang',
                         color: Colors.white70,
                         icon: Icons.location_on,
+                      ),
+                      const Gap(3),
+                      _PreviewLine(
+                        text: 'AWB: 8991234567890',
+                        color: Colors.white,
+                        icon: Icons.qr_code,
                       ),
                       if (_operatorController.text.trim().isNotEmpty) ...[
                         const Gap(3),
