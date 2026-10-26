@@ -455,26 +455,33 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
               // Tombol simpan tetap terlihat; konten di atas dapat digulir.
               SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: _save,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text(
+                    'Simpan Pengaturan',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
-              ),
-              onPressed: _save,
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Simpan Pengaturan',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ],
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
