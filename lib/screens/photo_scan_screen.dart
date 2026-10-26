@@ -34,6 +34,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   final _storage = StorageService();
   final _loc = LocationService();
   final _wmSettings = WatermarkSettings();
+  late final Future<void> _settingsReady;
 
   bool _isSaving = false;
   int _photoCount = 0;
@@ -53,7 +54,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     WidgetsBinding.instance.addObserver(this);
     _barcode = widget.initialBarcode;
     _checkLocationPermission();
-    _wmSettings.load();
+    _settingsReady = _wmSettings.load();
 
     // Jika ada barcode, langsung buka kamera setelah layout selesai.
     if (_barcode != null && _barcode!.isNotEmpty) {
@@ -160,6 +161,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   Future<void> _takePhoto() async {
     if (_isSaving) return;
+    await _settingsReady;
     if (mounted) setState(() => _isSaving = true);
 
     try {
@@ -224,6 +226,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   Future<void> _pickFromGallery() async {
     if (_isSaving) return;
+    await _settingsReady;
     if (mounted) setState(() => _isSaving = true);
 
     try {
