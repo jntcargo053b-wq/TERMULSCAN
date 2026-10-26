@@ -18,11 +18,20 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   final _operatorController = TextEditingController();
   final _picker = ImagePicker();
   bool _isSaving = false;
+  String _selectedStyle = 'classic';
 
   @override
   void initState() {
     super.initState();
     _operatorController.text = _settings.operatorName;
+    _selectedStyle = _settings.watermarkStyle;
+    _settings.load().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _operatorController.text = _settings.operatorName;
+        _selectedStyle = _settings.watermarkStyle;
+      });
+    });
   }
 
   @override
@@ -66,6 +75,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   Future<void> _save() async {
     final name = _operatorController.text.trim();
     await _settings.setOperatorName(name);
+    await _settings.setWatermarkStyle(_selectedStyle);
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -274,6 +284,54 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
           const Gap(20),
 
+          const Text('MODEL WATERMARK',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              )),
+          const Gap(8),
+          Row(
+            children: [
+              Expanded(
+                child: _WatermarkStyleOption(
+                  title: 'Classic',
+                  subtitle: 'Panel bawah',
+                  style: 'classic',
+                  selected: _selectedStyle == 'classic',
+                  onTap: () => setState(() => _selectedStyle = 'classic'),
+                ),
+              ),
+              const Gap(8),
+              Expanded(
+                child: _WatermarkStyleOption(
+                  title: 'Compact',
+                  subtitle: 'Sudut kanan',
+                  style: 'compact',
+                  selected: _selectedStyle == 'compact',
+                  onTap: () => setState(() => _selectedStyle = 'compact'),
+                ),
+              ),
+              const Gap(8),
+              Expanded(
+                child: _WatermarkStyleOption(
+                  title: 'Header',
+                  subtitle: 'Bagian atas',
+                  style: 'top',
+                  selected: _selectedStyle == 'top',
+                  onTap: () => setState(() => _selectedStyle = 'top'),
+                ),
+              ),
+            ],
+          ),
+          const Gap(8),
+          const Text(
+            'Model berlaku untuk foto baru dan pemulihan watermark yang tertunda.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+          ),
+          const Gap(20),
+
           // Preview watermark: meniru panel bawah yang dibakar ke foto.
           Container(
             width: double.infinity,
@@ -428,6 +486,92 @@ class _PreviewLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _WatermarkStyleOption extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String style;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _WatermarkStyleOption({
+    required this.title,
+    required this.subtitle,
+    required this.style,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: selected ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? Colors.amber : Colors.white12,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            SizedBox(
+              height: 48,
+              width: double.infinity,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF71818B), Color(0xFF303941)],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: style == 'compact' ? null : 0,
+                      right: 0,
+                      top: style == 'top' ? 0 : null,
+                      bottom: style == 'top' ? null : 0,
+                      child: Container(
+                        width: style == 'compact' ? 35 : null,
+                        height: style == 'compact' ? 30 : 14,
+                        padding: const EdgeInsets.all(3),
+                        color: Colors.black.withValues(alpha: 0.78),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(height: 2, width: style == 'compact' ? 23 : 38, color: Colors.white),
+                            const SizedBox(height: 3),
+                            Container(height: 2, width: style == 'compact' ? 27 : 52, color: Colors.white70),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Gap(6),
+            Text(title, style: TextStyle(color: selected ? Colors.amber : Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+            const Gap(2),
+            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 9)),
+          ],
+        ),
+      ),
     );
   }
 }
