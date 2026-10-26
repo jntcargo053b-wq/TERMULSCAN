@@ -358,7 +358,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         longitude: captureCoords.lng,
       );
 
-      String locationText = entry.coordinatesString;
+      String locationText = captureCoords.lat == null || captureCoords.lng == null
+          ? 'Lokasi tidak tersedia'
+          : '';
       bool addressResolved = false;
       if (captureCoords.lat != null && captureCoords.lng != null) {
         try {
