@@ -110,8 +110,8 @@ class WatermarkService {
         final scale = _maxWorkingDimension / largest;
         image = img.copyResize(
           image,
-          width: (image.width * scale).round().clamp(1, _maxWorkingDimension),
-          height: (image.height * scale).round().clamp(1, _maxWorkingDimension),
+          width: (image.width * scale).round().clamp(1, _maxWorkingDimension).toInt(),
+          height: (image.height * scale).round().clamp(1, _maxWorkingDimension).toInt(),
         );
       }
 
@@ -131,11 +131,11 @@ class WatermarkService {
       // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
       // padding tetap terlalu besar pada gambar kecil.
       final scale = (image.width / 1080).clamp(0.55, 1.65);
-      final padding = (16 * scale).round().clamp(8, 28);
-      final lineGap = (5 * scale).round().clamp(3, 10);
+      final padding = (16 * scale).round().clamp(8, 28).toInt();
+      final lineGap = (5 * scale).round().clamp(3, 10).toInt();
       final font = image.width < 760 ? img.arial14 : img.arial24;
       final lineHeight = image.width < 760 ? 18 : 30;
-      final maxTextWidth = (image.width - (2 * padding)).clamp(10, image.width);
+      final maxTextWidth = (image.width - (2 * padding)).clamp(10, image.width).toInt();
 
       final wrappedLines = <String>[];
       if (hasText) {
@@ -147,12 +147,12 @@ class WatermarkService {
       final logo = decodedLogo;
       img.Image? resizedLogo;
       if (logo != null) {
-        final maxLogo = (image.width * 0.12).round().clamp(36, _logoMaxSize);
+        final maxLogo = (image.width * 0.12).round().clamp(36, _logoMaxSize).toInt();
         final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
         resizedLogo = img.copyResize(
           logo,
-          width: (logo.width * ratio).round().clamp(1, maxLogo),
-          height: (logo.height * ratio).round().clamp(1, maxLogo),
+          width: (logo.width * ratio).round().clamp(1, maxLogo).toInt(),
+          height: (logo.height * ratio).round().clamp(1, maxLogo).toInt(),
         );
       }
 
@@ -167,7 +167,7 @@ class WatermarkService {
         final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
         final barHeight =
             (2 * padding) + logoHeaderHeight + headerGap + textHeight;
-        final barY = (image.height - barHeight).clamp(0, image.height - 1);
+        final barY = (image.height - barHeight).clamp(0, image.height - 1).toInt();
 
         img.fillRect(
           image,
@@ -182,8 +182,8 @@ class WatermarkService {
           img.compositeImage(
             image,
             resizedLogo,
-            dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1),
-            dstY: (barY + padding).clamp(0, image.height - 1),
+            dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1).toInt(),
+            dstY: (barY + padding).clamp(0, image.height - 1).toInt(),
           );
         }
 
@@ -203,12 +203,12 @@ class WatermarkService {
       } else if (resizedLogo != null) {
         // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
         // kanan bawah dengan batas aman pada foto kecil.
-        final padding = (12 * scale).round().clamp(5, 20);
+        final padding = (12 * scale).round().clamp(5, 20).toInt();
         img.compositeImage(
           image,
           resizedLogo,
-          dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1),
-          dstY: (image.height - resizedLogo.height - padding).clamp(0, image.height - 1),
+          dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1).toInt(),
+          dstY: (image.height - resizedLogo.height - padding).clamp(0, image.height - 1).toInt(),
         );
       }
 
