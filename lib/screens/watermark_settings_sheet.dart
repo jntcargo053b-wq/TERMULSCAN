@@ -91,6 +91,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    // Foto kamera/galeri dibatasi maxWidth 1024 px. Samakan preview dengan
+    // skala watermark yang akan terlihat saat foto ditampilkan di layar.
+    final previewScale = ((media.size.width - 64) / 1024).clamp(0.2, 0.5);
+    final previewFontSize = 24 * previewScale;
+    final previewPadding =
+        (16 * (1024 / 1080) * previewScale).round().clamp(3, 8);
+    final previewLineGap =
+        (5 * (1024 / 1080) * previewScale).round().clamp(1, 3);
     final availableHeight =
         media.size.height - media.viewInsets.bottom - media.padding.top - 16;
 
@@ -395,7 +403,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                       ? MediaQuery.of(context).size.width * 0.52
                       : null,
                   child: Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: EdgeInsets.all(previewPadding.toDouble()),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.72),
                       borderRadius: BorderRadius.circular(8),
@@ -410,37 +418,41 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                             alignment: Alignment.centerRight,
                             child: Image.file(
                               File(_settings.logoPath!),
-                              width: 44,
-                              height: 30,
+                              width: 26,
+                              height: 18,
                               fit: BoxFit.contain,
                               cacheWidth: (44 * MediaQuery.of(context).devicePixelRatio).round(),
                               cacheHeight: (30 * MediaQuery.of(context).devicePixelRatio).round(),
                             ),
                           ),
-                          const Gap(4),
+                          SizedBox(height: previewLineGap.toDouble()),
                         ],
                         _PreviewLine(
                           text: 'WAKTU: 2026-10-26 08:30:00',
                           color: Colors.white,
                           icon: Icons.access_time,
+                          fontSize: previewFontSize,
                         ),
-                        const Gap(3),
+                        SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'GPS: -7.966620, 112.632630',
                           color: Colors.white,
                           icon: Icons.my_location,
+                          fontSize: previewFontSize,
                         ),
-                        const Gap(3),
+                        SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'ALAMAT: Jl. Contoh Gudang, Malang',
                           color: Colors.white70,
                           icon: Icons.location_on,
+                          fontSize: previewFontSize,
                         ),
-                        const Gap(3),
+                        SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'AWB: 8991234567890',
                           color: Colors.white,
                           icon: Icons.qr_code,
+                          fontSize: previewFontSize,
                         ),
                         if (_operatorController.text.trim().isNotEmpty) ...[
                           const Gap(3),
@@ -448,6 +460,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                             text: 'Operator: ${_operatorController.text.trim()}',
                             color: Colors.white70,
                             icon: Icons.person,
+                            fontSize: previewFontSize,
                           ),
                         ],
                       ],
@@ -500,25 +513,27 @@ class _PreviewLine extends StatelessWidget {
   final String text;
   final Color color;
   final IconData icon;
+  final double fontSize;
 
   const _PreviewLine({
     required this.text,
     required this.color,
     required this.icon,
+    this.fontSize = 10,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 10, color: color.withValues(alpha: 0.7)),
-        const Gap(4),
+        Icon(icon, size: (fontSize * 0.75).clamp(5.0, 10.0), color: color.withValues(alpha: 0.7)),
+        const Gap(2),
         Expanded(
           child: Text(
             text,
             style: TextStyle(
               color: color,
-              fontSize: 10,
+              fontSize: fontSize,
               fontWeight: FontWeight.w600,
             ),
             maxLines: 1,
