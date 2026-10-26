@@ -214,17 +214,17 @@ class WatermarkService {
           panelRight = image.width - 1 - inset;
         }
 
-        // Setiap template memakai komposisi visual yang berbeda, bukan
-        // sekadar mengganti warna aksen.
-        final panelColor = style == 'modern'
-            ? img.ColorRgba8(9, 25, 42, 218)
-            : style == 'minimal'
-                ? img.ColorRgba8(0, 0, 0, 145)
-                : style == 'badge'
-                    ? img.ColorRgba8(28, 25, 19, 225)
-                    : style == 'compact'
-                        ? img.ColorRgba8(0, 0, 0, 205)
-                        : img.ColorRgba8(0, 0, 0, 178);
+        // Gunakan warna RGB solid supaya aksen benar-benar terlihat pada
+        // hasil JPEG; alpha pada panel lama membuat semua gaya tampak hitam.
+        final panelColor = switch (style) {
+          'classic' => img.ColorRgb8(25, 48, 78), // navy
+          'compact' => img.ColorRgb8(20, 78, 67), // hijau teal
+          'top' => img.ColorRgb8(104, 35, 54), // burgundy
+          'modern' => img.ColorRgb8(12, 39, 61), // midnight blue
+          'minimal' => img.ColorRgb8(42, 74, 77), // muted teal
+          'badge' => img.ColorRgb8(244, 185, 66), // amber
+          _ => img.ColorRgb8(25, 48, 78),
+        };
         img.fillRect(
           image,
           x1: panelX,
@@ -233,36 +233,76 @@ class WatermarkService {
           y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
           color: panelColor,
         );
-        // Aksen visual dibedakan per template.
-        if (style == 'modern' || style == 'minimal') {
-          final accentWidth = (4 * scale).round().clamp(2, 7).toInt();
+
+        // Header/aksen memakai warna solid dan bentuk berbeda per template.
+        if (style == 'modern') {
+          final accentWidth = (5 * scale).round().clamp(3, 8).toInt();
           img.fillRect(
             image,
             x1: panelX,
             y1: barY,
             x2: (panelX + accentWidth - 1).clamp(panelX, panelRight).toInt(),
             y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgba8(0, 190, 220, 255),
+            color: img.ColorRgb8(0, 205, 220),
+          );
+          final headerHeight = (6 * scale).round().clamp(4, 10).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: barY,
+            x2: panelRight,
+            y2: (barY + headerHeight - 1).clamp(barY, image.height - 1).toInt(),
+            color: img.ColorRgb8(0, 145, 170),
+          );
+        } else if (style == 'minimal') {
+          final accentWidth = (3 * scale).round().clamp(2, 5).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: barY,
+            x2: (panelX + accentWidth - 1).clamp(panelX, panelRight).toInt(),
+            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
+            color: img.ColorRgb8(100, 205, 180),
           );
         } else if (style == 'badge') {
-          final accentHeight = (4 * scale).round().clamp(3, 7).toInt();
+          final accentHeight = (5 * scale).round().clamp(3, 8).toInt();
           img.fillRect(
             image,
             x1: panelX,
             y1: barY,
             x2: panelRight,
             y2: (barY + accentHeight - 1).clamp(barY, image.height - 1).toInt(),
-            color: img.ColorRgba8(255, 190, 45, 255),
+            color: img.ColorRgb8(255, 224, 145),
           );
         } else if (style == 'compact') {
-          final accentWidth = (3 * scale).round().clamp(2, 5).toInt();
+          final accentWidth = (4 * scale).round().clamp(2, 6).toInt();
           img.fillRect(
             image,
             x1: panelRight - accentWidth + 1,
             y1: barY,
             x2: panelRight,
             y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgba8(255, 255, 255, 210),
+            color: img.ColorRgb8(93, 220, 174),
+          );
+        } else if (style == 'top') {
+          final headerHeight = (5 * scale).round().clamp(3, 8).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: barY,
+            x2: panelRight,
+            y2: (barY + headerHeight - 1).clamp(barY, image.height - 1).toInt(),
+            color: img.ColorRgb8(218, 92, 111),
+          );
+        } else {
+          final accentHeight = (4 * scale).round().clamp(2, 6).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: (barY + barHeight - accentHeight).clamp(barY, image.height - 1).toInt(),
+            x2: panelRight,
+            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
+            color: img.ColorRgb8(91, 153, 220),
           );
         }
 
@@ -283,6 +323,9 @@ class WatermarkService {
             ? panelX + padding + (style == 'modern' || style == 'minimal' ? (4 * scale).round() : 0)
             : padding;
         var textY = barY + padding + logoHeaderHeight + headerGap;
+        final textColor = style == 'badge'
+            ? img.ColorRgb8(42, 35, 22)
+            : img.ColorRgb8(255, 255, 255);
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
           img.drawString(
@@ -291,7 +334,7 @@ class WatermarkService {
             font: font,
             x: textX,
             y: textY,
-            color: img.ColorRgb8(255, 255, 255),
+            color: textColor,
           );
           textY += lineHeight + lineGap;
         }      } else if (resizedLogo != null) {
