@@ -223,7 +223,9 @@ class PhotoTaskRecoveryService {
     // Hanya proses watermark yang mengonsumsi retry counter.
     await _storage.markPhotoTaskAttempt(entryId);
 
-    String locationText = current.coordinatesString;
+    String locationText = lat == null || lng == null
+        ? 'Lokasi tidak tersedia'
+        : '';
     var resolvedNow = false;
     if (lat != null && lng != null) {
       try {
