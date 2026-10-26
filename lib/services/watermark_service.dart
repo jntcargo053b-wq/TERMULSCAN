@@ -139,12 +139,16 @@ class WatermarkService {
       final lineGap = (5 * scale).round().clamp(3, 10).toInt();
       final font = image.width < 760 ? img.arial14 : img.arial24;
       final lineHeight = image.width < 760 ? 18 : 30;
-      final style = const {'classic', 'compact', 'top'}.contains(req.style)
-          ? req.style
-          : 'classic';
-      final maxTextWidth = style == 'compact'
-          ? ((image.width * 0.62).round() - (2 * padding)).clamp(10, image.width).toInt()
-          : (image.width - (2 * padding)).clamp(10, image.width).toInt();
+      final style = const {
+        'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+      }.contains(req.style) ? req.style : 'classic';
+      final maxTextRatio = (style == 'compact' || style == 'badge')
+          ? 0.62
+          : style == 'minimal'
+              ? 0.70
+              : 1.0;
+      final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding))
+          .clamp(10, image.width).toInt();
 
       final wrappedLines = <String>[];
       if (hasText) {
@@ -176,12 +180,17 @@ class WatermarkService {
         final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
         final barHeight =
             (2 * padding) + logoHeaderHeight + headerGap + textHeight;
+        final insetStyles = const {'modern', 'minimal', 'badge'};
+        final inset = insetStyles.contains(style)
+            ? (10 * scale).round().clamp(5, 18).toInt()
+            : 0;
         final barY = style == 'top'
             ? 0
-            : (image.height - barHeight).clamp(0, image.height - 1).toInt();
-        var panelX = 0;
-        var panelRight = image.width - 1;
-        if (style == 'compact') {
+            : (image.height - barHeight - inset)
+                .clamp(0, image.height - 1).toInt();
+        var panelX = style == 'minimal' ? inset : 0;
+        var panelRight = image.width - 1 - inset;
+        if (style == 'compact' || style == 'badge' || style == 'minimal') {
           var contentWidth = 0;
           for (final line in wrappedLines) {
             final width = _textWidth(line, font);
@@ -192,8 +201,16 @@ class WatermarkService {
           }
           final panelWidth = (contentWidth + 2 * padding)
               .clamp(1, image.width).toInt();
-          panelX = image.width - panelWidth;
-          panelRight = image.width - 1;
+          if (style == 'compact' || style == 'badge') {
+            panelX = image.width - panelWidth - inset;
+            panelRight = image.width - 1 - inset;
+          } else {
+            panelRight = (panelX + panelWidth - 1)
+                .clamp(panelX, image.width - 1).toInt();
+          }
+        } else if (style == 'modern') {
+          panelX = inset;
+          panelRight = image.width - 1 - inset;
         }
 
         img.fillRect(
@@ -204,6 +221,29 @@ class WatermarkService {
           y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
           color: img.ColorRgba8(0, 0, 0, 178),
         );
+        // Aksen warna membuat model baru terasa lebih modern tanpa mengubah
+        // data watermark atau alur foto yang sudah ada.
+        if (style == 'modern' || style == 'minimal') {
+          final accentWidth = (4 * scale).round().clamp(2, 7).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: barY,
+            x2: (panelX + accentWidth - 1).clamp(panelX, panelRight).toInt(),
+            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
+            color: img.ColorRgba8(0, 190, 220, 255),
+          );
+        } else if (style == 'badge') {
+          final accentHeight = (3 * scale).round().clamp(2, 5).toInt();
+          img.fillRect(
+            image,
+            x1: panelX,
+            y1: barY,
+            x2: panelRight,
+            y2: (barY + accentHeight - 1).clamp(barY, image.height - 1).toInt(),
+            color: img.ColorRgba8(255, 190, 45, 255),
+          );
+        }
 
         if (resizedLogo != null) {
           img.compositeImage(
@@ -214,7 +254,10 @@ class WatermarkService {
           );
         }
 
-        final textX = style == 'compact' ? panelX + padding : padding;
+        final textX = const {'compact', 'badge', 'minimal', 'modern'}
+                .contains(style)
+            ? panelX + padding + (style == 'modern' || style == 'minimal' ? (4 * scale).round() : 0)
+            : padding;
         var textY = barY + padding + logoHeaderHeight + headerGap;
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
