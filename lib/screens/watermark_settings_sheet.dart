@@ -126,12 +126,13 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       }
 
       final operator = _operatorController.text.trim();
-      destination = File(
+      final outputFile = File(
         '${tempDir.path}/termulscan_watermark_preview_${token}.jpg',
       );
+      destination = outputFile;
       await WatermarkService.burn(
         sourcePath: source.path,
-        destPath: destination.path,
+        destPath: outputFile.path,
         lines: [
           'WAKTU: 2026-10-26 08:30:00',
           'GPS: -7.966620, 112.632630',
@@ -144,22 +145,22 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       );
 
       // Pastikan hasil benar-benar bisa didekode sebelum menampilkannya.
-      final outputBytes = await destination.readAsBytes();
+      final outputBytes = await outputFile.readAsBytes();
       if (outputBytes.isEmpty || img.decodeImage(outputBytes) == null) {
         throw StateError('Hasil render preview kosong atau tidak valid.');
       }
       if (!mounted || token != _previewRefreshToken) {
-        if (await destination.exists()) await destination.delete();
+        if (await outputFile.exists()) await outputFile.delete();
         return;
       }
 
       final previous = _previewPath;
-      await FileImage(destination).evict();
+      await FileImage(outputFile).evict();
       setState(() {
-        _previewPath = destination!.path;
+        _previewPath = outputFile.path;
         _previewError = null;
       });
-      if (previous != null && previous != destination.path) {
+      if (previous != null && previous != outputFile.path) {
         try {
           final previousFile = File(previous);
           if (await previousFile.exists()) await previousFile.delete();
