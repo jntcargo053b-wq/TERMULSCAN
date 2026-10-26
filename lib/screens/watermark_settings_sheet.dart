@@ -379,9 +379,12 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 letterSpacing: 1.2,
               )),
           const Gap(8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
                 child: _WatermarkStyleOption(
                   title: 'Classic',
                   subtitle: 'Panel bawah',
@@ -390,24 +393,54 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   onTap: () { setState(() => _selectedStyle = 'classic'); _refreshPreview(); },
                 ),
               ),
-              const Gap(8),
-              Expanded(
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
                 child: _WatermarkStyleOption(
                   title: 'Compact',
-                  subtitle: 'Sudut kanan',
+                  subtitle: 'Panel kanan',
                   style: 'compact',
                   selected: _selectedStyle == 'compact',
                   onTap: () { setState(() => _selectedStyle = 'compact'); _refreshPreview(); },
                 ),
               ),
-              const Gap(8),
-              Expanded(
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
                 child: _WatermarkStyleOption(
                   title: 'Header',
                   subtitle: 'Bagian atas',
                   style: 'top',
                   selected: _selectedStyle == 'top',
                   onTap: () { setState(() => _selectedStyle = 'top'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
+                child: _WatermarkStyleOption(
+                  title: 'Modern',
+                  subtitle: 'Aksen cyan',
+                  style: 'modern',
+                  selected: _selectedStyle == 'modern',
+                  onTap: () { setState(() => _selectedStyle = 'modern'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
+                child: _WatermarkStyleOption(
+                  title: 'Minimal',
+                  subtitle: 'Ringkas kiri',
+                  style: 'minimal',
+                  selected: _selectedStyle == 'minimal',
+                  onTap: () { setState(() => _selectedStyle = 'minimal'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: (MediaQuery.of(context).size.width - 64) / 3,
+                child: _WatermarkStyleOption(
+                  title: 'Badge',
+                  subtitle: 'Aksen amber',
+                  style: 'badge',
+                  selected: _selectedStyle == 'badge',
+                  onTap: () { setState(() => _selectedStyle = 'badge'); _refreshPreview(); },
                 ),
               ),
             ],
@@ -534,22 +567,22 @@ class _WatermarkStyleOption extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      left: style == 'compact' ? null : 0,
-                      right: 0,
+                      left: style == 'compact' || style == 'badge' ? null : (style == 'modern' ? 3 : 0),
+                      right: style == 'modern' ? 3 : 0,
                       top: style == 'top' ? 0 : null,
                       bottom: style == 'top' ? null : 0,
                       child: Container(
-                        width: style == 'compact' ? 35 : null,
-                        height: style == 'compact' ? 30 : 14,
+                        width: style == 'compact' || style == 'badge' || style == 'minimal' ? 35 : null,
+                        height: style == 'compact' || style == 'badge' || style == 'minimal' ? 30 : 14,
                         padding: const EdgeInsets.all(3),
                         color: Colors.black.withValues(alpha: 0.78),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(height: 2, width: style == 'compact' ? 23 : 38, color: Colors.white),
+                            Container(height: 2, width: style == 'compact' || style == 'badge' || style == 'minimal' ? 23 : 38, color: style == 'badge' ? Colors.amber : Colors.white),
                             const SizedBox(height: 3),
-                            Container(height: 2, width: style == 'compact' ? 27 : 52, color: Colors.white70),
+                            Container(height: 2, width: style == 'compact' || style == 'badge' || style == 'minimal' ? 27 : 52, color: Colors.white70),
                           ],
                         ),
                       ),
