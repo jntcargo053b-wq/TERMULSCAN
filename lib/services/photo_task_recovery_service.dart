@@ -195,6 +195,7 @@ class PhotoTaskRecoveryService {
           destPath: publicPath,
           lines: lines,
           logoBytes: logoBytes,
+          style: _settings.watermarkStyle,
         );
         await _evictPublicImage(publicPath);
       } catch (e, st) {
