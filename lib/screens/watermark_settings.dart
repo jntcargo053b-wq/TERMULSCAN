@@ -26,7 +26,7 @@ class WatermarkSettings extends ChangeNotifier {
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
     final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'classic';
-    _watermarkStyle = const {'classic', 'compact', 'top'}.contains(savedStyle)
+    _watermarkStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
         ? savedStyle
         : 'classic';
     notifyListeners();
@@ -50,7 +50,7 @@ class WatermarkSettings extends ChangeNotifier {
     notifyListeners();
   }
   Future<void> setWatermarkStyle(String style) async {
-    const supported = {'classic', 'compact', 'top'};
+    const supported = {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'};
     _watermarkStyle = supported.contains(style) ? style : 'classic';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyWatermarkStyle, _watermarkStyle);
