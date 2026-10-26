@@ -214,16 +214,26 @@ class WatermarkService {
           panelRight = image.width - 1 - inset;
         }
 
+        // Setiap template memakai komposisi visual yang berbeda, bukan
+        // sekadar mengganti warna aksen.
+        final panelColor = style == 'modern'
+            ? img.ColorRgba8(9, 25, 42, 218)
+            : style == 'minimal'
+                ? img.ColorRgba8(0, 0, 0, 145)
+                : style == 'badge'
+                    ? img.ColorRgba8(28, 25, 19, 225)
+                    : style == 'compact'
+                        ? img.ColorRgba8(0, 0, 0, 205)
+                        : img.ColorRgba8(0, 0, 0, 178);
         img.fillRect(
           image,
           x1: panelX,
           y1: barY,
           x2: panelRight,
           y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-          color: img.ColorRgba8(0, 0, 0, 178),
+          color: panelColor,
         );
-        // Aksen warna membuat model baru terasa lebih modern tanpa mengubah
-        // data watermark atau alur foto yang sudah ada.
+        // Aksen visual dibedakan per template.
         if (style == 'modern' || style == 'minimal') {
           final accentWidth = (4 * scale).round().clamp(2, 7).toInt();
           img.fillRect(
@@ -235,7 +245,7 @@ class WatermarkService {
             color: img.ColorRgba8(0, 190, 220, 255),
           );
         } else if (style == 'badge') {
-          final accentHeight = (3 * scale).round().clamp(2, 5).toInt();
+          final accentHeight = (4 * scale).round().clamp(3, 7).toInt();
           img.fillRect(
             image,
             x1: panelX,
@@ -243,6 +253,16 @@ class WatermarkService {
             x2: panelRight,
             y2: (barY + accentHeight - 1).clamp(barY, image.height - 1).toInt(),
             color: img.ColorRgba8(255, 190, 45, 255),
+          );
+        } else if (style == 'compact') {
+          final accentWidth = (3 * scale).round().clamp(2, 5).toInt();
+          img.fillRect(
+            image,
+            x1: panelRight - accentWidth + 1,
+            y1: barY,
+            x2: panelRight,
+            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
+            color: img.ColorRgba8(255, 255, 255, 210),
           );
         }
 
