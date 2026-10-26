@@ -184,8 +184,7 @@ class PhotoTaskRecoveryService {
         final logoBytes = await _loadCompactLogo();
         final lines = <String>[
           'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
-          if (lat != null && lng != null)
-            'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+          'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
           'ALAMAT: $resolvedAddress',
           if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
           if (_settings.operatorName.trim().isNotEmpty)
