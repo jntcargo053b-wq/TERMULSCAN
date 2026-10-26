@@ -157,14 +157,6 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    // Foto kamera/galeri dibatasi maxWidth 1024 px. Samakan preview dengan
-    // skala watermark yang akan terlihat saat foto ditampilkan di layar.
-    final previewScale = ((media.size.width - 64) / 1024).clamp(0.2, 0.5).toDouble();
-    final previewFontSize = 24 * previewScale;
-    final previewPadding =
-        (16 * (1024 / 1080) * previewScale).round().clamp(3, 8);
-    final previewLineGap =
-        (5 * (1024 / 1080) * previewScale).round().clamp(1, 3);
     final availableHeight =
         media.size.height - media.viewInsets.bottom - media.padding.top - 16;
 
@@ -487,36 +479,6 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// Widget preview line kecil
-class _PreviewLine extends StatelessWidget {
-  final String text;
-  final Color color;
-  final double fontSize;
-
-  const _PreviewLine({
-    required this.text,
-    required this.color,
-    this.fontSize = 10,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // WatermarkService menggambar teks langsung ke bitmap tanpa ikon.
-    // Preview juga memakai teks polos agar tidak terlihat lebih padat/besar
-    // dibanding hasil foto yang benar-benar disimpan.
-    return Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontSize: fontSize,
-        fontWeight: FontWeight.normal,
-      ),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
     );
   }
 }
