@@ -1,10 +1,13 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'watermark_settings.dart';
 import '../theme/app_theme.dart';
+import '../services/watermark_service.dart';
 
 class WatermarkSettingsSheet extends StatefulWidget {
   const WatermarkSettingsSheet({super.key});
@@ -19,6 +22,8 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   final _picker = ImagePicker();
   bool _isSaving = false;
   String _selectedStyle = 'classic';
+  String? _previewPath;
+  int _previewRefreshToken = 0;
 
   @override
   void initState() {
@@ -31,6 +36,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
         _operatorController.text = _settings.operatorName;
         _selectedStyle = _settings.watermarkStyle;
       });
+      _refreshPreview();
     });
   }
 
@@ -70,6 +76,64 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   Future<void> _removeLogo() async {
     await _settings.setLogoPath(null);
     setState(() {});
+  }
+
+  /// Render pratinjau menggunakan renderer bitmap yang sama dengan foto final.
+  /// Dengan demikian posisi panel, font, wrapping, padding, dan logo mengikuti
+  /// WatermarkService, bukan tiruan layout berbasis widget Flutter.
+  Future<void> _refreshPreview() async {
+    final token = ++_previewRefreshToken;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final source = File('${tempDir.path}/termulscan_watermark_preview_source.jpg');
+      if (!await source.exists()) {
+        final sample = img.Image(width: 1024, height: 768);
+        img.fill(sample, color: img.ColorRgb8(88, 108, 122));
+        await source.writeAsBytes(img.encodeJpg(sample, quality: 85), flush: true);
+      }
+
+      Uint8List? logoBytes;
+      if (_settings.hasLogo) {
+        final logoFile = File(_settings.logoPath!);
+        if (await logoFile.exists() && await logoFile.length() <= 512 * 1024) {
+          logoBytes = await logoFile.readAsBytes();
+        }
+      }
+
+      final operator = _operatorController.text.trim();
+      final destination = File(
+        '${tempDir.path}/termulscan_watermark_preview_$token.jpg',
+      );
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination.path,
+        lines: [
+          'WAKTU: 2026-10-26 08:30:00',
+          'GPS: -7.966620, 112.632630',
+          'ALAMAT: Jl. Contoh Gudang, Malang',
+          'AWB: 8991234567890',
+          if (operator.isNotEmpty) 'Operator: $operator',
+        ],
+        logoBytes: logoBytes,
+        style: _selectedStyle,
+      );
+
+      if (!mounted || token != _previewRefreshToken) {
+        if (await destination.exists()) await destination.delete();
+        return;
+      }
+      final previous = _previewPath;
+      await FileImage(destination).evict();
+      setState(() => _previewPath = destination.path);
+      if (previous != null && previous != destination.path) {
+        try {
+          final previousFile = File(previous);
+          if (await previousFile.exists()) await previousFile.delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('Gagal membuat pratinjau watermark: $e');
+    }
   }
 
   Future<void> _save() async {
@@ -326,7 +390,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   subtitle: 'Panel bawah',
                   style: 'classic',
                   selected: _selectedStyle == 'classic',
-                  onTap: () => setState(() => _selectedStyle = 'classic'),
+                  onTap: () { setState(() => _selectedStyle = 'classic'); _refreshPreview(); },
                 ),
               ),
               const Gap(8),
@@ -336,7 +400,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   subtitle: 'Sudut kanan',
                   style: 'compact',
                   selected: _selectedStyle == 'compact',
-                  onTap: () => setState(() => _selectedStyle = 'compact'),
+                  onTap: () { setState(() => _selectedStyle = 'compact'); _refreshPreview(); },
                 ),
               ),
               const Gap(8),
@@ -346,7 +410,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   subtitle: 'Bagian atas',
                   style: 'top',
                   selected: _selectedStyle == 'top',
-                  onTap: () => setState(() => _selectedStyle = 'top'),
+                  onTap: () { setState(() => _selectedStyle = 'top'); _refreshPreview(); },
                 ),
               ),
             ],
@@ -358,109 +422,31 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           ),
           const Gap(20),
 
-          // Pratinjau mengikuti model yang dipilih; sebelumnya selalu panel bawah.
+          // Gambar pratinjau dihasilkan oleh WatermarkService yang sama dengan foto final.
           Container(
             width: double.infinity,
             height: 218,
-            padding: const EdgeInsets.all(10),
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.white24),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF667786), Color(0xFF39434D), Color(0xFF22282D)],
-              ),
             ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'CONTOH HASIL FOTO',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
+            child: _previewPath == null
+                ? const Center(
+                    child: CircularProgressIndicator(color: Colors.amber),
+                  )
+                : Image.file(
+                    File(_previewPath!),
+                    width: double.infinity,
+                    height: 218,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Text(
+                        'Pratinjau belum tersedia',
+                        style: TextStyle(color: AppTheme.textSecondary),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  left: _selectedStyle == 'compact' ? null : 0,
-                  right: 0,
-                  top: _selectedStyle == 'top' ? 0 : null,
-                  bottom: _selectedStyle == 'top' ? null : 0,
-                  child: Container(
-                    padding: EdgeInsets.all(previewPadding.toDouble()),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_settings.hasLogo) ...[
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Image.file(
-                              File(_settings.logoPath!),
-                              width: 26,
-                              height: 18,
-                              fit: BoxFit.contain,
-                              cacheWidth: (44 * MediaQuery.of(context).devicePixelRatio).round(),
-                              cacheHeight: (30 * MediaQuery.of(context).devicePixelRatio).round(),
-                            ),
-                          ),
-                          SizedBox(height: previewLineGap.toDouble()),
-                        ],
-                        _PreviewLine(
-                          text: 'WAKTU: 2026-10-26 08:30:00',
-                          color: Colors.white,
-                          fontSize: previewFontSize,
-                        ),
-                        SizedBox(height: previewLineGap.toDouble()),
-                        _PreviewLine(
-                          text: 'GPS: -7.966620, 112.632630',
-                          color: Colors.white,
-                          fontSize: previewFontSize,
-                        ),
-                        SizedBox(height: previewLineGap.toDouble()),
-                        _PreviewLine(
-                          text: 'ALAMAT: Jl. Contoh Gudang, Malang',
-                          color: Colors.white70,
-                          fontSize: previewFontSize,
-                        ),
-                        SizedBox(height: previewLineGap.toDouble()),
-                        _PreviewLine(
-                          text: 'AWB: 8991234567890',
-                          color: Colors.white,
-                          fontSize: previewFontSize,
-                        ),
-                        if (_operatorController.text.trim().isNotEmpty) ...[
-                          const Gap(3),
-                          _PreviewLine(
-                            text: 'Operator: ${_operatorController.text.trim()}',
-                            color: Colors.white70,
-                            fontSize: previewFontSize,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
 
                     ],
