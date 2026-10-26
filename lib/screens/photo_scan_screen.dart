@@ -385,6 +385,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           sourcePath: savedPath,
           destPath: savedPath,
           timestamp: capturedAt,
+          latitude: captureCoords.lat,
+          longitude: captureCoords.lng,
           locationText: locationText,
           barcode: _barcode,
         );
@@ -461,6 +463,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     required String destPath,
     required DateTime timestamp,
     required String locationText,
+    double? latitude,
+    double? longitude,
     String? barcode,
   }) {
     final completer = Completer<void>();
@@ -485,15 +489,15 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           }
         }
 
-        final lines = <String>[];
-        if (barcode != null && barcode.isNotEmpty) {
-          lines.add('AWB: $barcode');
-        }
-        lines.add(DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp));
-        lines.add(locationText);
-        if (_wmSettings.operatorName.isNotEmpty) {
-          lines.add('Operator: ${_wmSettings.operatorName}');
-        }
+        final lines = <String>[
+          'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(timestamp)}',
+          if (latitude != null && longitude != null)
+            'GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
+          if (locationText.trim().isNotEmpty) 'ALAMAT: ${locationText.trim()}',
+          if (barcode != null && barcode.isNotEmpty) 'AWB: $barcode',
+          if (_wmSettings.operatorName.trim().isNotEmpty)
+            'Operator: ${_wmSettings.operatorName.trim()}',
+        ];
 
         await WatermarkService.burn(
           sourcePath: sourcePath,
