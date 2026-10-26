@@ -399,9 +399,6 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   right: 0,
                   top: _selectedStyle == 'top' ? 0 : null,
                   bottom: _selectedStyle == 'top' ? null : 0,
-                  // Panel compact mengikuti lebar isi watermark, bukan
-                  // lebar tetap yang membuat pratinjau tampak terlalu besar.
-                  width: _selectedStyle == 'compact' ? null : null,
                   child: Container(
                     padding: EdgeInsets.all(previewPadding.toDouble()),
                     decoration: BoxDecoration(
@@ -430,28 +427,24 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                         _PreviewLine(
                           text: 'WAKTU: 2026-10-26 08:30:00',
                           color: Colors.white,
-                          icon: Icons.access_time,
                           fontSize: previewFontSize,
                         ),
                         SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'GPS: -7.966620, 112.632630',
                           color: Colors.white,
-                          icon: Icons.my_location,
                           fontSize: previewFontSize,
                         ),
                         SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'ALAMAT: Jl. Contoh Gudang, Malang',
                           color: Colors.white70,
-                          icon: Icons.location_on,
                           fontSize: previewFontSize,
                         ),
                         SizedBox(height: previewLineGap.toDouble()),
                         _PreviewLine(
                           text: 'AWB: 8991234567890',
                           color: Colors.white,
-                          icon: Icons.qr_code,
                           fontSize: previewFontSize,
                         ),
                         if (_operatorController.text.trim().isNotEmpty) ...[
@@ -459,7 +452,6 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                           _PreviewLine(
                             text: 'Operator: ${_operatorController.text.trim()}',
                             color: Colors.white70,
-                            icon: Icons.person,
                             fontSize: previewFontSize,
                           ),
                         ],
@@ -512,13 +504,11 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 class _PreviewLine extends StatelessWidget {
   final String text;
   final Color color;
-  final IconData icon;
   final double fontSize;
 
   const _PreviewLine({
     required this.text,
     required this.color,
-    required this.icon,
     this.fontSize = 10,
   });
 
