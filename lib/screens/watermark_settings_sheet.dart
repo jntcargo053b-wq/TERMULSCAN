@@ -480,8 +480,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
