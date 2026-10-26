@@ -274,98 +274,92 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
           const Gap(20),
 
-          // Preview watermark
+          // Preview watermark: meniru panel bawah yang dibakar ke foto.
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            height: 218,
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white24),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF667786), Color(0xFF39434D), Color(0xFF22282D)],
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('PREVIEW WATERMARK',
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'CONTOH HASIL FOTO',
                     style: TextStyle(
-                      color: AppTheme.textSecondary,
+                      color: Colors.white70,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                    )),
-                const Gap(8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _PreviewLine(
-                            text: _operatorController.text.isNotEmpty
-                                ? _operatorController.text
-                                : 'Nama Operator',
-                            color: Colors.amber,
-                            icon: Icons.person,
-                          ),
-                          const Gap(3),
-                          const _PreviewLine(
-                            text: '8991234567890',
-                            color: Colors.white,
-                            icon: Icons.qr_code,
-                          ),
-                          const Gap(3),
-                          const _PreviewLine(
-                            text: '28/04/2026 08:30:00',
-                            color: Colors.white70,
-                            icon: Icons.access_time,
-                          ),
-                          const Gap(3),
-                          const _PreviewLine(
-                            text: '-7.9797, 112.6304',
-                            color: Colors.white70,
-                            icon: Icons.location_on,
-                          ),
-                        ],
-                      ),
+                      letterSpacing: 1,
                     ),
-                    if (_settings.hasLogo) ...[
-                      const Gap(8),
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.white10,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Image.file(
-                          File(_settings.logoPath!),
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.contain,
-                          cacheWidth:
-                              (40 * MediaQuery.of(context).devicePixelRatio)
-                                  .round(),
-                          cacheHeight:
-                              (40 * MediaQuery.of(context).devicePixelRatio)
-                                  .round(),
-                        ),
-                      ),
-                    ] else ...[
-                      const Gap(8),
-                      Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white10,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: Colors.white24,
-                            style: BorderStyle.solid,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_settings.hasLogo) ...[
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Image.file(
+                            File(_settings.logoPath!),
+                            width: 44,
+                            height: 30,
+                            fit: BoxFit.contain,
+                            cacheWidth: (44 * MediaQuery.of(context).devicePixelRatio).round(),
+                            cacheHeight: (30 * MediaQuery.of(context).devicePixelRatio).round(),
                           ),
                         ),
-                        child: const Icon(Icons.business, color: Colors.white24, size: 20),
+                        const Gap(4),
+                      ],
+                      _PreviewLine(
+                        text: 'AWB: 8991234567890',
+                        color: Colors.white,
+                        icon: Icons.qr_code,
                       ),
+                      const Gap(3),
+                      _PreviewLine(
+                        text: '26/10/2026 08:30:00',
+                        color: Colors.white,
+                        icon: Icons.access_time,
+                      ),
+                      const Gap(3),
+                      _PreviewLine(
+                        text: 'Jl. Contoh Gudang, Malang',
+                        color: Colors.white70,
+                        icon: Icons.location_on,
+                      ),
+                      if (_operatorController.text.trim().isNotEmpty) ...[
+                        const Gap(3),
+                        _PreviewLine(
+                          text: 'Operator: ${_operatorController.text.trim()}',
+                          color: Colors.white70,
+                          icon: Icons.person,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ],
             ),
