@@ -23,6 +23,8 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   bool _isSaving = false;
   String _selectedStyle = 'classic';
   String? _previewPath;
+  String? _previewError;
+  bool _isRefreshingPreview = false;
   int _previewRefreshToken = 0;
 
   @override
@@ -85,10 +87,31 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   /// WatermarkService, bukan tiruan layout berbasis widget Flutter.
   Future<void> _refreshPreview() async {
     final token = ++_previewRefreshToken;
+    if (mounted) {
+      setState(() {
+        _isRefreshingPreview = true;
+        _previewError = null;
+      });
+    }
+
+    File? destination;
     try {
       final tempDir = await getTemporaryDirectory();
       final source = File('${tempDir.path}/termulscan_watermark_preview_source.jpg');
-      if (!await source.exists()) {
+
+      // Regenerasi sumber contoh jika file lama kosong/rusak. Sebelumnya file
+      // yang sudah ada hanya diperiksa keberadaannya, sehingga file rusak dapat
+      // membuat preview gagal selamanya dan spinner terus tampil.
+      var sourceValid = false;
+      if (await source.exists()) {
+        try {
+          final bytes = await source.readAsBytes();
+          sourceValid = bytes.isNotEmpty && img.decodeImage(bytes) != null;
+        } catch (_) {
+          sourceValid = false;
+        }
+      }
+      if (!sourceValid) {
         final sample = img.Image(width: 1024, height: 768);
         img.fill(sample, color: img.ColorRgb8(88, 108, 122));
         await source.writeAsBytes(img.encodeJpg(sample, quality: 85), flush: true);
@@ -103,8 +126,8 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       }
 
       final operator = _operatorController.text.trim();
-      final destination = File(
-        '${tempDir.path}/termulscan_watermark_preview_$token.jpg',
+      destination = File(
+        '${tempDir.path}/termulscan_watermark_preview_${token}.jpg',
       );
       await WatermarkService.burn(
         sourcePath: source.path,
@@ -120,21 +143,45 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
         style: _selectedStyle,
       );
 
+      // Pastikan hasil benar-benar bisa didekode sebelum menampilkannya.
+      final outputBytes = await destination.readAsBytes();
+      if (outputBytes.isEmpty || img.decodeImage(outputBytes) == null) {
+        throw StateError('Hasil render preview kosong atau tidak valid.');
+      }
       if (!mounted || token != _previewRefreshToken) {
         if (await destination.exists()) await destination.delete();
         return;
       }
+
       final previous = _previewPath;
       await FileImage(destination).evict();
-      setState(() => _previewPath = destination.path);
+      setState(() {
+        _previewPath = destination!.path;
+        _previewError = null;
+      });
       if (previous != null && previous != destination.path) {
         try {
           final previousFile = File(previous);
           if (await previousFile.exists()) await previousFile.delete();
         } catch (_) {}
       }
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('Gagal membuat pratinjau watermark: $e');
+      debugPrint('$stack');
+      if (mounted && token == _previewRefreshToken) {
+        setState(() {
+          _previewError = 'Preview gagal dibuat. Tekan untuk mencoba lagi.';
+        });
+      }
+      if (destination != null) {
+        try {
+          if (await destination.exists()) await destination.delete();
+        } catch (_) {}
+      }
+    } finally {
+      if (mounted && token == _previewRefreshToken) {
+        setState(() => _isRefreshingPreview = false);
+      }
     }
   }
 
@@ -461,19 +508,76 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.white24),
             ),
-            child: _previewPath == null
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.amber),
+            child: _previewPath != null
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.file(
+                        File(_previewPath!),
+                        key: ValueKey(_previewPath),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: TextButton.icon(
+                            onPressed: _refreshPreview,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Muat ulang preview'),
+                          ),
+                        ),
+                      ),
+                      if (_isRefreshingPreview)
+                        const Positioned(
+                          right: 8,
+                          top: 8,
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        ),
+                    ],
                   )
-                : Image.file(
-                    File(_previewPath!),
-                    width: double.infinity,
-                    height: 218,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Text(
-                        'Pratinjau belum tersedia',
-                        style: TextStyle(color: AppTheme.textSecondary),
+                : Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _previewError == null
+                                ? Icons.image_search_outlined
+                                : Icons.warning_amber_rounded,
+                            color: Colors.amber,
+                            size: 30,
+                          ),
+                          const Gap(8),
+                          Text(
+                            _previewError ?? 'Sedang membuat preview watermark…',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const Gap(8),
+                          if (_previewError != null)
+                            TextButton.icon(
+                              onPressed: _refreshPreview,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Coba lagi'),
+                            )
+                          else
+                            const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.amber,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
