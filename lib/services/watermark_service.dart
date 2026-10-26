@@ -147,7 +147,7 @@ class WatermarkService {
       final logo = decodedLogo;
       img.Image? resizedLogo;
       if (logo != null) {
-        final maxLogo = (image.width * 0.12).round().clamp(36, _logoMaxSize).toInt();
+        final maxLogo = (image.width * 0.12).round().clamp(16, _logoMaxSize).toInt();
         final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
         resizedLogo = img.copyResize(
           logo,
