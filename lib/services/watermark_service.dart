@@ -8,12 +8,14 @@ class WatermarkBurnRequest {
   final String destPath;
   final List<String> lines;
   final Uint8List? logoBytes;
+  final String style;
 
   const WatermarkBurnRequest({
     required this.sourcePath,
     required this.destPath,
     required this.lines,
     this.logoBytes,
+    this.style = 'classic',
   });
 }
 
@@ -28,6 +30,7 @@ class WatermarkService {
     required String destPath,
     required List<String> lines,
     Uint8List? logoBytes,
+    String style = 'classic',
   }) async {
     final nonEmptyLines = lines
         .map((line) => line.trim())
@@ -40,6 +43,7 @@ class WatermarkService {
         destPath: destPath,
         lines: nonEmptyLines,
         logoBytes: logoBytes,
+        style: style,
       ),
     );
   }
@@ -135,7 +139,12 @@ class WatermarkService {
       final lineGap = (5 * scale).round().clamp(3, 10).toInt();
       final font = image.width < 760 ? img.arial14 : img.arial24;
       final lineHeight = image.width < 760 ? 18 : 30;
-      final maxTextWidth = (image.width - (2 * padding)).clamp(10, image.width).toInt();
+      final style = const {'classic', 'compact', 'top'}.contains(req.style)
+          ? req.style
+          : 'classic';
+      final maxTextWidth = style == 'compact'
+          ? ((image.width * 0.62).round() - (2 * padding)).clamp(10, image.width).toInt()
+          : (image.width - (2 * padding)).clamp(10, image.width).toInt();
 
       final wrappedLines = <String>[];
       if (hasText) {
@@ -167,14 +176,32 @@ class WatermarkService {
         final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
         final barHeight =
             (2 * padding) + logoHeaderHeight + headerGap + textHeight;
-        final barY = (image.height - barHeight).clamp(0, image.height - 1).toInt();
+        final barY = style == 'top'
+            ? 0
+            : (image.height - barHeight).clamp(0, image.height - 1).toInt();
+        var panelX = 0;
+        var panelRight = image.width - 1;
+        if (style == 'compact') {
+          var contentWidth = 0;
+          for (final line in wrappedLines) {
+            final width = _textWidth(line, font);
+            if (width > contentWidth) contentWidth = width;
+          }
+          if (resizedLogo != null && resizedLogo.width > contentWidth) {
+            contentWidth = resizedLogo.width;
+          }
+          final panelWidth = (contentWidth + 2 * padding)
+              .clamp(1, image.width).toInt();
+          panelX = image.width - panelWidth;
+          panelRight = image.width - 1;
+        }
 
         img.fillRect(
           image,
-          x1: 0,
+          x1: panelX,
           y1: barY,
-          x2: image.width - 1,
-          y2: image.height - 1,
+          x2: panelRight,
+          y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
           color: img.ColorRgba8(0, 0, 0, 178),
         );
 
@@ -182,11 +209,12 @@ class WatermarkService {
           img.compositeImage(
             image,
             resizedLogo,
-            dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1).toInt(),
+            dstX: (image.width - resizedLogo.width - padding).clamp(panelX, image.width - 1).toInt(),
             dstY: (barY + padding).clamp(0, image.height - 1).toInt(),
           );
         }
 
+        final textX = style == 'compact' ? panelX + padding : padding;
         var textY = barY + padding + logoHeaderHeight + headerGap;
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
@@ -194,13 +222,12 @@ class WatermarkService {
             image,
             line,
             font: font,
-            x: padding,
+            x: textX,
             y: textY,
             color: img.ColorRgb8(255, 255, 255),
           );
           textY += lineHeight + lineGap;
-        }
-      } else if (resizedLogo != null) {
+        }      } else if (resizedLogo != null) {
         // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
         // kanan bawah dengan batas aman pada foto kecil.
         final padding = (12 * scale).round().clamp(5, 20).toInt();
