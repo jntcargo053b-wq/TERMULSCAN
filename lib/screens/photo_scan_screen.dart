@@ -506,6 +506,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           destPath: destPath,
           lines: lines,
           logoBytes: logoBytes,
+          style: _wmSettings.watermarkStyle,
         );
 
         if (!completer.isCompleted) completer.complete();
