@@ -183,10 +183,13 @@ class PhotoTaskRecoveryService {
 
         final logoBytes = await _loadCompactLogo();
         final lines = <String>[
+          'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+          if (lat != null && lng != null)
+            'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+          'ALAMAT: $resolvedAddress',
           if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
-          DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
-          resolvedAddress,
-          if (_settings.operatorName.isNotEmpty) 'Operator: ${_settings.operatorName}',
+          if (_settings.operatorName.trim().isNotEmpty)
+            'Operator: ${_settings.operatorName.trim()}',
         ];
         await WatermarkService.burn(
           sourcePath: rawPath,
@@ -240,10 +243,13 @@ class PhotoTaskRecoveryService {
 
     final logoBytes = await _loadCompactLogo();
     final lines = <String>[
+      'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      if (lat != null && lng != null)
+        'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
+      if (locationText.trim().isNotEmpty) 'ALAMAT: ${locationText.trim()}',
       if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
-      DateFormat('dd/MM/yyyy HH:mm:ss').format(current.timestamp),
-      locationText,
-      if (_settings.operatorName.isNotEmpty) 'Operator: ${_settings.operatorName}',
+      if (_settings.operatorName.trim().isNotEmpty)
+        'Operator: ${_settings.operatorName.trim()}',
     ];
 
     await WatermarkService.burn(
