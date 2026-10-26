@@ -5,9 +5,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -44,3 +45,21 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Build release APK
+        if: github.event_name != 'pull_request'
+        run: flutter build apk --release
+
+      - name: Publish APK to GitHub Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: termulscan-build-${{ github.run_number }}
+          name: TERMULSCAN Build ${{ github.run_number }}
+          body: |
+            Automated TERMULSCAN release.
+            Commit: ${{ github.sha }}
+            Build validation: flutter analyze, flutter test, flutter build apk --release.
+          files: build/app/outputs/flutter-apk/app-release.apk
+          fail_on_unmatched_files: true
+          make_latest: true
