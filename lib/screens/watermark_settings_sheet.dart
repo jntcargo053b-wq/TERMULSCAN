@@ -672,22 +672,52 @@ class _WatermarkStyleOption extends StatelessWidget {
                       ),
                     ),
                     Positioned(
-                      left: style == 'compact' || style == 'badge' ? null : (style == 'modern' ? 3 : 0),
-                      right: style == 'modern' ? 3 : 0,
-                      top: style == 'top' ? 0 : null,
-                      bottom: style == 'top' ? null : 0,
+                      left: style == 'modern' || style == 'minimal' ? 4 : null,
+                      right: style == 'classic' || style == 'top' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
+                      top: style == 'top' ? 0 : (style == 'modern' ? 4 : null),
+                      bottom: style == 'top' || style == 'modern' ? null : 0,
                       child: Container(
-                        width: style == 'compact' || style == 'badge' || style == 'minimal' ? 35 : null,
-                        height: style == 'compact' || style == 'badge' || style == 'minimal' ? 30 : 14,
-                        padding: const EdgeInsets.all(3),
-                        color: Colors.black.withValues(alpha: 0.78),
+                        width: style == 'compact' ? 43 : (style == 'badge' ? 39 : (style == 'minimal' ? 48 : null)),
+                        height: style == 'compact' ? 24 : (style == 'badge' ? 29 : (style == 'minimal' ? 17 : (style == 'modern' ? 25 : 14))),
+                        padding: EdgeInsets.fromLTRB(
+                          style == 'minimal' ? 5 : 3,
+                          style == 'badge' ? 5 : 3,
+                          3,
+                          3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: style == 'modern'
+                              ? const Color(0xDD09192A)
+                              : style == 'minimal'
+                                  ? Colors.black.withValues(alpha: 0.48)
+                                  : style == 'badge'
+                                      ? const Color(0xE61C1913)
+                                      : Colors.black.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(
+                            style == 'badge' ? 5 : (style == 'modern' ? 3 : 0),
+                          ),
+                          border: style == 'modern'
+                              ? const Border(left: BorderSide(color: Colors.cyanAccent, width: 2))
+                              : style == 'badge'
+                                  ? const Border(top: BorderSide(color: Colors.amber, width: 2))
+                                  : null,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(height: 2, width: style == 'compact' || style == 'badge' || style == 'minimal' ? 23 : 38, color: style == 'badge' ? Colors.amber : Colors.white),
+                            Container(
+                              height: 2,
+                              width: style == 'compact' || style == 'badge' || style == 'minimal' ? 23 : 38,
+                              color: style == 'badge' ? Colors.amber : (style == 'modern' ? Colors.cyanAccent : Colors.white),
+                            ),
                             const SizedBox(height: 3),
-                            Container(height: 2, width: style == 'compact' || style == 'badge' || style == 'minimal' ? 27 : 52, color: Colors.white70),
+                            if (style != 'minimal')
+                              Container(
+                                height: 2,
+                                width: style == 'compact' || style == 'badge' ? 27 : 52,
+                                color: Colors.white70,
+                              ),
                           ],
                         ),
                       ),
