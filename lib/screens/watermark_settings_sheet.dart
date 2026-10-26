@@ -90,15 +90,33 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 28,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final media = MediaQuery.of(context);
+    final availableHeight =
+        media.size.height - media.viewInsets.bottom - media.padding.top - 16;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: media.viewInsets.bottom > 0 ? 8 : 12,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: availableHeight.clamp(240.0, media.size.height * 0.92),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
           // Handle bar
           Center(
             child: Container(
@@ -429,10 +447,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             ),
           ),
 
-          const Gap(20),
+                    ],
+                  ),
+                ),
+              ),
+              const Gap(12),
 
-          // Tombol simpan
-          SizedBox(
+              // Tombol simpan tetap terlihat; konten di atas dapat digulir.
+              SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -447,9 +469,10 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
               icon: const Icon(Icons.check, size: 18),
               label: const Text('Simpan Pengaturan',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
