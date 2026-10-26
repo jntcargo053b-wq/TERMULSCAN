@@ -336,13 +336,13 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                       _PreviewLine(
                         text: 'WAKTU: 2026-10-26 08:30:00',
                         color: Colors.white,
-                        icon: Icons.qr_code,
+                        icon: Icons.access_time,
                       ),
                       const Gap(3),
                       _PreviewLine(
                         text: 'GPS: -7.966620, 112.632630',
                         color: Colors.white,
-                        icon: Icons.access_time,
+                        icon: Icons.my_location,
                       ),
                       const Gap(3),
                       _PreviewLine(
