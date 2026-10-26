@@ -17,17 +17,11 @@ class WatermarkBurnRequest {
   });
 }
 
-/// Service untuk membakar watermark teks dan logo secara permanen.
+/// Membakar watermark yang adaptif, terbaca, dan tidak menumpuk dengan logo.
 class WatermarkService {
-  // Konfigurasi yang bisa disesuaikan
-  static const int _padding = 16;
-  static const int _lineGap = 8;
-  static const int _lineHeight = 30; // Approx height for arial24
-  static const int _logoMaxSize = 64;
-  static const int _logoPadding = 16;
-  static const int _barAlpha = 150;
-  static const int _jpegQuality = 88;
+  static const int _jpegQuality = 90;
   static const int _maxWorkingDimension = 1920;
+  static const int _logoMaxSize = 88;
 
   static Future<void> burn({
     required String sourcePath,
@@ -35,7 +29,10 @@ class WatermarkService {
     required List<String> lines,
     Uint8List? logoBytes,
   }) async {
-    final nonEmptyLines = lines.where((l) => l.trim().isNotEmpty).toList();
+    final nonEmptyLines = lines
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
     await compute(
       _burnIsolate,
       WatermarkBurnRequest(
@@ -47,11 +44,6 @@ class WatermarkService {
     );
   }
 
-  /// Hitung lebar render sebuah string dalam [font], dalam satuan piksel.
-  /// `BitmapFont` di package `image` TIDAK punya method `getStringBounds()`
-  /// (itu bukan bagian dari API-nya — cuma ada `characterXAdvance`).
-  /// Ini pendekatan yang sama dipakai `drawString()` secara internal untuk
-  /// menghitung `stringWidth` sebelum centering teks.
   static int _textWidth(String text, img.BitmapFont font) {
     var width = 0;
     for (final rune in text.runes) {
@@ -60,46 +52,59 @@ class WatermarkService {
     return width;
   }
 
-  /// Helper untuk memecah teks panjang agar tidak keluar dari batas gambar.
-  static List<String> _wrapText(String text, img.BitmapFont font, int maxWidth) {
+  /// Membungkus teks panjang, termasuk barcode/alamat tanpa spasi.
+  static List<String> _wrapText(
+    String text,
+    img.BitmapFont font,
+    int maxWidth,
+  ) {
     if (maxWidth <= 0) return [text];
-    final words = text.split(' ');
-    final lines = <String>[];
-    String currentLine = '';
+    final result = <String>[];
+    var current = '';
 
-    for (final word in words) {
-      final testLine = currentLine.isEmpty ? word : '$currentLine $word';
-      if (_textWidth(testLine, font) <= maxWidth) {
-        currentLine = testLine;
-      } else {
-        if (currentLine.isNotEmpty) lines.add(currentLine);
-        currentLine = word;
+    for (final word in text.split(RegExp(r'\s+'))) {
+      if (word.isEmpty) continue;
+      final candidate = current.isEmpty ? word : '$current $word';
+      if (_textWidth(candidate, font) <= maxWidth) {
+        current = candidate;
+        continue;
       }
+
+      if (current.isNotEmpty) {
+        result.add(current);
+        current = '';
+      }
+
+      // Pecah kata yang lebih panjang daripada lebar foto agar tidak
+      // terpotong di tepi gambar.
+      var fragment = '';
+      for (final rune in word.runes) {
+        final char = String.fromCharCode(rune);
+        final next = '$fragment$char';
+        if (fragment.isNotEmpty && _textWidth(next, font) > maxWidth) {
+          result.add(fragment);
+          fragment = char;
+        } else {
+          fragment = next;
+        }
+      }
+      current = fragment;
     }
-    if (currentLine.isNotEmpty) lines.add(currentLine);
-    return lines;
+
+    if (current.isNotEmpty) result.add(current);
+    return result;
   }
 
   static void _burnIsolate(WatermarkBurnRequest req) {
     try {
-      // 1. Baca & decode
       final bytes = File(req.sourcePath).readAsBytesSync();
       var image = img.decodeImage(bytes);
       if (image == null) {
         throw Exception('Gagal decode gambar: ${req.sourcePath}');
       }
 
-      // 2. Terapkan orientasi EXIF secara fisik — kamera Android biasanya
-      // menyimpan foto potret dengan buffer piksel landscape + tag EXIF
-      // rotate, bukan piksel yang sungguh diputar. Tanpa ini, posisi bar &
-      // teks watermark dihitung relatif ke buffer mentah, lalu begitu file
-      // ditampilkan/dibagikan (yang menghormati EXIF), watermark pindah ke
-      // SAMPING gambar alih-alih di bawah.
+      // Bakar orientasi EXIF sebelum menghitung posisi watermark.
       image = img.bakeOrientation(image);
-
-      // Jangan mempertahankan bitmap camera/gallery yang sangat besar selama
-      // proses watermark. Setelah orientasi benar, turunkan ke maksimum 1920px
-      // agar peak RAM jauh lebih rendah pada perangkat dengan RAM kecil.
       final largest = image.width > image.height ? image.width : image.height;
       if (largest > _maxWorkingDimension) {
         final scale = _maxWorkingDimension / largest;
@@ -111,108 +116,102 @@ class WatermarkService {
       }
 
       final hasText = req.lines.isNotEmpty;
-      final hasLogo = req.logoBytes != null;
+      final decodedLogo =
+          req.logoBytes == null ? null : img.decodeImage(req.logoBytes!);
 
-      // 3. Jika tidak ada watermark sama sekali, cukup copy file (hindari degradasi kualitas)
-      if (!hasText && !hasLogo) {
-        // Hindari copy ke dirinya sendiri
+      if (!hasText && decodedLogo == null) {
         if (req.sourcePath != req.destPath) {
           File(req.sourcePath).copySync(req.destPath);
         }
         return;
       }
 
-      // Pastikan direktori tujuan ada
       File(req.destPath).parent.createSync(recursive: true);
 
-      final font = img.arial24;
-      // Minimal lebar teks 10 px agar tidak bermasalah saat padding besar
-      final maxTextWidth = (image.width - (2 * _padding)).clamp(10, image.width);
+      // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
+      // padding tetap terlalu besar pada gambar kecil.
+      final scale = (image.width / 1080).clamp(0.55, 1.65);
+      final padding = (16 * scale).round().clamp(8, 28);
+      final lineGap = (5 * scale).round().clamp(3, 10);
+      final font = image.width < 760 ? img.arial14 : img.arial24;
+      final lineHeight = image.width < 760 ? 18 : 30;
+      final maxTextWidth = (image.width - (2 * padding)).clamp(10, image.width);
 
-      // 4. Proses teks: wrap agar tidak overflow
-      List<String> wrappedLines = [];
+      final wrappedLines = <String>[];
       if (hasText) {
         for (final line in req.lines) {
           wrappedLines.addAll(_wrapText(line, font, maxTextWidth));
         }
       }
 
-      // 5. Gambar bar hitam transparan & teks di bagian bawah
-      if (wrappedLines.isNotEmpty) {
-        final totalTextHeight = wrappedLines.length * _lineHeight +
-            (wrappedLines.length - 1) * _lineGap;
-        final barHeight = (2 * _padding) + totalTextHeight;
-        // Pastikan bar tidak melewati batas atas (jika gambar sangat pendek)
-        final barY = (image.height - barHeight).clamp(0, image.height);
+      final logo = decodedLogo;
+      img.Image? resizedLogo;
+      if (logo != null) {
+        final maxLogo = (image.width * 0.12).round().clamp(36, _logoMaxSize);
+        final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
+        resizedLogo = img.copyResize(
+          logo,
+          width: (logo.width * ratio).round().clamp(1, maxLogo),
+          height: (logo.height * ratio).round().clamp(1, maxLogo),
+        );
+      }
 
-        // Bar hitam semi-transparan
+      if (wrappedLines.isNotEmpty) {
+        final textHeight = wrappedLines.length * lineHeight +
+            (wrappedLines.length - 1) * lineGap;
+        // Logo mendapat baris khusus di bagian atas panel. Teks dimulai
+        // setelahnya, sehingga alamat/AWB tidak pernah tertutup logo.
+        final logoHeaderHeight = resizedLogo == null
+            ? 0
+            : resizedLogo.height + (8 * scale).round();
+        final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
+        final barHeight =
+            (2 * padding) + logoHeaderHeight + headerGap + textHeight;
+        final barY = (image.height - barHeight).clamp(0, image.height - 1);
+
         img.fillRect(
           image,
           x1: 0,
           y1: barY,
-          x2: image.width,
-          y2: image.height,
-          color: img.ColorRgba8(0, 0, 0, _barAlpha),
+          x2: image.width - 1,
+          y2: image.height - 1,
+          color: img.ColorRgba8(0, 0, 0, 178),
         );
 
-        // Gambar teks baris per baris
-        var textY = barY + _padding;
-        for (final line in wrappedLines) {
-          // Hentikan jika teks sudah keluar dari batas bawah
-          if (textY + _lineHeight > image.height) break;
+        if (resizedLogo != null) {
+          img.compositeImage(
+            image,
+            resizedLogo,
+            dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1),
+            dstY: (barY + padding).clamp(0, image.height - 1),
+          );
+        }
 
+        var textY = barY + padding + logoHeaderHeight + headerGap;
+        for (final line in wrappedLines) {
+          if (textY + lineHeight > image.height) break;
           img.drawString(
             image,
             line,
             font: font,
-            x: _padding,
+            x: padding,
             y: textY,
             color: img.ColorRgb8(255, 255, 255),
           );
-          textY += _lineHeight + _lineGap;
+          textY += lineHeight + lineGap;
         }
+      } else if (resizedLogo != null) {
+        // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
+        // kanan bawah dengan batas aman pada foto kecil.
+        final padding = (12 * scale).round().clamp(5, 20);
+        img.compositeImage(
+          image,
+          resizedLogo,
+          dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1),
+          dstY: (image.height - resizedLogo.height - padding).clamp(0, image.height - 1),
+        );
       }
 
-      // 6. Proses logo (dengan menjaga rasio aspek)
-      if (hasLogo) {
-        final logo = img.decodeImage(req.logoBytes!);
-        if (logo != null) {
-          // Hitung ukuran baru dengan rasio aspek tetap
-          int newWidth, newHeight;
-          if (logo.width > logo.height) {
-            newWidth = _logoMaxSize;
-            newHeight = (logo.height * _logoMaxSize / logo.width).round();
-          } else {
-            newHeight = _logoMaxSize;
-            newWidth = (logo.width * _logoMaxSize / logo.height).round();
-          }
-          // Pastikan minimal 1px
-          newWidth = newWidth.clamp(1, _logoMaxSize);
-          newHeight = newHeight.clamp(1, _logoMaxSize);
-
-          final resizedLogo = img.copyResize(logo, width: newWidth, height: newHeight);
-
-          final dstX = image.width - newWidth - _logoPadding;
-          final dstY = image.height - newHeight - _logoPadding;
-
-          img.compositeImage(
-            image,
-            resizedLogo,
-            dstX: dstX.clamp(0, image.width),
-            dstY: dstY.clamp(0, image.height),
-          );
-        } else {
-          debugPrint('Peringatan: Gagal mendecode logo bytes.');
-        }
-      }
-
-      // 7. Encode ke file sementara lalu commit ke file publik.
-      //
-      // Jangan menulis langsung ke [destPath]. Jika proses Android terbunuh
-      // saat write/encode, file publik bisa menjadi JPEG/PNG setengah jadi.
-      // RAW tetap menjadi sumber recovery, tetapi file publik yang rusak dapat
-      // langsung terlihat di History. File sementara membuat kegagalan write
-      // tidak merusak file publik yang sebelumnya valid.
       final destLower = req.destPath.toLowerCase();
       final outBytes = destLower.endsWith('.png')
           ? img.encodePng(image)
@@ -226,11 +225,8 @@ class WatermarkService {
         if (!tempFile.existsSync() || tempFile.lengthSync() == 0) {
           throw Exception('File watermark sementara kosong');
         }
-
         final destination = File(req.destPath);
-        if (destination.existsSync()) {
-          destination.deleteSync();
-        }
+        if (destination.existsSync()) destination.deleteSync();
         tempFile.renameSync(req.destPath);
       } finally {
         if (tempFile.existsSync()) {
@@ -240,10 +236,6 @@ class WatermarkService {
         }
       }
     } catch (e, stack) {
-      // Tangkap error agar ada jejak yang jelas, lalu rethrow supaya
-      // pemanggil (compute() future) benar-benar tahu proses gagal —
-      // caller di UI (photo_scan_screen) menampilkan ini sebagai snackbar,
-      // bukan gagal diam-diam.
       debugPrint('Error di WatermarkService isolate: $e');
       debugPrint('$stack');
       rethrow;
