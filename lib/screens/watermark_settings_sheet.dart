@@ -93,7 +93,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     final media = MediaQuery.of(context);
     // Foto kamera/galeri dibatasi maxWidth 1024 px. Samakan preview dengan
     // skala watermark yang akan terlihat saat foto ditampilkan di layar.
-    final previewScale = ((media.size.width - 64) / 1024).clamp(0.2, 0.5);
+    final previewScale = ((media.size.width - 64) / 1024).clamp(0.2, 0.5).toDouble();
     final previewFontSize = 24 * previewScale;
     final previewPadding =
         (16 * (1024 / 1080) * previewScale).round().clamp(3, 8);
@@ -526,7 +526,7 @@ class _PreviewLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: (fontSize * 0.75).clamp(5.0, 10.0), color: color.withValues(alpha: 0.7)),
+        Icon(icon, size: (fontSize * 0.75).clamp(5.0, 10.0).toDouble(), color: color.withValues(alpha: 0.7)),
         const Gap(2),
         Expanded(
           child: Text(
