@@ -135,23 +135,23 @@ class WatermarkService {
       // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
       // padding tetap terlalu besar pada gambar kecil.
       final scale = (image.width / 1080).clamp(0.55, 1.65);
-      final padding = (16 * scale).round().clamp(8, 28).toInt();
-      final lineGap = (5 * scale).round().clamp(3, 10).toInt();
-      final font = image.width < 760 ? img.arial14 : img.arial24;
+      final padding = (9 * scale).round().clamp(5, 14).toInt();
+      final lineGap = (2 * scale).round().clamp(1, 4).toInt();
+      // Ukuran teks lebih kecil agar foto tetap menjadi fokus utama.\n      final font = image.width < 1280 ? img.arial14 : img.arial24;
       final lineHeight = image.width < 760 ? 18 : 30;
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
       // Batasi lebar teks agar panel tidak membentang menutupi foto.
       final maxTextRatio = style == 'compact' || style == 'badge'
-          ? 0.52
+          ? 0.46
           : style == 'minimal'
-              ? 0.58
+              ? 0.50
               : style == 'classic'
-                  ? 0.68
+                  ? 0.56
                   : style == 'top'
-                      ? 0.72
-                      : 0.76;
+                      ? 0.60
+                      : 0.62;
       final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding))
           .clamp(10, image.width).toInt();
 
@@ -165,7 +165,7 @@ class WatermarkService {
       final logo = decodedLogo;
       img.Image? resizedLogo;
       if (logo != null) {
-        final maxLogo = (image.width * 0.12).round().clamp(16, _logoMaxSize).toInt();
+        final maxLogo = (image.width * 0.08).round().clamp(14, 64).toInt();
         final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
         resizedLogo = img.copyResize(
           logo,
@@ -232,13 +232,14 @@ class WatermarkService {
         // Gunakan warna RGB solid supaya aksen benar-benar terlihat pada
         // hasil JPEG; alpha pada panel lama membuat semua gaya tampak hitam.
         final panelColor = switch (style) {
-          'classic' => img.ColorRgb8(25, 48, 78), // navy
-          'compact' => img.ColorRgb8(20, 78, 67), // hijau teal
-          'top' => img.ColorRgb8(104, 35, 54), // burgundy
-          'modern' => img.ColorRgb8(12, 39, 61), // midnight blue
-          'minimal' => img.ColorRgb8(42, 74, 77), // muted teal
-          'badge' => img.ColorRgb8(244, 185, 66), // amber
-          _ => img.ColorRgb8(25, 48, 78),
+          // Panel transparan menjaga detail foto tetap terlihat.
+          'classic' => img.ColorRgba8(25, 48, 78, 150), // navy
+          'compact' => img.ColorRgba8(20, 78, 67, 145), // hijau teal
+          'top' => img.ColorRgba8(104, 35, 54, 145), // burgundy
+          'modern' => img.ColorRgba8(12, 39, 61, 158), // midnight blue
+          'minimal' => img.ColorRgba8(42, 74, 77, 112), // muted teal
+          'badge' => img.ColorRgba8(244, 185, 66, 172), // amber
+          _ => img.ColorRgba8(25, 48, 78, 150),
         };
         img.fillRect(
           image,
