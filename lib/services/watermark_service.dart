@@ -104,7 +104,7 @@ class WatermarkService {
           final dy = y - cy;
           if (dx != 0 || dy != 0) {
             final dist = math.sqrt((dx * dx + dy * dy).toDouble());
-            coverage = (r + 0.5 - dist).clamp(0.0, 1.0);
+            coverage = (r + 0.5 - dist).clamp(0.0, 1.0).toDouble();
             if (coverage <= 0) continue;
           }
         }
