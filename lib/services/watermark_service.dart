@@ -214,9 +214,12 @@ class WatermarkService {
     final dayText = weekdays[date.weekday - 1];
     // Font bitmap image package tersedia dalam ukuran tetap; pilih ukuran lebih
     // besar agar hasil kamera mendekati referensi, terutama pada foto 1080p.
-    final small = img.arial24;
-    final large = img.arial48;
-    final timeScale = (image.width / 1152 * 1.85).clamp(1.35, 3.0).toDouble();
+    // Pada foto kecil, gunakan font dasar lebih kecil dan faktor skala yang
+    // adaptif. Membesarkan font bitmap 48 px secara paksa pada foto 320 px
+    // membuat waktu, tanggal, dan logo saling bertabrakan serta tampak kasar.
+    final small = image.width < 720 ? img.arial14 : img.arial24;
+    final large = image.width < 720 ? img.arial24 : img.arial48;
+    final timeScale = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
     final pad = (16 * scale).round().clamp(8, 48).toInt();
     final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
@@ -224,7 +227,7 @@ class WatermarkService {
     // Ukuran panel mengikuti konten, bukan pita dengan lebar tetap.
     // Sisakan ruang untuk logo di header agar tidak bertumpuk dengan tanggal.
     final panelRatio = 0.86;
-    final logoMax = (image.width * 0.095).round().clamp(24, 116).toInt();
+    final logoMax = (image.width * 0.075).round().clamp(12, 96).toInt();
     final logoWidth = logo == null
         ? 0
         : logoMax;
@@ -259,7 +262,7 @@ class WatermarkService {
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: right, y2: bottom,
-      radius: (8 * scale).round().clamp(2, 24).toInt(),
+      radius: (12 * scale).round().clamp(3, 32).toInt(),
       color: img.ColorRgba8(22, 27, 28, 145),
       colorBottom: img.ColorRgba8(18, 22, 23, 178));
 
