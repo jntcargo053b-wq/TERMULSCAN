@@ -448,7 +448,6 @@ class WatermarkService {
               y: markerY,
               radius: markerRadius,
               color: markerColor,
-              thickness: (scale * 1.2).round().clamp(1, 2).toInt(),
             );
             img.drawLine(
               image,
@@ -475,7 +474,6 @@ class WatermarkService {
               y: markerY,
               radius: markerRadius,
               color: markerColor,
-              thickness: (scale * 1.2).round().clamp(1, 2).toInt(),
             );
             img.fillCircle(
               image,
