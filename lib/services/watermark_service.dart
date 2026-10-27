@@ -182,8 +182,11 @@ class WatermarkService {
       final split = line.indexOf(':');
       final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
       final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
-      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP') {
+      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP' || key == 'TANGGAL') {
         rawTime = value;
+      } else if (RegExp(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').hasMatch(line) ||
+          RegExp(r'^\d{2}[/-]\d{2}[/-]\d{4}[ T]\d{2}:\d{2}').hasMatch(line)) {
+        rawTime = line.trim();
       } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
         address = value;
       } else if (key == 'GPS' || key == 'KOORDINAT') {
@@ -195,13 +198,14 @@ class WatermarkService {
       }
     }
     if (rawTime == null) return false;
-    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
-    if (match == null) return false;
-    final year = int.parse(match.group(1)!);
-    final month = int.parse(match.group(2)!);
-    final day = int.parse(match.group(3)!);
-    final hour = match.group(4)!;
-    final minute = match.group(5)!;
+    final isoMatch = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
+    final localMatch = RegExp(r'^(\d{2})[/-](\d{2})[/-](\d{4})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
+    if (isoMatch == null && localMatch == null) return false;
+    final year = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 1 : 3)!);
+    final month = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 2 : 2)!);
+    final day = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 3 : 1)!);
+    final hour = (isoMatch ?? localMatch)!.group(4)!;
+    final minute = (isoMatch ?? localMatch)!.group(5)!;
     const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
       'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     const weekdays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
