@@ -139,6 +139,46 @@ class WatermarkService {
     img.drawString(image, text, font: font, x: x, y: y, color: color);
   }
 
+  /// Menghapus latar hitam yang menempel pada tepi logo, tanpa menghapus
+  /// piksel gelap di bagian dalam logo yang tidak terhubung ke tepi.
+  static img.Image _removeConnectedDarkLogoBackground(img.Image source) {
+    if (source.width < 2 || source.height < 2) return source;
+    final total = source.width * source.height;
+    final visited = List<bool>.filled(total, false);
+    final queue = <int>[];
+    bool isDark(int x, int y) {
+      final p = source.getPixel(x, y);
+      return p.r < 42 && p.g < 42 && p.b < 42 && p.a > 0;
+    }
+    void add(int x, int y) {
+      if (x < 0 || y < 0 || x >= source.width || y >= source.height) return;
+      final index = y * source.width + x;
+      if (visited[index] || !isDark(x, y)) return;
+      visited[index] = true;
+      queue.add(index);
+    }
+    for (var x = 0; x < source.width; x++) {
+      add(x, 0);
+      add(x, source.height - 1);
+    }
+    for (var y = 1; y < source.height - 1; y++) {
+      add(0, y);
+      add(source.width - 1, y);
+    }
+    var head = 0;
+    while (head < queue.length) {
+      final index = queue[head++];
+      final x = index % source.width;
+      final y = index ~/ source.width;
+      source.getPixel(x, y).a = 0;
+      add(x - 1, y);
+      add(x + 1, y);
+      add(x, y - 1);
+      add(x, y + 1);
+    }
+    return source;
+  }
+
   static int markerRadiusForLineHeight(int lineHeight) =>
       (lineHeight * 0.30).round().clamp(5, 16).toInt();
 
@@ -400,8 +440,9 @@ class WatermarkService {
       // Pertahankan dimensi foto asli. Mengecilkan gambar di sini dapat
       // mengurangi detail bukti POD; ukuran watermark disesuaikan di bawah.
       final hasText = req.lines.isNotEmpty;
-      final decodedLogo =
-          req.logoBytes == null ? null : img.decodeImage(req.logoBytes!);
+      final decodedLogo = req.logoBytes == null
+          ? null
+          : _removeConnectedDarkLogoBackground(img.decodeImage(req.logoBytes!)!);
 
       final useClassicLayout = req.style == 'classic' && hasText &&
           _drawClassicTimestampLayout(
