@@ -184,13 +184,16 @@ class WatermarkService {
     final date = DateTime(year, month, day);
     final dateText = '$day ${months[month - 1]} $year';
     final dayText = weekdays[date.weekday - 1];
-    final small = image.width < 1280 ? img.arial14 : img.arial24;
-    final large = image.width < 1280 ? img.arial24 : img.arial48;
-    final pad = (24 * scale).round().clamp(10, 72).toInt();
-    final gap = (10 * scale).round().clamp(4, 28).toInt();
+    // Font bitmap image package tersedia dalam ukuran tetap; pilih ukuran lebih
+    // besar agar hasil kamera mendekati referensi, terutama pada foto 1080p.
+    final small = image.width < 1280 ? img.arial24 : img.arial48;
+    final large = img.arial48;
+    final pad = (16 * scale).round().clamp(8, 48).toInt();
+    final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
     final timeH = large.lineHeight + gap;
-    final maxWidth = (image.width * 0.82).round() - pad * 2;
+    final panelRatio = 0.74;
+    final maxWidth = (image.width * panelRatio).round() - pad * 2;
     final content = <String>[];
     if (address != null && address.isNotEmpty) content.addAll(_wrapText(address, small, maxWidth));
     if (gps != null && gps.isNotEmpty) content.add(gps);
@@ -198,7 +201,7 @@ class WatermarkService {
     final codeText = photoCode == null || photoCode.isEmpty ? null : 'Kode Foto: $photoCode';
     final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
         (codeText == null ? 0 : lineH + gap) + pad;
-    final panelWidth = (image.width * 0.86).round().clamp(1, image.width).toInt();
+    final panelWidth = (image.width * panelRatio).round().clamp(1, image.width).toInt();
     final left = (16 * scale).round().clamp(4, 48).toInt();
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
@@ -214,15 +217,15 @@ class WatermarkService {
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     final timeWidth = _textWidth(timeText, large);
     final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
-    img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (4 * scale).round().clamp(2, 6).toInt(),
+    img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (3 * scale).round().clamp(2, 5).toInt(),
       y2: y + timeH + lineH - gap, color: img.ColorRgb8(255, 190, 55));
-    final dateX = separatorX + (16 * scale).round();
+    final dateX = separatorX + (10 * scale).round();
     _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     if (logo != null) {
-      final logoMax = (image.width * 0.19).round().clamp(28, 220).toInt();
+      final logoMax = (image.width * 0.12).round().clamp(24, 140).toInt();
       final resized = img.copyResize(logo, width: logoMax,
         height: (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt());
       img.compositeImage(image, resized,
