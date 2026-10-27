@@ -147,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _buildHeader()),
               SliverToBoxAdapter(child: _buildLocationBar()),
               SliverToBoxAdapter(child: _buildStatsRow()),
+              SliverToBoxAdapter(child: _buildWatermarkSettingsCard()),
               SliverToBoxAdapter(child: _buildScanButtons()),
               SliverToBoxAdapter(child: _buildRecentSection()),
               const SliverToBoxAdapter(child: Gap(32)),
@@ -316,6 +317,60 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     ).animate().fadeIn(delay: 150.ms);
+  }
+
+  Widget _buildWatermarkSettingsCard() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Material(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: _openWatermarkSettings,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.tune, color: AppTheme.accent),
+                ),
+                const Gap(12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Pengaturan Watermark', style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      )),
+                      Gap(3),
+                      Text('Atur logo, nama operator, dan gaya watermark',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fadeIn(delay: 180.ms);
   }
 
   Widget _buildScanButtons() {

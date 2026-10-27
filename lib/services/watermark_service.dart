@@ -291,7 +291,7 @@ class WatermarkService {
     }
     final codeText = photoCode == null || photoCode.isEmpty
         ? <String>[]
-        : _wrapText('Kode Foto: $photoCode', small, maxWidth);
+        : _wrapText('AWB: $photoCode', small, maxWidth);
     var contentWidth = headerWidthEstimate;
     for (final line in content) {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
