@@ -134,5 +134,42 @@ void main() {
               entity.path.contains('.wm_backup_'));
       expect(leftovers, isEmpty);
     });
+
+    test('all six watermark styles render without changing dimensions', () async {
+      final source = File('${tempDir.path}/all-styles-source.jpg');
+      final original = img.Image(width: 1280, height: 720);
+      img.fill(original, color: img.ColorRgb8(160, 175, 185));
+      await source.writeAsBytes(img.encodeJpg(original, quality: 92));
+
+      const styles = [
+        'classic',
+        'compact',
+        'top',
+        'modern',
+        'minimal',
+        'badge',
+      ];
+
+      for (final style in styles) {
+        final destination = '${tempDir.path}/style-$style.jpg';
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination,
+          lines: const [
+            'Tanggal: 27/10/2026 08:30:00',
+            'AWB: TEST-123456789',
+            'Lokasi: Gudang pengiriman',
+          ],
+          style: style,
+        );
+
+        final file = File(destination);
+        expect(await file.exists(), isTrue, reason: 'style=$style');
+        final output = img.decodeImage(await file.readAsBytes());
+        expect(output, isNotNull, reason: 'style=$style');
+        expect(output!.width, 1280, reason: 'style=$style');
+        expect(output.height, 720, reason: 'style=$style');
+      }
+    });
   });
 }
