@@ -170,6 +170,7 @@ void main() {
         expect(output!.width, 1280, reason: 'style=$style');
         expect(output.height, 720, reason: 'style=$style');
       }
+    });
 
     test('does not silently truncate metadata that cannot fit the photo', () async {
       final source = File('${tempDir.path}/oversized-metadata-source.jpg');
@@ -208,7 +209,6 @@ void main() {
             entity.path.contains('.wm_backup_')),
         isEmpty,
       );
-    });
     });
   });
 }
