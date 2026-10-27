@@ -286,7 +286,7 @@ class WatermarkService {
       colorBottom: img.ColorRgba8(18, 22, 23, 178));
 
     var y = top + pad;
-    if (logoOnOwnRow && logo != null) {
+    if (logoOnOwnRow) {
       final headerLogo = img.copyResize(logo, width: logoMax, height: logoHeight);
       img.compositeImage(image, headerLogo,
         dstX: (right - pad - headerLogo.width).clamp(left + pad, right).toInt(),
