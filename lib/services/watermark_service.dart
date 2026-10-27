@@ -326,17 +326,73 @@ class WatermarkService {
         final textColor = style == 'badge'
             ? img.ColorRgb8(42, 35, 22)
             : img.ColorRgb8(255, 255, 255);
+        final labelColor = style == 'badge'
+            ? img.ColorRgb8(92, 60, 12)
+            : style == 'classic'
+                ? img.ColorRgb8(130, 195, 255)
+                : style == 'compact'
+                    ? img.ColorRgb8(112, 240, 190)
+                    : style == 'top'
+                        ? img.ColorRgb8(255, 160, 175)
+                        : style == 'minimal'
+                            ? img.ColorRgb8(150, 240, 220)
+                            : img.ColorRgb8(105, 235, 255);
+        var rowIndex = 0;
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
-          img.drawString(
-            image,
-            line,
-            font: font,
-            x: textX,
-            y: textY,
-            color: textColor,
-          );
+
+          // Garis pemisah dan label berwarna membuat informasi lebih mudah
+          // dipindai, tidak lagi berupa satu blok teks putih yang seragam.
+          if (rowIndex > 0 && (style == 'modern' || style == 'classic' || style == 'badge')) {
+            final dividerY = (textY - (lineGap ~/ 2)).clamp(barY, image.height - 1).toInt();
+            img.fillRect(
+              image,
+              x1: textX,
+              y1: dividerY,
+              x2: (panelRight - padding).clamp(textX, image.width - 1).toInt(),
+              y2: dividerY,
+              color: style == 'badge'
+                  ? img.ColorRgb8(190, 143, 48)
+                  : img.ColorRgb8(90, 115, 135),
+            );
+          }
+
+          final separator = line.indexOf(':');
+          if (separator > 0 && separator < line.length - 1) {
+            final label = line.substring(0, separator + 1);
+            final value = line.substring(separator + 1).trimLeft();
+            final labelWidth = _textWidth(label, font);
+            img.drawString(
+              image,
+              label,
+              font: font,
+              x: textX,
+              y: textY,
+              color: labelColor,
+            );
+            final valueX = textX + labelWidth + (4 * scale).round();
+            if (valueX < image.width - padding) {
+              img.drawString(
+                image,
+                value,
+                font: font,
+                x: valueX,
+                y: textY,
+                color: textColor,
+              );
+            }
+          } else {
+            img.drawString(
+              image,
+              line,
+              font: font,
+              x: textX,
+              y: textY,
+              color: textColor,
+            );
+          }
           textY += lineHeight + lineGap;
+          rowIndex++;
         }      } else if (resizedLogo != null) {
         // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
         // kanan bawah dengan batas aman pada foto kecil.
