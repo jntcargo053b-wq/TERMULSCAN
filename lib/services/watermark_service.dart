@@ -138,7 +138,7 @@ class WatermarkService {
       final padding = (9 * scale).round().clamp(5, 14).toInt();
       final lineGap = (2 * scale).round().clamp(1, 4).toInt();
       // Ukuran teks lebih kecil agar foto tetap menjadi fokus utama.\n      final font = image.width < 1280 ? img.arial14 : img.arial24;
-      final lineHeight = image.width < 760 ? 18 : 30;
+      final lineHeight = image.width < 1280 ? 18 : 30;
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
