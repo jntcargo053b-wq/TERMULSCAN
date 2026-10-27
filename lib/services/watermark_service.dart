@@ -224,7 +224,6 @@ class WatermarkService {
     final logoWidth = logo == null
         ? 0
         : logoMax;
-    final dateText = '$day ${months[month - 1]} $year';
     final headerWidthEstimate = (_textWidth('$hour:$minute', large) * timeScale).round() +
         gap + (3 * scale).round().clamp(2, 5).toInt() + gap +
         math.max(_textWidth(dateText, small), _textWidth(dayText, small)) +
