@@ -155,7 +155,8 @@ class WatermarkService {
     if (text.isEmpty) return;
     final sourceWidth = _textWidth(text, font).clamp(1, image.width).toInt();
     final sourceHeight = font.lineHeight.clamp(1, image.height).toInt();
-    final layer = img.Image(width: sourceWidth + 2, height: sourceHeight + 2);
+    // Gunakan kanal alfa agar area di luar glyph tetap transparan saat resize.
+    final layer = img.Image(width: sourceWidth + 2, height: sourceHeight + 2, numChannels: 4);
     img.fill(layer, color: img.ColorRgba8(0, 0, 0, 0));
     img.drawString(layer, text, font: font, x: 1, y: 1,
       color: color,);
@@ -300,7 +301,7 @@ class WatermarkService {
     final timeWidth = (_textWidth(timeText, large) * timeScale).round();
     final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
     img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (3 * scale).round().clamp(2, 5).toInt(),
-      y2: y + timeH + lineH - gap, color: img.ColorRgb8(255, 190, 55));
+      y2: y + timeH - gap, color: img.ColorRgb8(255, 190, 55));
     final dateX = separatorX + (10 * scale).round();
     _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
