@@ -47,7 +47,9 @@ class WatermarkService {
     );
   }
 
-  /// Rounded rectangle dengan alpha blending eksplisit untuk gambar RGB/JPEG.
+  /// Rounded rectangle anti-aliased dengan alpha blending dan gradasi opsional.
+  /// clip* membatasi area gambar tanpa mengubah geometri sudut panel; ini juga
+  /// dipakai untuk aksen agar ujungnya selalu mengikuti lengkungan panel.
   static void _fillRoundedRectBlended(
     img.Image image, {
     required int x1,
@@ -56,47 +58,67 @@ class WatermarkService {
     required int y2,
     required int radius,
     required img.Color color,
+    img.Color? colorBottom,
+    int? clipX1,
+    int? clipY1,
+    int? clipX2,
+    int? clipY2,
   }) {
     final left = x1.clamp(0, image.width - 1).toInt();
     final top = y1.clamp(0, image.height - 1).toInt();
     final right = x2.clamp(0, image.width - 1).toInt();
     final bottom = y2.clamp(0, image.height - 1).toInt();
     if (right < left || bottom < top) return;
-    final r = radius.clamp(0, math.min((right - left) ~/ 2, (bottom - top) ~/ 2)).toInt();
-    final alpha = (color.a.toDouble() / 255.0).clamp(0.0, 1.0);
-    if (alpha <= 0) return;
-    final inverseAlpha = 1.0 - alpha;
-    final red = color.r.toDouble();
-    final green = color.g.toDouble();
-    final blue = color.b.toDouble();
-    final radiusSquared = r * r;
+
+    final r = radius
+        .clamp(0, math.min((right - left) ~/ 2, (bottom - top) ~/ 2))
+        .toInt();
+    final span = math.max(1, bottom - top).toDouble();
+    final end = colorBottom ?? color;
+
     for (var y = top; y <= bottom; y++) {
+      if (clipY1 != null && y < clipY1) continue;
+      if (clipY2 != null && y > clipY2) continue;
+      final t = (y - top) / span;
+      final red = color.r.toDouble() +
+          (end.r.toDouble() - color.r.toDouble()) * t;
+      final green = color.g.toDouble() +
+          (end.g.toDouble() - color.g.toDouble()) * t;
+      final blue = color.b.toDouble() +
+          (end.b.toDouble() - color.b.toDouble()) * t;
+      final baseAlpha = (color.a.toDouble() +
+              (end.a.toDouble() - color.a.toDouble()) * t) /
+          255.0;
+
       for (var x = left; x <= right; x++) {
+        if (clipX1 != null && x < clipX1) continue;
+        if (clipX2 != null && x > clipX2) continue;
+
+        var coverage = 1.0;
         if (r > 0) {
-          var dx = 0;
-          var dy = 0;
-          if (x < left + r && y < top + r) {
-            dx = left + r - x; dy = top + r - y;
-          } else if (x > right - r && y < top + r) {
-            dx = x - (right - r); dy = top + r - y;
-          } else if (x < left + r && y > bottom - r) {
-            dx = left + r - x; dy = y - (bottom - r);
-          } else if (x > right - r && y > bottom - r) {
-            dx = x - (right - r); dy = y - (bottom - r);
+          final cx =
+              x < left + r ? left + r : (x > right - r ? right - r : x);
+          final cy =
+              y < top + r ? top + r : (y > bottom - r ? bottom - r : y);
+          final dx = x - cx;
+          final dy = y - cy;
+          if (dx != 0 || dy != 0) {
+            final dist = math.sqrt((dx * dx + dy * dy).toDouble());
+            coverage = (r + 0.5 - dist).clamp(0.0, 1.0);
+            if (coverage <= 0) continue;
           }
-          if (dx * dx + dy * dy > radiusSquared) continue;
         }
-        if (alpha >= 1.0) {
-          image.setPixelRgb(x, y, red.round(), green.round(), blue.round());
-        } else {
-          final pixel = image.getPixel(x, y);
-          image.setPixelRgb(
-            x, y,
-            (red * alpha + pixel.r.toDouble() * inverseAlpha).round(),
-            (green * alpha + pixel.g.toDouble() * inverseAlpha).round(),
-            (blue * alpha + pixel.b.toDouble() * inverseAlpha).round(),
-          );
-        }
+
+        final a = (baseAlpha * coverage).clamp(0.0, 1.0);
+        if (a <= 0) continue;
+        final p = image.getPixel(x, y);
+        image.setPixelRgb(
+          x,
+          y,
+          (red * a + p.r.toDouble() * (1 - a)).round(),
+          (green * a + p.g.toDouble() * (1 - a)).round(),
+          (blue * a + p.b.toDouble() * (1 - a)).round(),
+        );
       }
     }
   }
@@ -208,11 +230,7 @@ class WatermarkService {
           : image.width < 2560
               ? img.arial24
               : img.arial48;
-      final lineHeight = image.width < 1280
-          ? 18
-          : image.width < 2560
-              ? 30
-              : 56;
+      final lineHeight = font.lineHeight + (2 * scale).round();
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
@@ -317,98 +335,117 @@ class WatermarkService {
           panelRight = (panelWidth - 1).clamp(0, image.width - 1).toInt();
         }
 
-        // Gunakan warna RGB solid supaya aksen benar-benar terlihat pada
-        // hasil JPEG; alpha pada panel lama membuat semua gaya tampak hitam.
-        final panelColor = switch (style) {
-          // Panel transparan menjaga detail foto tetap terlihat.
-          'classic' => img.ColorRgba8(25, 48, 78, 150), // navy
-          'compact' => img.ColorRgba8(20, 78, 67, 145), // hijau teal
-          'top' => img.ColorRgba8(104, 35, 54, 145), // burgundy
-          'modern' => img.ColorRgba8(12, 39, 61, 158), // midnight blue
-          'minimal' => img.ColorRgba8(42, 74, 77, 112), // muted teal
-          'badge' => img.ColorRgba8(244, 185, 66, 172), // amber
-          _ => img.ColorRgba8(25, 48, 78, 150),
+        // Panel memakai gradasi halus; semua aksen dipotong menggunakan
+        // geometri panel yang sama agar sudut tidak keluar dari lengkungan.
+        final panelRadius = (12 * scale).round().clamp(6, 30).toInt();
+        final panelBottomY =
+            (barY + barHeight - 1).clamp(0, image.height - 1).toInt();
+        final (panelTop, panelBottom) = switch (style) {
+          'classic' => (
+              img.ColorRgba8(32, 58, 92, 160),
+              img.ColorRgba8(18, 36, 62, 175),
+            ),
+          'compact' => (
+              img.ColorRgba8(26, 90, 78, 155),
+              img.ColorRgba8(14, 62, 54, 170),
+            ),
+          'top' => (
+              img.ColorRgba8(118, 42, 62, 155),
+              img.ColorRgba8(84, 26, 42, 170),
+            ),
+          'modern' => (
+              img.ColorRgba8(18, 48, 74, 168),
+              img.ColorRgba8(8, 28, 46, 182),
+            ),
+          'minimal' => (
+              img.ColorRgba8(46, 80, 84, 150),
+              img.ColorRgba8(30, 58, 62, 165),
+            ),
+          'badge' => (
+              img.ColorRgba8(250, 196, 84, 182),
+              img.ColorRgba8(236, 170, 52, 192),
+            ),
+          _ => (
+              img.ColorRgba8(32, 58, 92, 160),
+              img.ColorRgba8(18, 36, 62, 175),
+            ),
         };
+
         _fillRoundedRectBlended(
           image,
           x1: panelX,
           y1: barY,
           x2: panelRight,
-          y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-          radius: (12 * scale).round().clamp(6, 30).toInt(),
-          color: panelColor,
+          y2: panelBottomY,
+          radius: panelRadius,
+          color: panelTop,
+          colorBottom: panelBottom,
         );
 
-        // Header/aksen memakai warna solid dan bentuk berbeda per template.
-        if (style == 'modern') {
-          final accentWidth = (5 * scale).round().clamp(3, 8).toInt();
-          img.fillRect(
-            image,
-            x1: panelX,
-            y1: barY,
-            x2: (panelX + accentWidth - 1).clamp(panelX, panelRight).toInt(),
-            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgb8(0, 205, 220),
-          );
-          final headerHeight = (6 * scale).round().clamp(4, 10).toInt();
-          img.fillRect(
+        void accent({
+          required img.Color color,
+          int? clipX1,
+          int? clipY1,
+          int? clipX2,
+          int? clipY2,
+        }) {
+          _fillRoundedRectBlended(
             image,
             x1: panelX,
             y1: barY,
             x2: panelRight,
-            y2: (barY + headerHeight - 1).clamp(barY, image.height - 1).toInt(),
-            color: img.ColorRgb8(0, 145, 170),
+            y2: panelBottomY,
+            radius: panelRadius,
+            color: color,
+            clipX1: clipX1,
+            clipY1: clipY1,
+            clipX2: clipX2,
+            clipY2: clipY2,
           );
-        } else if (style == 'minimal') {
-          final accentWidth = (3 * scale).round().clamp(2, 5).toInt();
-          img.fillRect(
-            image,
-            x1: panelX,
-            y1: barY,
-            x2: (panelX + accentWidth - 1).clamp(panelX, panelRight).toInt(),
-            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgb8(100, 205, 180),
-          );
-        } else if (style == 'badge') {
-          final accentHeight = (5 * scale).round().clamp(3, 8).toInt();
-          img.fillRect(
-            image,
-            x1: panelX,
-            y1: barY,
-            x2: panelRight,
-            y2: (barY + accentHeight - 1).clamp(barY, image.height - 1).toInt(),
-            color: img.ColorRgb8(255, 224, 145),
-          );
-        } else if (style == 'compact') {
-          final accentWidth = (4 * scale).round().clamp(2, 6).toInt();
-          img.fillRect(
-            image,
-            x1: panelRight - accentWidth + 1,
-            y1: barY,
-            x2: panelRight,
-            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgb8(93, 220, 174),
-          );
-        } else if (style == 'top') {
-          final headerHeight = (5 * scale).round().clamp(3, 8).toInt();
-          img.fillRect(
-            image,
-            x1: panelX,
-            y1: barY,
-            x2: panelRight,
-            y2: (barY + headerHeight - 1).clamp(barY, image.height - 1).toInt(),
-            color: img.ColorRgb8(218, 92, 111),
-          );
-        } else {
-          final accentHeight = (4 * scale).round().clamp(2, 6).toInt();
-          img.fillRect(
-            image,
-            x1: panelX,
-            y1: (barY + barHeight - accentHeight).clamp(barY, image.height - 1).toInt(),
-            x2: panelRight,
-            y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
-            color: img.ColorRgb8(91, 153, 220),
-          );
+        }
+
+        switch (style) {
+          case 'modern':
+            final w = (5 * scale).round().clamp(3, 8).toInt();
+            final h = (6 * scale).round().clamp(4, 10).toInt();
+            accent(
+              color: img.ColorRgb8(0, 145, 170),
+              clipY2: barY + h - 1,
+            );
+            accent(
+              color: img.ColorRgb8(0, 205, 220),
+              clipX2: panelX + w - 1,
+            );
+          case 'minimal':
+            final w = (3 * scale).round().clamp(2, 5).toInt();
+            accent(
+              color: img.ColorRgb8(100, 205, 180),
+              clipX2: panelX + w - 1,
+            );
+          case 'badge':
+            final h = (5 * scale).round().clamp(3, 8).toInt();
+            accent(
+              color: img.ColorRgb8(255, 224, 145),
+              clipY2: barY + h - 1,
+            );
+          case 'compact':
+            final w = (4 * scale).round().clamp(2, 6).toInt();
+            accent(
+              color: img.ColorRgb8(93, 220, 174),
+              clipX1: panelRight - w + 1,
+            );
+          case 'top':
+            final h = (5 * scale).round().clamp(3, 8).toInt();
+            accent(
+              color: img.ColorRgb8(218, 92, 111),
+              clipY2: barY + h - 1,
+            );
+          default:
+            final h = (4 * scale).round().clamp(2, 6).toInt();
+            accent(
+              color: img.ColorRgb8(91, 153, 220),
+              clipY1: panelBottomY - h + 1,
+            );
         }
 
         if (resizedLogo != null) {
@@ -429,34 +466,22 @@ class WatermarkService {
         final textColor = style == 'badge'
             ? img.ColorRgb8(42, 35, 22)
             : img.ColorRgb8(255, 255, 255);
-        final labelColor = style == 'badge'
-            ? img.ColorRgb8(92, 60, 12)
-            : style == 'classic'
-                ? img.ColorRgb8(130, 195, 255)
-                : style == 'compact'
-                    ? img.ColorRgb8(112, 240, 190)
-                    : style == 'top'
-                        ? img.ColorRgb8(255, 160, 175)
-                        : style == 'minimal'
-                            ? img.ColorRgb8(150, 240, 220)
-                            : img.ColorRgb8(105, 235, 255);
+        final accentLight = switch (style) {
+          'badge' => img.ColorRgb8(92, 60, 12),
+          'classic' => img.ColorRgb8(130, 195, 255),
+          'compact' => img.ColorRgb8(112, 240, 190),
+          'top' => img.ColorRgb8(255, 160, 175),
+          'minimal' => img.ColorRgb8(150, 240, 220),
+          _ => img.ColorRgb8(105, 235, 255),
+        };
+        final labelColor = accentLight;
         var rowIndex = 0;
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
 
           // Penanda kecil berwarna memberi setiap baris identitas visual,
           // seperti metadata terstruktur pada aplikasi timestamp/POD.
-          final markerColor = style == 'badge'
-              ? img.ColorRgb8(92, 60, 12)
-              : style == 'classic'
-                  ? img.ColorRgb8(130, 195, 255)
-                  : style == 'compact'
-                      ? img.ColorRgb8(112, 240, 190)
-                      : style == 'top'
-                          ? img.ColorRgb8(255, 160, 175)
-                          : style == 'minimal'
-                              ? img.ColorRgb8(150, 240, 220)
-                              : img.ColorRgb8(105, 235, 255);
+          final markerColor = accentLight;
           // Kolom ikon diperbesar dan dipisahkan secara konsisten dari teks.
           final markerRadius = markerRadiusForLineHeight(lineHeight);
           final markerX = (panelX + padding + markerRadius)
@@ -575,7 +600,7 @@ class WatermarkService {
             final labelWidth = _textWidth(label, font);
             _drawStringCrisp(
               image, label, font: font, x: textX, y: textY,
-              color: labelColor, shadowOffset: scale >= 1.5 ? 2 : 1,
+              color: labelColor, shadowOffset: math.max(1, (scale * 1.2).round()),
             );
             final valueX = textX + labelWidth + (4 * scale).round();
             if (valueX < image.width - padding) {
