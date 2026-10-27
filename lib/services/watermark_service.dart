@@ -390,7 +390,7 @@ class WatermarkService {
           int? clipY2,
         }) {
           _fillRoundedRectBlended(
-            image,
+            image!,
             x1: panelX,
             y1: barY,
             x2: panelRight,
@@ -548,7 +548,7 @@ class WatermarkService {
               x: markerX,
               y: markerY - 1,
               radius: (markerRadius / 2).round().clamp(1, markerRadius).toInt(),
-              color: panelColor,
+              color: panelBottom,
             );
             img.drawLine(
               image,
