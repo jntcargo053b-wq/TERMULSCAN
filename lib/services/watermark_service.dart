@@ -217,7 +217,7 @@ class WatermarkService {
     final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
     final timeH = (large.lineHeight * timeScale).round() + gap;
-    final panelRatio = 0.74;
+    final panelRatio = 0.72;
     final maxWidth = (image.width * panelRatio).round() - pad * 2;
     final content = <String>[];
     if (address != null && address.isNotEmpty) content.addAll(_wrapText(address, small, maxWidth));
@@ -251,7 +251,7 @@ class WatermarkService {
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     if (logo != null) {
-      final logoMax = (image.width * 0.12).round().clamp(24, 140).toInt();
+      final logoMax = (image.width * 0.095).round().clamp(24, 116).toInt();
       final resized = img.copyResize(logo, width: logoMax,
         height: (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt());
       img.compositeImage(image, resized,
@@ -759,7 +759,7 @@ class WatermarkService {
           }
           textY += lineHeight + lineGap;
           rowIndex++;
-        }      } else if (resizedLogo != null) {
+        }      } else if (resizedLogo != null && !useClassicLayout) {
         // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
         // kanan bawah dengan batas aman pada foto kecil.
         final padding = (12 * scale).round().clamp(5, 20).toInt();
