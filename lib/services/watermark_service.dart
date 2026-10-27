@@ -142,6 +142,30 @@ class WatermarkService {
   static int markerRadiusForLineHeight(int lineHeight) =>
       (lineHeight * 0.30).round().clamp(5, 16).toInt();
 
+  static void _drawScaledBitmapText(
+    img.Image image,
+    String text, {
+    required img.BitmapFont font,
+    required int x,
+    required int y,
+    required img.Color color,
+    required double factor,
+    int shadowOffset = 1,
+  }) {
+    if (text.isEmpty) return;
+    final sourceWidth = _textWidth(text, font).clamp(1, image.width).toInt();
+    final sourceHeight = font.lineHeight.clamp(1, image.height).toInt();
+    final layer = img.Image(width: sourceWidth + 2, height: sourceHeight + 2);
+    img.fill(layer, color: img.ColorRgba8(0, 0, 0, 0));
+    img.drawString(layer, text, font: font, x: 1, y: 1,
+      color: color,);
+    final targetWidth = ((sourceWidth + 2) * factor).round().clamp(1, image.width).toInt();
+    final targetHeight = ((sourceHeight + 2) * factor).round().clamp(1, image.height).toInt();
+    final scaled = img.copyResize(layer, width: targetWidth, height: targetHeight,
+      interpolation: img.Interpolation.linear);
+    img.compositeImage(image, scaled, dstX: x, dstY: y);
+  }
+
   /// Layout timestamp profesional dengan waktu dominan dan metadata bertingkat.
   static bool _drawClassicTimestampLayout(
     img.Image image, {
@@ -186,12 +210,13 @@ class WatermarkService {
     final dayText = weekdays[date.weekday - 1];
     // Font bitmap image package tersedia dalam ukuran tetap; pilih ukuran lebih
     // besar agar hasil kamera mendekati referensi, terutama pada foto 1080p.
-    final small = image.width < 1280 ? img.arial24 : img.arial48;
+    final small = img.arial24;
     final large = img.arial48;
+    final timeScale = (image.width / 1152 * 1.85).clamp(1.35, 3.0).toDouble();
     final pad = (16 * scale).round().clamp(8, 48).toInt();
     final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
-    final timeH = large.lineHeight + gap;
+    final timeH = (large.lineHeight * timeScale).round() + gap;
     final panelRatio = 0.74;
     final maxWidth = (image.width * panelRatio).round() - pad * 2;
     final content = <String>[];
@@ -213,9 +238,10 @@ class WatermarkService {
 
     var y = top + pad;
     final timeText = '$hour:$minute';
-    _drawStringCrisp(image, timeText, font: large, x: left + pad, y: y,
-      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
-    final timeWidth = _textWidth(timeText, large);
+    _drawScaledBitmapText(image, timeText, font: large, x: left + pad, y: y,
+      color: img.ColorRgb8(255, 255, 255), factor: timeScale,
+      shadowOffset: math.max(1, (scale * 1.2).round()));
+    final timeWidth = (_textWidth(timeText, large) * timeScale).round();
     final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
     img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (3 * scale).round().clamp(2, 5).toInt(),
       y2: y + timeH + lineH - gap, color: img.ColorRgb8(255, 190, 55));
