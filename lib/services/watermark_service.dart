@@ -47,59 +47,6 @@ class WatermarkService {
     );
   }
 
-  /// Menggambar panel dengan alpha blending eksplisit ke piksel foto.
-  /// Ini menghindari alpha diabaikan saat gambar sumber berformat RGB/JPEG.
-  static void _fillRectBlended(
-    img.Image image, {
-    required int x1,
-    required int y1,
-    required int x2,
-    required int y2,
-    required img.Color color,
-  }) {
-    final left = x1.clamp(0, image.width - 1).toInt();
-    final top = y1.clamp(0, image.height - 1).toInt();
-    final right = x2.clamp(0, image.width - 1).toInt();
-    final bottom = y2.clamp(0, image.height - 1).toInt();
-    if (right < left || bottom < top) return;
-
-    final alpha = (color.a.toDouble() / 255.0).clamp(0.0, 1.0);
-    if (alpha >= 1.0) {
-      img.fillRect(
-        image,
-        x1: left,
-        y1: top,
-        x2: right,
-        y2: bottom,
-        color: img.ColorRgb8(
-          color.r.toInt(),
-          color.g.toInt(),
-          color.b.toInt(),
-        ),
-      );
-      return;
-    }
-    if (alpha <= 0.0) return;
-
-    final inverseAlpha = 1.0 - alpha;
-    final red = color.r.toDouble();
-    final green = color.g.toDouble();
-    final blue = color.b.toDouble();
-
-    for (var y = top; y <= bottom; y++) {
-      for (var x = left; x <= right; x++) {
-        final pixel = image.getPixel(x, y);
-        image.setPixelRgb(
-          x,
-          y,
-          (red * alpha + pixel.r.toDouble() * inverseAlpha).round(),
-          (green * alpha + pixel.g.toDouble() * inverseAlpha).round(),
-          (blue * alpha + pixel.b.toDouble() * inverseAlpha).round(),
-        );
-      }
-    }
-  }
-
   /// Rounded rectangle dengan alpha blending eksplisit untuk gambar RGB/JPEG.
   static void _fillRoundedRectBlended(
     img.Image image, {
@@ -115,7 +62,7 @@ class WatermarkService {
     final right = x2.clamp(0, image.width - 1).toInt();
     final bottom = y2.clamp(0, image.height - 1).toInt();
     if (right < left || bottom < top) return;
-    final r = radius.clamp(0, math.min((right - left) ~/ 2, (bottom - top) ~/ 2));
+    final r = radius.clamp(0, math.min((right - left) ~/ 2, (bottom - top) ~/ 2)).toInt();
     final alpha = (color.a.toDouble() / 255.0).clamp(0.0, 1.0);
     if (alpha <= 0) return;
     final inverseAlpha = 1.0 - alpha;
