@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
@@ -98,6 +99,79 @@ class WatermarkService {
       }
     }
   }
+
+  /// Rounded rectangle dengan alpha blending eksplisit untuk gambar RGB/JPEG.
+  static void _fillRoundedRectBlended(
+    img.Image image, {
+    required int x1,
+    required int y1,
+    required int x2,
+    required int y2,
+    required int radius,
+    required img.Color color,
+  }) {
+    final left = x1.clamp(0, image.width - 1).toInt();
+    final top = y1.clamp(0, image.height - 1).toInt();
+    final right = x2.clamp(0, image.width - 1).toInt();
+    final bottom = y2.clamp(0, image.height - 1).toInt();
+    if (right < left || bottom < top) return;
+    final r = radius.clamp(0, math.min((right - left) ~/ 2, (bottom - top) ~/ 2));
+    final alpha = (color.a.toDouble() / 255.0).clamp(0.0, 1.0);
+    if (alpha <= 0) return;
+    final inverseAlpha = 1.0 - alpha;
+    final red = color.r.toDouble();
+    final green = color.g.toDouble();
+    final blue = color.b.toDouble();
+    final radiusSquared = r * r;
+    for (var y = top; y <= bottom; y++) {
+      for (var x = left; x <= right; x++) {
+        if (r > 0) {
+          var dx = 0;
+          var dy = 0;
+          if (x < left + r && y < top + r) {
+            dx = left + r - x; dy = top + r - y;
+          } else if (x > right - r && y < top + r) {
+            dx = x - (right - r); dy = top + r - y;
+          } else if (x < left + r && y > bottom - r) {
+            dx = left + r - x; dy = y - (bottom - r);
+          } else if (x > right - r && y > bottom - r) {
+            dx = x - (right - r); dy = y - (bottom - r);
+          }
+          if (dx * dx + dy * dy > radiusSquared) continue;
+        }
+        if (alpha >= 1.0) {
+          image.setPixelRgb(x, y, red.round(), green.round(), blue.round());
+        } else {
+          final pixel = image.getPixel(x, y);
+          image.setPixelRgb(
+            x, y,
+            (red * alpha + pixel.r.toDouble() * inverseAlpha).round(),
+            (green * alpha + pixel.g.toDouble() * inverseAlpha).round(),
+            (blue * alpha + pixel.b.toDouble() * inverseAlpha).round(),
+          );
+        }
+      }
+    }
+  }
+
+  static void _drawStringCrisp(
+    img.Image image,
+    String text, {
+    required img.BitmapFont font,
+    required int x,
+    required int y,
+    required img.Color color,
+    int shadowOffset = 1,
+  }) {
+    img.drawString(
+      image, text, font: font, x: x + shadowOffset, y: y + shadowOffset,
+      color: img.ColorRgb8(8, 12, 18),
+    );
+    img.drawString(image, text, font: font, x: x, y: y, color: color);
+  }
+
+  static int markerRadiusForLineHeight(int lineHeight) =>
+      (lineHeight * 0.30).round().clamp(5, 16).toInt();
 
   static int _textWidth(String text, img.BitmapFont font) {
     var width = 0;
@@ -205,7 +279,9 @@ class WatermarkService {
                   : style == 'top'
                       ? 0.60
                       : 0.62;
-      final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding))
+      // Sisakan ruang untuk jarak label/value agar teks tidak melewati panel.
+      final labelExtraGap = (4 * scale).round();
+      final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding) - labelExtraGap)
           .clamp(10, image.width).toInt();
 
       final wrappedLines = <String>[];
@@ -269,7 +345,8 @@ class WatermarkService {
         final maxPanelWidth = (image.width * maxTextRatio)
             .round()
             .clamp(1, image.width).toInt();
-        final panelWidth = (contentWidth + 2 * padding + textInset)
+        final iconGutter = (markerRadiusForLineHeight(lineHeight) * 2) + (8 * scale).round();
+        final panelWidth = (contentWidth + 2 * padding + textInset + iconGutter)
             .clamp(1, maxPanelWidth).toInt();
         final panelRightInset = (style == 'modern' ||
                 style == 'minimal' ||
@@ -303,12 +380,13 @@ class WatermarkService {
           'badge' => img.ColorRgba8(244, 185, 66, 172), // amber
           _ => img.ColorRgba8(25, 48, 78, 150),
         };
-        _fillRectBlended(
+        _fillRoundedRectBlended(
           image,
           x1: panelX,
           y1: barY,
           x2: panelRight,
           y2: (barY + barHeight - 1).clamp(0, image.height - 1).toInt(),
+          radius: (12 * scale).round().clamp(6, 30).toInt(),
           color: panelColor,
         );
 
@@ -396,10 +474,8 @@ class WatermarkService {
           );
         }
 
-        final textX = const {'compact', 'badge', 'minimal', 'modern'}
-                .contains(style)
-            ? panelX + padding + (style == 'modern' || style == 'minimal' ? (4 * scale).round() : 0)
-            : padding;
+        final textX = panelX + padding +
+            (markerRadiusForLineHeight(lineHeight) * 2) + (8 * scale).round();
         var textY = barY + padding + logoHeaderHeight + headerGap;
         final textColor = style == 'badge'
             ? img.ColorRgb8(42, 35, 22)
@@ -432,8 +508,9 @@ class WatermarkService {
                           : style == 'minimal'
                               ? img.ColorRgb8(150, 240, 220)
                               : img.ColorRgb8(105, 235, 255);
-          final markerRadius = (2.5 * scale).round().clamp(2, 4).toInt();
-          final markerX = (panelX + (padding / 2).round())
+          // Kolom ikon diperbesar dan dipisahkan secara konsisten dari teks.
+          final markerRadius = markerRadiusForLineHeight(lineHeight);
+          final markerX = (panelX + padding + markerRadius)
               .clamp(panelX, panelRight).toInt();
           final markerY = (textY + lineHeight / 2).round()
               .clamp(barY, image.height - 1).toInt();
@@ -547,33 +624,21 @@ class WatermarkService {
             final label = line.substring(0, separator + 1);
             final value = line.substring(separator + 1).trimLeft();
             final labelWidth = _textWidth(label, font);
-            img.drawString(
-              image,
-              label,
-              font: font,
-              x: textX,
-              y: textY,
-              color: labelColor,
+            _drawStringCrisp(
+              image, label, font: font, x: textX, y: textY,
+              color: labelColor, shadowOffset: scale >= 1.5 ? 2 : 1,
             );
             final valueX = textX + labelWidth + (4 * scale).round();
             if (valueX < image.width - padding) {
-              img.drawString(
-                image,
-                value,
-                font: font,
-                x: valueX,
-                y: textY,
-                color: textColor,
+              _drawStringCrisp(
+                image, value, font: font, x: valueX, y: textY,
+                color: textColor, shadowOffset: scale >= 1.5 ? 2 : 1,
               );
             }
           } else {
-            img.drawString(
-              image,
-              line,
-              font: font,
-              x: textX,
-              y: textY,
-              color: textColor,
+            _drawStringCrisp(
+              image, line, font: font, x: textX, y: textY,
+              color: textColor, shadowOffset: scale >= 1.5 ? 2 : 1,
             );
           }
           textY += lineHeight + lineGap;
