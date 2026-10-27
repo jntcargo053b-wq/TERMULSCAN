@@ -279,9 +279,12 @@ class WatermarkService {
                   : style == 'top'
                       ? 0.60
                       : 0.62;
-      // Sisakan ruang untuk jarak label/value agar teks tidak melewati panel.
+      // Alokasikan ruang untuk kolom ikon dan pemisah label/value sebelum wrapping.
       final labelExtraGap = (4 * scale).round();
-      final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding) - labelExtraGap)
+      final iconGutter = (markerRadiusForLineHeight(lineHeight) * 2) +
+          (8 * scale).round();
+      final maxTextWidth = ((image.width * maxTextRatio).round() -
+              (2 * padding) - iconGutter - labelExtraGap)
           .clamp(10, image.width).toInt();
 
       final wrappedLines = <String>[];
@@ -345,7 +348,6 @@ class WatermarkService {
         final maxPanelWidth = (image.width * maxTextRatio)
             .round()
             .clamp(1, image.width).toInt();
-        final iconGutter = (markerRadiusForLineHeight(lineHeight) * 2) + (8 * scale).round();
         final panelWidth = (contentWidth + 2 * padding + textInset + iconGutter)
             .clamp(1, maxPanelWidth).toInt();
         final panelRightInset = (style == 'modern' ||
