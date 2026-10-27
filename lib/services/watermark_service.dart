@@ -142,6 +142,111 @@ class WatermarkService {
   static int markerRadiusForLineHeight(int lineHeight) =>
       (lineHeight * 0.30).round().clamp(5, 16).toInt();
 
+  /// Layout timestamp profesional dengan waktu dominan dan metadata bertingkat.
+  static bool _drawClassicTimestampLayout(
+    img.Image image, {
+    required List<String> lines,
+    required img.Image? logo,
+    required double scale,
+  }) {
+    String? rawTime;
+    String? address;
+    String? gps;
+    String? photoCode;
+    final extras = <String>[];
+    for (final line in lines) {
+      final split = line.indexOf(':');
+      final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
+      final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
+      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP') {
+        rawTime = value;
+      } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
+        address = value;
+      } else if (key == 'GPS' || key == 'KOORDINAT') {
+        gps = value;
+      } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
+        photoCode = value;
+      } else {
+        extras.add(line);
+      }
+    }
+    if (rawTime == null) return false;
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
+    if (match == null) return false;
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    final hour = match.group(4)!;
+    final minute = match.group(5)!;
+    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const weekdays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    final date = DateTime(year, month, day);
+    final dateText = '$day ${months[month - 1]} $year';
+    final dayText = weekdays[date.weekday - 1];
+    final small = image.width < 1280 ? img.arial14 : img.arial24;
+    final large = image.width < 1280 ? img.arial24 : img.arial48;
+    final pad = (24 * scale).round().clamp(10, 72).toInt();
+    final gap = (10 * scale).round().clamp(4, 28).toInt();
+    final lineH = small.lineHeight + gap;
+    final timeH = large.lineHeight + gap;
+    final maxWidth = (image.width * 0.82).round() - pad * 2;
+    final content = <String>[];
+    if (address != null && address.isNotEmpty) content.addAll(_wrapText(address, small, maxWidth));
+    if (gps != null && gps.isNotEmpty) content.add(gps);
+    content.addAll(extras);
+    final codeText = photoCode == null || photoCode.isEmpty ? null : 'Kode Foto: $photoCode';
+    final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
+        (codeText == null ? 0 : lineH + gap) + pad;
+    final panelWidth = (image.width * 0.86).round().clamp(1, image.width).toInt();
+    final left = (16 * scale).round().clamp(4, 48).toInt();
+    final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
+    final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
+    final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
+    _fillRoundedRectBlended(image, x1: left, y1: top, x2: right, y2: bottom,
+      radius: (8 * scale).round().clamp(2, 24).toInt(),
+      color: img.ColorRgba8(22, 27, 28, 145),
+      colorBottom: img.ColorRgba8(18, 22, 23, 178));
+
+    var y = top + pad;
+    final timeText = '$hour:$minute';
+    _drawStringCrisp(image, timeText, font: large, x: left + pad, y: y,
+      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+    final timeWidth = _textWidth(timeText, large);
+    final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
+    img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (4 * scale).round().clamp(2, 6).toInt(),
+      y2: y + timeH + lineH - gap, color: img.ColorRgb8(255, 190, 55));
+    final dateX = separatorX + (16 * scale).round();
+    _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
+      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+    _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
+      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+    if (logo != null) {
+      final logoMax = (image.width * 0.19).round().clamp(28, 220).toInt();
+      final resized = img.copyResize(logo, width: logoMax,
+        height: (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt());
+      img.compositeImage(image, resized,
+        dstX: (right - pad - resized.width).clamp(left + pad, right).toInt(),
+        dstY: (top + pad).clamp(0, image.height - 1).toInt());
+    }
+    y += timeH + lineH + gap;
+    for (final line in content) {
+      if (y + small.lineHeight >= bottom - pad) break;
+      _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
+        color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+      y += lineH;
+    }
+    if (codeText != null && y + small.lineHeight < bottom) {
+      final dividerY = (y - gap ~/ 2).clamp(top, bottom).toInt();
+      img.fillRect(image, x1: left + pad, y1: dividerY, x2: right - pad, y2: dividerY,
+        color: img.ColorRgba8(255, 255, 255, 110));
+      y += gap;
+      _drawStringCrisp(image, codeText, font: small, x: left + pad, y: y,
+        color: img.ColorRgb8(220, 225, 225), shadowOffset: math.max(1, (scale * 1.2).round()));
+    }
+    return true;
+  }
+
   static int _textWidth(String text, img.BitmapFont font) {
     var width = 0;
     for (final rune in text.runes) {
@@ -208,6 +313,15 @@ class WatermarkService {
       final hasText = req.lines.isNotEmpty;
       final decodedLogo =
           req.logoBytes == null ? null : img.decodeImage(req.logoBytes!);
+
+      if (req.style == 'classic' && hasText) {
+        _drawClassicTimestampLayout(
+          image,
+          lines: req.lines,
+          logo: decodedLogo,
+          scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
+        );
+      }
 
       if (!hasText && decodedLogo == null) {
         if (req.sourcePath != req.destPath) {
