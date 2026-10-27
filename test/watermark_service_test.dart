@@ -53,6 +53,42 @@ void main() {
       expect(output.height, 640);
     });
 
+    test('classic layout keeps a safe margin at the right photo edge', () async {
+      final source = File('${tempDir.path}/classic-edge-source.png');
+      final destination = '${tempDir.path}/classic-edge-watermarked.png';
+      const background = img.ColorRgb8(180, 180, 180);
+      final original = img.Image(width: 320, height: 240);
+      img.fill(original, color: background);
+      await source.writeAsBytes(img.encodePng(original));
+
+      final logo = img.Image(width: 40, height: 20);
+      img.fill(logo, color: img.ColorRgba8(20, 120, 220, 255));
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination,
+        lines: const [
+          '28/10/2026 08:30:00',
+          'Alamat: Jalan pengiriman dengan keterangan yang cukup panjang',
+          'GPS: -7.123456, 112.123456',
+          'AWB: EDGE-REGRESSION-TEST',
+        ],
+        logoBytes: Uint8List.fromList(img.encodePng(logo)),
+      );
+
+      final output = img.decodeImage(await File(destination).readAsBytes());
+      expect(output, isNotNull);
+      expect(output!.width, 320);
+      expect(output.height, 240);
+      // PNG bersifat lossless: tepi paling kanan harus tetap berupa foto asli,
+      // bukan panel/logo yang meluber sampai keluar batas layout.
+      for (var y = 0; y < output.height; y++) {
+        final pixel = output.getPixel(output.width - 1, y);
+        expect(pixel.r, 180, reason: 'right edge red channel at y=$y');
+        expect(pixel.g, 180, reason: 'right edge green channel at y=$y');
+        expect(pixel.b, 180, reason: 'right edge blue channel at y=$y');
+      }
+    });
+
     test('supports logo-only watermark on a small image', () async {
       final source = File('${tempDir.path}/small.png');
       final destination = '${tempDir.path}/small-watermarked.png';
