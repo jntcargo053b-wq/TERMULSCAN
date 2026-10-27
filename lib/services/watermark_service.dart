@@ -23,7 +23,6 @@ class WatermarkBurnRequest {
 class WatermarkService {
   static const int _jpegQuality = 90;
   static const int _maxWorkingDimension = 1920;
-  static const int _logoMaxSize = 88;
 
   static Future<void> burn({
     required String sourcePath,
@@ -137,7 +136,8 @@ class WatermarkService {
       final scale = (image.width / 1080).clamp(0.55, 1.65);
       final padding = (9 * scale).round().clamp(5, 14).toInt();
       final lineGap = (2 * scale).round().clamp(1, 4).toInt();
-      // Ukuran teks lebih kecil agar foto tetap menjadi fokus utama.\n      final font = image.width < 1280 ? img.arial14 : img.arial24;
+      // Ukuran teks lebih kecil agar foto tetap menjadi fokus utama.
+      final font = image.width < 1280 ? img.arial14 : img.arial24;
       final lineHeight = image.width < 1280 ? 18 : 30;
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
