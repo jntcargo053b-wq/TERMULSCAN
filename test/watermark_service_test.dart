@@ -170,6 +170,45 @@ void main() {
         expect(output!.width, 1280, reason: 'style=$style');
         expect(output.height, 720, reason: 'style=$style');
       }
+
+    test('does not silently truncate metadata that cannot fit the photo', () async {
+      final source = File('${tempDir.path}/oversized-metadata-source.jpg');
+      final destination = File('${tempDir.path}/existing-safe-output.jpg');
+      final original = img.Image(width: 160, height: 120);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodeJpg(original, quality: 95));
+
+      // Existing output must remain intact if the metadata cannot fit.
+      final previousOutput = img.Image(width: 32, height: 32);
+      img.fill(previousOutput, color: img.ColorRgb8(30, 90, 150));
+      await destination.writeAsBytes(img.encodeJpg(previousOutput, quality: 95));
+
+      final tooManyLines = List<String>.generate(
+        30,
+        (index) => 'Metadata baris $index: informasi pengiriman',
+      );
+
+      await expectLater(
+        WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination.path,
+          lines: tooManyLines,
+          style: 'classic',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final preserved = img.decodeImage(await destination.readAsBytes());
+      expect(preserved, isNotNull);
+      expect(preserved!.width, 32);
+      expect(preserved.height, 32);
+      expect(
+        tempDir.listSync().where((entity) =>
+            entity.path.contains('.wm_tmp_') ||
+            entity.path.contains('.wm_backup_')),
+        isEmpty,
+      );
+    });
     });
   });
 }
