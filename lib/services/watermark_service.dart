@@ -527,7 +527,11 @@ class WatermarkService {
           }
           tempFile.renameSync(req.destPath);
           if (movedExistingDestination && backupFile.existsSync()) {
-            backupFile.deleteSync();
+            // Penghapusan cadangan bukan bagian dari keberhasilan tulis;
+            // kegagalannya tidak boleh melaporkan foto baru sebagai gagal.
+            try {
+              backupFile.deleteSync();
+            } catch (_) {}
           }
         } catch (_) {
           // Jika penggantian gagal, pulihkan hasil lama bila memungkinkan.
