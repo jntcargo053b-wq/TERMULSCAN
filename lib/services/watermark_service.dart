@@ -217,16 +217,32 @@ class WatermarkService {
     final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
     final timeH = (large.lineHeight * timeScale).round() + gap;
-    final panelRatio = 0.72;
+    // Ukuran panel mengikuti konten, bukan pita dengan lebar tetap.
+    // Sisakan ruang untuk logo di header agar tidak bertumpuk dengan tanggal.
+    final panelRatio = 0.86;
+    final logoMax = (image.width * 0.095).round().clamp(24, 116).toInt();
+    final logoWidth = logo == null
+        ? 0
+        : logoMax;
+    final dateText = '$day ${months[month - 1]} $year';
+    final headerWidthEstimate = (_textWidth('$hour:$minute', large) * timeScale).round() +
+        gap + (3 * scale).round().clamp(2, 5).toInt() + gap +
+        math.max(_textWidth(dateText, small), _textWidth(dayText, small)) +
+        (logoWidth > 0 ? gap + logoWidth : 0);
     final maxWidth = (image.width * panelRatio).round() - pad * 2;
     final content = <String>[];
     if (address != null && address.isNotEmpty) content.addAll(_wrapText(address, small, maxWidth));
     if (gps != null && gps.isNotEmpty) content.add(gps);
     content.addAll(extras);
     final codeText = photoCode == null || photoCode.isEmpty ? null : 'Kode Foto: $photoCode';
+    var contentWidth = headerWidthEstimate;
+    for (final line in content) {
+      contentWidth = math.max(contentWidth, _textWidth(line, small));
+    }
+    if (codeText != null) contentWidth = math.max(contentWidth, _textWidth(codeText, small));
+    final panelWidth = (contentWidth + pad * 2).clamp(1, (image.width * panelRatio).round()).toInt();
     final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
         (codeText == null ? 0 : lineH + gap) + pad;
-    final panelWidth = (image.width * panelRatio).round().clamp(1, image.width).toInt();
     final left = (16 * scale).round().clamp(4, 48).toInt();
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
@@ -251,7 +267,6 @@ class WatermarkService {
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     if (logo != null) {
-      final logoMax = (image.width * 0.095).round().clamp(24, 116).toInt();
       final resized = img.copyResize(logo, width: logoMax,
         height: (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt());
       img.compositeImage(image, resized,
