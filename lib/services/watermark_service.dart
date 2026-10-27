@@ -237,15 +237,27 @@ class WatermarkService {
         (logoWidth > 0 ? gap + logoWidth : 0);
     final maxWidth = (image.width * panelRatio).round() - pad * 2;
     final content = <String>[];
-    if (address != null && address.isNotEmpty) content.addAll(_wrapText(address, small, maxWidth));
-    if (gps != null && gps.isNotEmpty) content.add(gps);
-    content.addAll(extras);
-    final codeText = photoCode == null || photoCode.isEmpty ? null : 'Kode Foto: $photoCode';
+    // Semua metadata dibungkus pada batas panel, bukan hanya alamat. Koordinat,
+    // nomor AWB, atau nama operator yang panjang tidak boleh terpotong di tepi.
+    if (address != null && address.isNotEmpty) {
+      content.addAll(_wrapText(address, small, maxWidth));
+    }
+    if (gps != null && gps.isNotEmpty) {
+      content.addAll(_wrapText('GPS: $gps', small, maxWidth));
+    }
+    for (final extra in extras) {
+      content.addAll(_wrapText(extra, small, maxWidth));
+    }
+    final codeText = photoCode == null || photoCode.isEmpty
+        ? <String>[]
+        : _wrapText('Kode Foto: $photoCode', small, maxWidth);
     var contentWidth = headerWidthEstimate;
     for (final line in content) {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
-    if (codeText != null) contentWidth = math.max(contentWidth, _textWidth(codeText, small));
+    for (final line in codeText) {
+      contentWidth = math.max(contentWidth, _textWidth(line, small));
+    }
     final left = (16 * scale).round().clamp(4, 48).toInt();
     final rightMargin = left;
     // Panel harus menyisakan margin di kedua sisi foto. Batas sebelumnya hanya
@@ -257,7 +269,7 @@ class WatermarkService {
     ).clamp(1, image.width).toInt();
     final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
     final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
-        (codeText == null ? 0 : lineH + gap) + pad;
+        (codeText.isEmpty ? 0 : codeText.length * lineH + gap) + pad;
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
@@ -294,13 +306,17 @@ class WatermarkService {
         color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
       y += lineH;
     }
-    if (codeText != null && y + small.lineHeight < bottom) {
+    if (codeText.isNotEmpty && y + small.lineHeight < bottom) {
       final dividerY = (y - gap ~/ 2).clamp(top, bottom).toInt();
       img.fillRect(image, x1: left + pad, y1: dividerY, x2: right - pad, y2: dividerY,
-        color: img.ColorRgba8(255, 255, 255, 110));
+        color: img.ColorRgba8(255, 255, 255, 85));
       y += gap;
-      _drawStringCrisp(image, codeText, font: small, x: left + pad, y: y,
-        color: img.ColorRgb8(220, 225, 225), shadowOffset: math.max(1, (scale * 1.2).round()));
+      for (final line in codeText) {
+        if (y + small.lineHeight >= bottom) break;
+        _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
+          color: img.ColorRgb8(220, 225, 225), shadowOffset: math.max(1, (scale * 1.2).round()));
+        y += lineH;
+      }
     }
     return true;
   }
