@@ -514,8 +514,30 @@ class WatermarkService {
           throw Exception('File watermark sementara kosong');
         }
         final destination = File(req.destPath);
-        if (destination.existsSync()) destination.deleteSync();
-        tempFile.renameSync(req.destPath);
+        final backupPath =
+            '${req.destPath}.wm_backup_${DateTime.now().microsecondsSinceEpoch}';
+        final backupFile = File(backupPath);
+        var movedExistingDestination = false;
+        try {
+          // Simpan hasil lama sementara agar kegagalan rename tidak
+          // menghilangkan foto yang sebelumnya sudah tersimpan.
+          if (destination.existsSync()) {
+            destination.renameSync(backupPath);
+            movedExistingDestination = true;
+          }
+          tempFile.renameSync(req.destPath);
+          if (movedExistingDestination && backupFile.existsSync()) {
+            backupFile.deleteSync();
+          }
+        } catch (_) {
+          // Jika penggantian gagal, pulihkan hasil lama bila memungkinkan.
+          if (movedExistingDestination &&
+              backupFile.existsSync() &&
+              !destination.existsSync()) {
+            backupFile.renameSync(req.destPath);
+          }
+          rethrow;
+        }
       } finally {
         if (tempFile.existsSync()) {
           try {
