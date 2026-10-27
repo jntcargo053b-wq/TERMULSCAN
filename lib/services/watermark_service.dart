@@ -314,14 +314,13 @@ class WatermarkService {
       final decodedLogo =
           req.logoBytes == null ? null : img.decodeImage(req.logoBytes!);
 
-      if (req.style == 'classic' && hasText) {
-        _drawClassicTimestampLayout(
-          image,
-          lines: req.lines,
-          logo: decodedLogo,
-          scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
-        );
-      }
+      final useClassicLayout = req.style == 'classic' && hasText &&
+          _drawClassicTimestampLayout(
+            image,
+            lines: req.lines,
+            logo: decodedLogo,
+            scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
+          );
 
       if (!hasText && decodedLogo == null) {
         if (req.sourcePath != req.destPath) {
@@ -385,7 +384,7 @@ class WatermarkService {
         );
       }
 
-      if (wrappedLines.isNotEmpty) {
+      if (wrappedLines.isNotEmpty && !useClassicLayout) {
         final textHeight = wrappedLines.length * lineHeight +
             (wrappedLines.length - 1) * lineGap;
         // Logo mendapat baris khusus di bagian atas panel. Teks dimulai
