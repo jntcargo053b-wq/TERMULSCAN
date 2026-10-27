@@ -238,6 +238,15 @@ class WatermarkService {
         final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
         final barHeight =
             (2 * padding) + logoHeaderHeight + headerGap + textHeight;
+        // Jangan diam-diam membuang metadata yang tidak muat pada foto.
+        // Validasi sebelum panel digambar atau file tujuan diganti, sehingga
+        // foto hasil sebelumnya tetap aman jika metadata terlalu panjang.
+        if (barHeight > image.height) {
+          throw StateError(
+            'Metadata watermark terlalu panjang untuk tinggi foto '
+            '${image.width}x${image.height}; kurangi jumlah/panjang baris.',
+          );
+        }
         final insetStyles = const {'modern', 'minimal', 'badge'};
         final inset = insetStyles.contains(style)
             ? (10 * scale).round().clamp(5, 18).toInt()
