@@ -341,6 +341,32 @@ class WatermarkService {
         for (final line in wrappedLines) {
           if (textY + lineHeight > image.height) break;
 
+          // Penanda kecil berwarna memberi setiap baris identitas visual,
+          // seperti metadata terstruktur pada aplikasi timestamp/POD.
+          final markerColor = style == 'badge'
+              ? img.ColorRgb8(92, 60, 12)
+              : style == 'classic'
+                  ? img.ColorRgb8(130, 195, 255)
+                  : style == 'compact'
+                      ? img.ColorRgb8(112, 240, 190)
+                      : style == 'top'
+                          ? img.ColorRgb8(255, 160, 175)
+                          : style == 'minimal'
+                              ? img.ColorRgb8(150, 240, 220)
+                              : img.ColorRgb8(105, 235, 255);
+          final markerRadius = (2.5 * scale).round().clamp(2, 4).toInt();
+          final markerX = (panelX + (padding / 2).round())
+              .clamp(panelX, panelRight).toInt();
+          final markerY = (textY + lineHeight / 2).round()
+              .clamp(barY, image.height - 1).toInt();
+          img.fillCircle(
+            image,
+            x: markerX,
+            y: markerY,
+            radius: markerRadius,
+            color: markerColor,
+          );
+
           // Garis pemisah dan label berwarna membuat informasi lebih mudah
           // dipindai, tidak lagi berupa satu blok teks putih yang seragam.
           if (rowIndex > 0 && (style == 'modern' || style == 'classic' || style == 'badge')) {
