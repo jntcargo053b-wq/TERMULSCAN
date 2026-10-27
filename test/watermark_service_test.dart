@@ -56,9 +56,8 @@ void main() {
     test('classic layout keeps a safe margin at the right photo edge', () async {
       final source = File('${tempDir.path}/classic-edge-source.png');
       final destination = '${tempDir.path}/classic-edge-watermarked.png';
-      const background = img.ColorRgb8(180, 180, 180);
       final original = img.Image(width: 320, height: 240);
-      img.fill(original, color: background);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
       await source.writeAsBytes(img.encodePng(original));
 
       final logo = img.Image(width: 40, height: 20);
