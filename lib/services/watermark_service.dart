@@ -243,10 +243,18 @@ class WatermarkService {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
     if (codeText != null) contentWidth = math.max(contentWidth, _textWidth(codeText, small));
-    final panelWidth = (contentWidth + pad * 2).clamp(1, (image.width * panelRatio).round()).toInt();
+    final left = (16 * scale).round().clamp(4, 48).toInt();
+    final rightMargin = left;
+    // Panel harus menyisakan margin di kedua sisi foto. Batas sebelumnya hanya
+    // menghitung persentase lebar foto, sehingga pada foto kecil/teks panjang
+    // sisi kanan panel dapat terpotong setelah posisi kiri ditambahkan.
+    final panelMaxWidth = math.min(
+      (image.width * panelRatio).round(),
+      image.width - left - rightMargin,
+    ).clamp(1, image.width).toInt();
+    final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
     final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
         (codeText == null ? 0 : lineH + gap) + pad;
-    final left = (16 * scale).round().clamp(4, 48).toInt();
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
