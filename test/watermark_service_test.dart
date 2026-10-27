@@ -101,5 +101,38 @@ void main() {
       expect(output!.width, 2560);
       expect(output.height, 1440);
     });
+
+    test('replaces an existing output safely when burning a new watermark', () async {
+      final source = File('${tempDir.path}/replacement-source.jpg');
+      final destination = File('${tempDir.path}/existing-output.jpg');
+      final original = img.Image(width: 640, height: 480);
+      img.fill(original, color: img.ColorRgb8(170, 180, 190));
+      await source.writeAsBytes(img.encodeJpg(original, quality: 95));
+
+      // Simulasikan file hasil lama yang sudah ada di lokasi tujuan.
+      await destination.writeAsBytes(
+        img.encodeJpg(img.Image(width: 64, height: 64), quality: 90),
+      );
+
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination.path,
+        lines: const ['AWB: REPLACEMENT-TEST', 'Status: Terkirim'],
+        style: 'compact',
+      );
+
+      final outputBytes = await destination.readAsBytes();
+      expect(outputBytes, isNotEmpty);
+      final output = img.decodeImage(outputBytes);
+      expect(output, isNotNull);
+      expect(output!.width, 640);
+      expect(output.height, 480);
+
+      final leftovers = tempDir
+          .listSync()
+          .where((entity) => entity.path.contains('.wm_tmp_') ||
+              entity.path.contains('.wm_backup_'));
+      expect(leftovers, isEmpty);
+    });
   });
 }
