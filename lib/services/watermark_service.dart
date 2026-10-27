@@ -142,11 +142,16 @@ class WatermarkService {
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
-      final maxTextRatio = (style == 'compact' || style == 'badge')
-          ? 0.62
+      // Batasi lebar teks agar panel tidak membentang menutupi foto.
+      final maxTextRatio = style == 'compact' || style == 'badge'
+          ? 0.52
           : style == 'minimal'
-              ? 0.70
-              : 1.0;
+              ? 0.58
+              : style == 'classic'
+                  ? 0.68
+                  : style == 'top'
+                      ? 0.72
+                      : 0.76;
       final maxTextWidth = ((image.width * maxTextRatio).round() - (2 * padding))
           .clamp(10, image.width).toInt();
 
@@ -188,30 +193,40 @@ class WatermarkService {
             ? 0
             : (image.height - barHeight - inset)
                 .clamp(0, image.height - 1).toInt();
-        var panelX = style == 'minimal' ? inset : 0;
-        var panelRight = image.width - 1 - inset;
-        if (style == 'compact' || style == 'badge' || style == 'minimal') {
-          var contentWidth = 0;
-          for (final line in wrappedLines) {
-            final width = _textWidth(line, font);
-            if (width > contentWidth) contentWidth = width;
-          }
-          if (resizedLogo != null && resizedLogo.width > contentWidth) {
-            contentWidth = resizedLogo.width;
-          }
-          final accentExtra = style == 'minimal' ? (4 * scale).round() : 0;
-          final panelWidth = (contentWidth + 2 * padding + accentExtra)
-              .clamp(1, image.width).toInt();
-          if (style == 'compact' || style == 'badge') {
-            panelX = image.width - panelWidth - inset;
-            panelRight = image.width - 1 - inset;
-          } else {
-            panelRight = (panelX + panelWidth - 1)
-                .clamp(panelX, image.width - 1).toInt();
-          }
-        } else if (style == 'modern') {
-          panelX = inset;
-          panelRight = image.width - 1 - inset;
+        var contentWidth = 0;
+        for (final line in wrappedLines) {
+          final width = _textWidth(line, font);
+          if (width > contentWidth) contentWidth = width;
+        }
+        if (resizedLogo != null && resizedLogo.width > contentWidth) {
+          contentWidth = resizedLogo.width;
+        }
+        final textInset = style == 'modern' || style == 'minimal'
+            ? (4 * scale).round()
+            : 0;
+        final maxPanelWidth = (image.width * maxTextRatio)
+            .round()
+            .clamp(1, image.width).toInt();
+        final panelWidth = (contentWidth + 2 * padding + textInset)
+            .clamp(1, maxPanelWidth).toInt();
+        final panelRightInset = (style == 'modern' ||
+                style == 'minimal' ||
+                style == 'badge' ||
+                style == 'compact')
+            ? inset
+            : 0;
+        var panelX = style == 'compact' || style == 'badge'
+            ? image.width - panelWidth - panelRightInset
+            : (style == 'modern' || style == 'minimal')
+                ? inset
+                : 0;
+        // Classic/modern/minimal/header kini memakai panel selebar konten,
+        // bukan satu pita penuh yang menutupi objek foto.
+        var panelRight = (panelX + panelWidth - 1)
+            .clamp(panelX, image.width - 1 - panelRightInset).toInt();
+        if (panelRight < panelX) {
+          panelX = 0;
+          panelRight = (panelWidth - 1).clamp(0, image.width - 1).toInt();
         }
 
         // Gunakan warna RGB solid supaya aksen benar-benar terlihat pada
@@ -310,10 +325,10 @@ class WatermarkService {
           img.compositeImage(
             image,
             resizedLogo,
-            dstX: (style == 'minimal'
+            dstX: (style == 'minimal' || style == 'modern' || style == 'top'
                 ? panelX + padding
-                : image.width - resizedLogo.width - padding)
-                .clamp(panelX, image.width - resizedLogo.width).toInt(),
+                : panelRight - resizedLogo.width - padding)
+                .clamp(panelX, (panelRight - resizedLogo.width).clamp(panelX, image.width - 1).toInt()).toInt(),
             dstY: (barY + padding).clamp(0, image.height - 1).toInt(),
           );
         }
