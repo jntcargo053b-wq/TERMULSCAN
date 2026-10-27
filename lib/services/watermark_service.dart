@@ -162,7 +162,7 @@ class WatermarkService {
     final targetWidth = ((sourceWidth + 2) * factor).round().clamp(1, image.width).toInt();
     final targetHeight = ((sourceHeight + 2) * factor).round().clamp(1, image.height).toInt();
     final scaled = img.copyResize(layer, width: targetWidth, height: targetHeight,
-      interpolation: img.Interpolation.linear);
+      interpolation: img.Interpolation.cubic);
     img.compositeImage(image, scaled, dstX: x, dstY: y);
   }
 
@@ -268,7 +268,14 @@ class WatermarkService {
       image.width - left - rightMargin,
     ).clamp(1, image.width).toInt();
     final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
-    final totalHeight = pad + timeH + lineH + gap + content.length * lineH +
+    // Pada foto sempit, pindahkan logo ke baris tersendiri agar tidak menimpa
+    // tanggal/hari. Ukuran baris dihitung dari rasio logo yang sebenarnya.
+    final logoHeight = logo == null
+        ? 0
+        : (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt();
+    final logoOnOwnRow = logo != null && headerWidthEstimate + pad * 2 > panelMaxWidth;
+    final logoRowHeight = logoOnOwnRow ? logoHeight + gap : 0;
+    final totalHeight = pad + logoRowHeight + timeH + lineH + gap + content.length * lineH +
         (codeText.isEmpty ? 0 : codeText.length * lineH + gap) + pad;
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
@@ -279,6 +286,13 @@ class WatermarkService {
       colorBottom: img.ColorRgba8(18, 22, 23, 178));
 
     var y = top + pad;
+    if (logoOnOwnRow && logo != null) {
+      final headerLogo = img.copyResize(logo, width: logoMax, height: logoHeight);
+      img.compositeImage(image, headerLogo,
+        dstX: (right - pad - headerLogo.width).clamp(left + pad, right).toInt(),
+        dstY: y);
+      y += logoRowHeight;
+    }
     final timeText = '$hour:$minute';
     _drawScaledBitmapText(image, timeText, font: large, x: left + pad, y: y,
       color: img.ColorRgb8(255, 255, 255), factor: timeScale,
@@ -292,9 +306,9 @@ class WatermarkService {
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
-    if (logo != null) {
+    if (logo != null && !logoOnOwnRow) {
       final resized = img.copyResize(logo, width: logoMax,
-        height: (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt());
+        height: logoHeight);
       img.compositeImage(image, resized,
         dstX: (right - pad - resized.width).clamp(left + pad, right).toInt(),
         dstY: (top + pad).clamp(0, image.height - 1).toInt());

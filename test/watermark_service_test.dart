@@ -88,6 +88,40 @@ void main() {
       }
     });
 
+
+    test('classic layout keeps long GPS and photo codes inside a narrow photo', () async {
+      final source = File('${tempDir.path}/classic-long-source.png');
+      final destination = '${tempDir.path}/classic-long-watermarked.png';
+      final original = img.Image(width: 320, height: 320);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      final logo = img.Image(width: 80, height: 28);
+      img.fill(logo, color: img.ColorRgba8(20, 120, 220, 255));
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination,
+        lines: [
+          '28/10/2026 08:30:00',
+          'Alamat: Jalan tanpa batas dengan detail pengiriman yang panjang sekali',
+          'GPS: -7.123456789, 112.123456789, akurasi 3 meter',
+          'AWB: ${'LONG-CODE-1234567890-' * 5}',
+        ],
+        logoBytes: Uint8List.fromList(img.encodePng(logo)),
+      );
+
+      final output = img.decodeImage(await File(destination).readAsBytes());
+      expect(output, isNotNull);
+      expect(output!.width, 320);
+      expect(output.height, 320);
+      for (var y = 0; y < output.height; y++) {
+        final pixel = output.getPixel(output.width - 1, y);
+        expect(pixel.r, 180, reason: 'right edge red channel at y=$y');
+        expect(pixel.g, 180, reason: 'right edge green channel at y=$y');
+        expect(pixel.b, 180, reason: 'right edge blue channel at y=$y');
+      }
+    });
+
     test('supports logo-only watermark on a small image', () async {
       final source = File('${tempDir.path}/small.png');
       final destination = '${tempDir.path}/small-watermarked.png';
