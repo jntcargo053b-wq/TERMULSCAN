@@ -437,13 +437,96 @@ class WatermarkService {
               .clamp(panelX, panelRight).toInt();
           final markerY = (textY + lineHeight / 2).round()
               .clamp(barY, image.height - 1).toInt();
-          img.fillCircle(
-            image,
-            x: markerX,
-            y: markerY,
-            radius: markerRadius,
-            color: markerColor,
-          );
+          final markerLabel = line.toUpperCase();
+          if (markerLabel.startsWith('WAKTU') ||
+              markerLabel.startsWith('TIME') ||
+              markerLabel.startsWith('TANGGAL')) {
+            // Ikon jam: lingkaran dan dua jarum.
+            img.drawCircle(
+              image,
+              x: markerX,
+              y: markerY,
+              radius: markerRadius,
+              color: markerColor,
+              thickness: (scale * 1.2).round().clamp(1, 2).toInt(),
+            );
+            img.drawLine(
+              image,
+              x1: markerX,
+              y1: markerY,
+              x2: markerX,
+              y2: markerY - (markerRadius * 0.55).round(),
+              color: markerColor,
+            );
+            img.drawLine(
+              image,
+              x1: markerX,
+              y1: markerY,
+              x2: markerX + (markerRadius * 0.55).round(),
+              y2: markerY,
+              color: markerColor,
+            );
+          } else if (markerLabel.startsWith('GPS') ||
+              markerLabel.startsWith('KOORDINAT')) {
+            // Ikon target untuk koordinat GPS.
+            img.drawCircle(
+              image,
+              x: markerX,
+              y: markerY,
+              radius: markerRadius,
+              color: markerColor,
+              thickness: (scale * 1.2).round().clamp(1, 2).toInt(),
+            );
+            img.fillCircle(
+              image,
+              x: markerX,
+              y: markerY,
+              radius: (markerRadius / 2).round().clamp(1, markerRadius).toInt(),
+              color: markerColor,
+            );
+          } else if (markerLabel.startsWith('ALAMAT') ||
+              markerLabel.startsWith('LOKASI')) {
+            // Ikon pin lokasi yang tetap sederhana di ukuran foto kecil.
+            img.fillCircle(
+              image,
+              x: markerX,
+              y: markerY - 1,
+              radius: markerRadius,
+              color: markerColor,
+            );
+            img.fillCircle(
+              image,
+              x: markerX,
+              y: markerY - 1,
+              radius: (markerRadius / 2).round().clamp(1, markerRadius).toInt(),
+              color: panelColor,
+            );
+            img.drawLine(
+              image,
+              x1: markerX - markerRadius + 1,
+              y1: markerY + markerRadius - 1,
+              x2: markerX,
+              y2: markerY + markerRadius + 1,
+              color: markerColor,
+            );
+            img.drawLine(
+              image,
+              x1: markerX,
+              y1: markerY + markerRadius + 1,
+              x2: markerX + markerRadius - 1,
+              y2: markerY + markerRadius - 1,
+              color: markerColor,
+            );
+          } else {
+            // Penanda netral untuk AWB, operator, dan metadata lainnya.
+            img.fillCircle(
+              image,
+              x: markerX,
+              y: markerY,
+              radius: markerRadius,
+              color: markerColor,
+            );
+          }
 
           // Garis pemisah dan label berwarna membuat informasi lebih mudah
           // dipindai, tidak lagi berupa satu blok teks putih yang seragam.
