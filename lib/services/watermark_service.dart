@@ -22,7 +22,6 @@ class WatermarkBurnRequest {
 /// Membakar watermark yang adaptif, terbaca, dan tidak menumpuk dengan logo.
 class WatermarkService {
   static const int _jpegQuality = 90;
-  static const int _maxWorkingDimension = 1920;
 
   static Future<void> burn({
     required String sourcePath,
@@ -161,16 +160,8 @@ class WatermarkService {
 
       // Bakar orientasi EXIF sebelum menghitung posisi watermark.
       image = img.bakeOrientation(image);
-      final largest = image.width > image.height ? image.width : image.height;
-      if (largest > _maxWorkingDimension) {
-        final scale = _maxWorkingDimension / largest;
-        image = img.copyResize(
-          image,
-          width: (image.width * scale).round().clamp(1, _maxWorkingDimension).toInt(),
-          height: (image.height * scale).round().clamp(1, _maxWorkingDimension).toInt(),
-        );
-      }
-
+      // Pertahankan dimensi foto asli. Mengecilkan gambar di sini dapat
+      // mengurangi detail bukti POD; ukuran watermark disesuaikan di bawah.
       final hasText = req.lines.isNotEmpty;
       final decodedLogo =
           req.logoBytes == null ? null : img.decodeImage(req.logoBytes!);
@@ -186,12 +177,21 @@ class WatermarkService {
 
       // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
       // padding tetap terlalu besar pada gambar kecil.
-      final scale = (image.width / 1080).clamp(0.55, 1.65);
-      final padding = (9 * scale).round().clamp(5, 14).toInt();
-      final lineGap = (2 * scale).round().clamp(1, 4).toInt();
-      // Ukuran teks lebih kecil agar foto tetap menjadi fokus utama.
-      final font = image.width < 1280 ? img.arial14 : img.arial24;
-      final lineHeight = image.width < 1280 ? 18 : 30;
+      final scale = (image.width / 1080).clamp(0.55, 3.75);
+      final padding = (9 * scale).round().clamp(5, 18).toInt();
+      final lineGap = (2 * scale).round().clamp(1, 6).toInt();
+      // Naikkan ukuran font pada foto resolusi tinggi agar teks watermark
+      // tetap proporsional setelah dimensi asli dipertahankan.
+      final font = image.width < 1280
+          ? img.arial14
+          : image.width < 2560
+              ? img.arial24
+              : img.arial48;
+      final lineHeight = image.width < 1280
+          ? 18
+          : image.width < 2560
+              ? 30
+              : 56;
       final style = const {
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
@@ -218,7 +218,7 @@ class WatermarkService {
       final logo = decodedLogo;
       img.Image? resizedLogo;
       if (logo != null) {
-        final maxLogo = (image.width * 0.08).round().clamp(14, 64).toInt();
+        final maxLogo = (image.width * 0.08).round().clamp(14, 160).toInt();
         final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
         resizedLogo = img.copyResize(
           logo,
