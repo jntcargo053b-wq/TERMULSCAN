@@ -75,5 +75,31 @@ void main() {
       expect(output!.width, 160);
       expect(output.height, 120);
     });
+
+    test('preserves dimensions of a high-resolution POD photo', () async {
+      final source = File('${tempDir.path}/high-resolution.jpg');
+      final destination = '${tempDir.path}/high-resolution-watermarked.jpg';
+      final original = img.Image(width: 2560, height: 1440);
+      img.fill(original, color: img.ColorRgb8(175, 185, 195));
+      await source.writeAsBytes(img.encodeJpg(original, quality: 92));
+
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination,
+        lines: const [
+          'Tanggal: 27/10/2026 08:30:00',
+          'AWB: 12345678901234567890',
+          'Lokasi: Gudang pengiriman',
+        ],
+        style: 'modern',
+      );
+
+      final outputFile = File(destination);
+      expect(await outputFile.exists(), isTrue);
+      final output = img.decodeImage(await outputFile.readAsBytes());
+      expect(output, isNotNull);
+      expect(output!.width, 2560);
+      expect(output.height, 1440);
+    });
   });
 }
