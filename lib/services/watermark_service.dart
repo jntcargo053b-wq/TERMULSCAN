@@ -218,6 +218,7 @@ class WatermarkService {
     required img.Image? logo,
     required double scale,
     String style = 'classic',
+    String position = 'bottomRight',
   }) {
     String? rawTime;
     String? address;
@@ -313,9 +314,26 @@ class WatermarkService {
       image.width - inset * 2,
     ).clamp(1, image.width).toInt();
     final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
-    final left = (style == 'compact' || style == 'badge'
-        ? image.width - panelWidth - inset
-        : inset).clamp(0, image.width - panelWidth).toInt();
+    const supportedPositions = {
+      'topLeft', 'topCenter', 'topRight',
+      'centerLeft', 'center', 'centerRight',
+      'bottomLeft', 'bottomCenter', 'bottomRight',
+    };
+    final resolvedPosition = supportedPositions.contains(position)
+        ? position
+        : 'bottomRight';
+    final horizontal = resolvedPosition == 'center' ||
+            resolvedPosition.endsWith('Center')
+        ? 'center'
+        : resolvedPosition.endsWith('Left')
+            ? 'left'
+            : 'right';
+    final left = (horizontal == 'left'
+        ? inset
+        : horizontal == 'center'
+            ? (image.width - panelWidth) ~/ 2
+            : image.width - panelWidth - inset)
+        .clamp(0, image.width - panelWidth).toInt();
     // Pada foto sempit, pindahkan logo ke baris tersendiri agar tidak menimpa
     // tanggal/hari. Ukuran baris dihitung dari rasio logo yang sebenarnya.
     final logoHeight = logo == null
@@ -330,9 +348,17 @@ class WatermarkService {
     // Renderer umum akan menolak metadata berlebih sebelum file tujuan diganti,
     // sehingga foto lama tetap aman dan metadata tidak hilang diam-diam.
     if (totalHeight > image.height - verticalInset) return false;
-    final top = (style == 'top'
+    final vertical = resolvedPosition.startsWith('top')
+        ? 'top'
+        : resolvedPosition.startsWith('center')
+            ? 'center'
+            : 'bottom';
+    final top = (vertical == 'top'
         ? verticalInset
-        : (image.height - totalHeight - verticalInset)).clamp(0, image.height - 1).toInt();
+        : vertical == 'center'
+            ? (image.height - totalHeight) ~/ 2
+            : image.height - totalHeight - verticalInset)
+        .clamp(0, image.height - totalHeight).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
     // Badge memakai panel terang, jadi teks harus gelap agar kontrasnya tetap baik.
@@ -535,6 +561,7 @@ class WatermarkService {
             logo: decodedLogo,
             scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
             style: supportedStyle,
+            position: req.position,
           );
 
       if (!hasText && decodedLogo == null) {
