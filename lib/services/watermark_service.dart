@@ -387,6 +387,39 @@ class WatermarkService {
     final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (image.width - blockWidth) ~/ 2 : image.width - blockWidth - inset).clamp(0, image.width - blockWidth).toInt();
     final top = (vertical == 'top' ? inset : vertical == 'center' ? (image.height - totalHeight) ~/ 2 : image.height - totalHeight - inset).clamp(0, image.height - totalHeight).toInt();
 
+    // Identitas merek pada gaya Timemark, terpisah dari kapsul waktu dan
+    // metadata. Letakkan di kanan atas seperti referensi, kecuali watermark
+    // diposisikan di atas agar tidak saling menimpa.
+    if (vertical != 'top' && image.width >= 320) {
+      final brandFont = image.width < 720 ? img.arial14 : img.arial24;
+      final brandScale = (image.width / 1152 * 1.05).clamp(0.72, 1.35).toDouble();
+      const brand = 'TERMULSCAN';
+      const tagline = 'Foto dengan metadata';
+      final brandWidth = (_textWidth(brand, brandFont) * brandScale).round();
+      final taglineWidth = (_textWidth(tagline, small) * 0.9).round();
+      final brandRight = image.width - inset;
+      final brandY = inset;
+      _drawScaledBitmapText(
+        image,
+        brand,
+        font: brandFont,
+        x: (brandRight - brandWidth).clamp(0, image.width - brandWidth).toInt(),
+        y: brandY,
+        color: img.ColorRgb8(255, 190, 55),
+        factor: brandScale,
+        shadowOffset: 1,
+      );
+      _drawStringCrisp(
+        image,
+        tagline,
+        font: small,
+        x: (brandRight - taglineWidth).clamp(0, image.width - taglineWidth).toInt(),
+        y: brandY + (brandFont.lineHeight * brandScale).round(),
+        color: img.ColorRgb8(245, 245, 245),
+        shadowOffset: 1,
+      );
+    }
+
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: left + capsuleWidth, y2: top + capsuleHeight,
       radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
     _drawScaledBitmapText(image, time, font: large, x: left + pad,
