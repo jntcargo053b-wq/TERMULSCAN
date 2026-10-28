@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
@@ -26,6 +27,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   String? _previewError;
   bool _isRefreshingPreview = false;
   int _previewRefreshToken = 0;
+  Timer? _previewDebounce;
 
   @override
   void initState() {
@@ -44,8 +46,30 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
   @override
   void dispose() {
+    _previewDebounce?.cancel();
+    final previewPath = _previewPath;
+    if (previewPath != null) {
+      // Preview bersifat sementara; jangan biarkan file terakhir tertinggal
+      // setiap kali pengguna menutup lembar pengaturan.
+      unawaited(() async {
+        try {
+          final file = File(previewPath);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }());
+    }
     _operatorController.dispose();
     super.dispose();
+  }
+
+  /// Hindari render bitmap pada setiap ketukan saat nama operator diketik.
+  /// Render terbaru tetap menggunakan token agar hasil lama tidak menimpa
+  /// preview yang sesuai dengan input terakhir.
+  void _schedulePreviewRefresh() {
+    _previewDebounce?.cancel();
+    _previewDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) _refreshPreview();
+    });
   }
 
   Future<void> _pickLogo() async {
@@ -86,6 +110,8 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   /// Dengan demikian posisi panel, font, wrapping, padding, dan logo mengikuti
   /// WatermarkService, bukan tiruan layout berbasis widget Flutter.
   Future<void> _refreshPreview() async {
+    _previewDebounce?.cancel();
+    _previewDebounce = null;
     final token = ++_previewRefreshToken;
     if (mounted) {
       setState(() {
@@ -301,7 +327,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             ),
             onChanged: (_) {
               setState(() {});
-              _refreshPreview();
+              _schedulePreviewRefresh();
             },
           ),
           const Gap(20),
