@@ -48,13 +48,15 @@ class WatermarkSettings extends ChangeNotifier {
   }
 
   Future<void> setLogoPath(String? path) async {
-    _logoPath = path;
+    // Persist first: if SharedPreferences throws, keep the in-memory value
+    // consistent with the value that was previously saved.
     final prefs = await SharedPreferences.getInstance();
     if (path == null) {
       await prefs.remove(_keyLogoPath);
     } else {
       await prefs.setString(_keyLogoPath, path);
     }
+    _logoPath = path;
     notifyListeners();
   }
   Future<void> setWatermarkPosition(String position) async {

@@ -131,7 +131,23 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
         }
 
         await FileImage(dest).evict();
-        await _settings.setLogoPath(dest.path);
+        try {
+          await _settings.setLogoPath(dest.path);
+        } catch (_) {
+          // Jika preferensi gagal ditulis, kembalikan file lama agar path yang
+          // masih tersimpan tetap menunjuk ke logo sebelumnya.
+          try {
+            if (await dest.exists()) await dest.delete();
+            if (movedOldFile && await backup.exists()) {
+              await backup.rename(dest.path);
+              movedOldFile = false;
+              await FileImage(dest).evict();
+            }
+          } catch (restoreError) {
+            debugPrint('Gagal memulihkan logo watermark sebelumnya: $restoreError');
+          }
+          rethrow;
+        }
         if (await backup.exists()) {
           try {
             await backup.delete();
