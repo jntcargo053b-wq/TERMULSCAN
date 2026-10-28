@@ -346,9 +346,63 @@ class WatermarkService {
       'badge' => (img.ColorRgba8(246, 190, 74, 194), img.ColorRgba8(222, 151, 36, 208), img.ColorRgb8(255, 236, 174)),
       _ => (img.ColorRgba8(22, 27, 28, 145), img.ColorRgba8(18, 22, 23, 178), img.ColorRgb8(255, 190, 55)),
     };
+    final panelRadius = (12 * scale).round().clamp(3, 32).toInt();
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: right, y2: bottom,
-      radius: (12 * scale).round().clamp(3, 32).toInt(),
-      color: panelTop, colorBottom: panelBottom);
+      radius: panelRadius, color: panelTop, colorBottom: panelBottom);
+
+    // Setiap gaya memiliki detail bentuk tersendiri, bukan hanya palet warna.
+    // Aksen dipotong di dalam batas panel agar tidak meluber ke foto.
+    final accentThickness = (style == 'minimal' ? 3 : 5) * scale;
+    final accent = accentThickness.round().clamp(2, 12).toInt();
+    switch (style) {
+      case 'classic':
+        _fillRoundedRectBlended(
+          image,
+          x1: left, y1: top, x2: right, y2: bottom,
+          radius: panelRadius,
+          color: accentColor,
+          clipX1: left, clipX2: left + accent - 1,
+        );
+      case 'compact':
+        _fillRoundedRectBlended(
+          image,
+          x1: left, y1: top, x2: right, y2: bottom,
+          radius: panelRadius,
+          color: accentColor,
+          clipX1: right - accent + 1, clipX2: right,
+        );
+      case 'top':
+        _fillRoundedRectBlended(
+          image,
+          x1: left, y1: top, x2: right, y2: bottom,
+          radius: panelRadius,
+          color: accentColor,
+          clipY1: top, clipY2: top + accent - 1,
+        );
+      case 'modern':
+        _fillRoundedRectBlended(
+          image,
+          x1: left, y1: top, x2: right, y2: bottom,
+          radius: panelRadius,
+          color: accentColor,
+          clipX1: left, clipX2: left + accent - 1,
+        );
+        img.drawLine(image, x1: left + pad, y1: bottom - accent,
+          x2: right - pad, y2: bottom - accent, color: accentColor);
+      case 'minimal':
+        img.drawLine(image, x1: left + pad, y1: top + pad,
+          x2: left + pad, y2: bottom - pad, color: accentColor);
+      case 'badge':
+        _fillRoundedRectBlended(
+          image,
+          x1: left, y1: top, x2: right, y2: bottom,
+          radius: panelRadius,
+          color: accentColor,
+          clipY1: top, clipY2: top + accent - 1,
+        );
+      default:
+        break;
+    }
 
     var y = top + pad;
     if (logoOnOwnRow) {
