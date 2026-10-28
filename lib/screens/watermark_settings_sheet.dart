@@ -910,6 +910,73 @@ class _WatermarkStyleOption extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (style == 'classic')
+                      Positioned(
+                        left: 4,
+                        bottom: 3,
+                        child: SizedBox(
+                          width: 78,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                height: 17,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8F8F5),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Text(
+                                      '16:45',
+                                      style: TextStyle(
+                                        color: Color(0xFF123B75),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      width: 17,
+                                      height: 11,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFB7B7B2),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                      child: const Center(
+                                        child: Text('LOGO', style: TextStyle(fontSize: 3, color: Colors.black, fontWeight: FontWeight.w900)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(width: 2, height: 19, color: Colors.amber),
+                                  const SizedBox(width: 3),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(height: 3, width: 54, color: Colors.white),
+                                        const SizedBox(height: 3),
+                                        Container(height: 2, width: 68, color: Colors.white70),
+                                        const SizedBox(height: 2),
+                                        Container(height: 2, width: 44, color: Colors.white70),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (style != 'classic')
                     Positioned(
                       left: style == 'modern' || style == 'minimal' ? 4 : null,
                       right: style == 'classic' || style == 'top' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
