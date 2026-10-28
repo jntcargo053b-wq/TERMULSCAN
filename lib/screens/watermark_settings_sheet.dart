@@ -22,6 +22,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   final _operatorController = TextEditingController();
   final _picker = ImagePicker();
   bool _isSaving = false;
+  bool _isSavingSettings = false;
   String _selectedStyle = 'classic';
   String? _previewPath;
   String? _previewError;
@@ -237,10 +238,13 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   }
 
   Future<void> _save() async {
-    final name = _operatorController.text.trim();
-    await _settings.setOperatorName(name);
-    await _settings.setWatermarkStyle(_selectedStyle);
-    if (mounted) {
+    if (_isSavingSettings || _isSaving) return;
+    setState(() => _isSavingSettings = true);
+    try {
+      final name = _operatorController.text.trim();
+      await _settings.setOperatorName(name);
+      await _settings.setWatermarkStyle(_selectedStyle);
+      if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -249,6 +253,18 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           duration: Duration(seconds: 2),
         ),
       );
+    } catch (error, stack) {
+      debugPrint('Gagal menyimpan pengaturan watermark: $error');
+      debugPrint('$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pengaturan gagal disimpan. Silakan coba lagi.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingSettings = false);
     }
   }
 
@@ -652,10 +668,16 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  onPressed: _save,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text(
-                    'Simpan Pengaturan',
+                  onPressed: _isSavingSettings || _isSaving ? null : _save,
+                  icon: _isSavingSettings
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check, size: 18),
+                  label: Text(
+                    _isSavingSettings ? 'Menyimpan…' : 'Simpan Pengaturan',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
