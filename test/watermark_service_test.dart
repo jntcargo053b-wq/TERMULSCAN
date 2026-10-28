@@ -204,6 +204,37 @@ void main() {
       expect(leftovers, isEmpty);
     });
 
+    test('all nine watermark positions render and keep photo dimensions', () async {
+      final source = File('${tempDir.path}/nine-positions-source.png');
+      final original = img.Image(width: 640, height: 480);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      const positions = [
+        'topLeft', 'topCenter', 'topRight',
+        'centerLeft', 'center', 'centerRight',
+        'bottomLeft', 'bottomCenter', 'bottomRight',
+      ];
+      final signatures = <String>{};
+      for (final position in positions) {
+        final destination = '${tempDir.path}/position-$position.png';
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination,
+          lines: const ['WAKTU: 2026-10-28 08:30:00', 'AWB: POSITION-TEST'],
+          style: 'classic',
+          position: position,
+        );
+        final bytes = await File(destination).readAsBytes();
+        final output = img.decodeImage(bytes);
+        expect(output, isNotNull, reason: 'position=$position');
+        expect(output!.width, 640, reason: 'position=$position');
+        expect(output.height, 480, reason: 'position=$position');
+        expect(signatures.add(bytes.join(',')), isTrue,
+            reason: 'Posisi $position harus menghasilkan penempatan berbeda');
+      }
+    });
+
     test('all six watermark styles render without changing dimensions', () async {
       final source = File('${tempDir.path}/all-styles-source.jpg');
       final original = img.Image(width: 1280, height: 720);
