@@ -77,36 +77,85 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   }
 
   Future<void> _pickLogo() async {
-    if (_isSaving) return;
+    if (_isSaving || _isSavingSettings) return;
 
     try {
-      final file = await _picker.pickImage(
+      final picked = await _picker.pickImage(
         source: ImageSource.gallery,
         imageQuality: 90,
       );
       // Image picker dapat kembali setelah sheet ditutup.
-      if (file == null || !mounted) return;
+      if (picked == null || !mounted) return;
 
       setState(() => _isSaving = true);
+      final pickedFile = File(picked.path);
+      final pickedBytes = await pickedFile.readAsBytes();
+      if (pickedBytes.isEmpty || img.decodeImage(pickedBytes) == null) {
+        throw const FormatException('File logo bukan gambar yang valid.');
+      }
+      if (pickedBytes.length > 512 * 1024) {
+        throw const FormatException(
+          'Ukuran logo melebihi 512 KB. Pilih logo yang lebih kecil.',
+        );
+      }
+
       final appDir = await getApplicationDocumentsDirectory();
       if (!mounted) return;
+      final dest = File('${appDir.path}/wm_logo.png');
+      final temp = File('${appDir.path}/wm_logo.png.pending');
+      final backup = File('${appDir.path}/wm_logo.png.backup');
+      var movedOldFile = false;
 
-      final dest = '${appDir.path}/wm_logo.png';
-      await File(file.path).copy(dest);
+      try {
+        // Tulis file baru terpisah terlebih dahulu. Logo lama tetap utuh jika
+        // proses salin/validasi gagal atau aplikasi terhenti di tengah proses.
+        await temp.writeAsBytes(pickedBytes, flush: true);
+        final stagedBytes = await temp.readAsBytes();
+        if (stagedBytes.isEmpty || img.decodeImage(stagedBytes) == null) {
+          throw const FormatException('Logo sementara tidak valid.');
+        }
 
-      // Path tujuan tetap agar kompatibel dengan preferensi yang tersimpan.
-      // Evict cache karena cache Flutter menggunakan path sebagai kunci.
-      await FileImage(File(dest)).evict();
-      await _settings.setLogoPath(dest);
-      if (mounted) await _refreshPreview();
+        if (await backup.exists()) await backup.delete();
+        if (await dest.exists()) {
+          await dest.rename(backup.path);
+          movedOldFile = true;
+        }
+        try {
+          await temp.rename(dest.path);
+        } catch (_) {
+          if (movedOldFile && await backup.exists() && !await dest.exists()) {
+            await backup.rename(dest.path);
+            movedOldFile = false;
+          }
+          rethrow;
+        }
+
+        await FileImage(dest).evict();
+        await _settings.setLogoPath(dest.path);
+        if (await backup.exists()) {
+          try {
+            await backup.delete();
+          } catch (error) {
+            debugPrint('Logo baru terpasang, cadangan lama belum terhapus: $error');
+          }
+        }
+        if (mounted) await _refreshPreview();
+      } finally {
+        if (await temp.exists()) {
+          try {
+            await temp.delete();
+          } catch (_) {}
+        }
+      }
     } catch (error, stack) {
       debugPrint('Gagal memilih logo watermark: $error');
       debugPrint('$stack');
       if (mounted) {
+        final message = error is FormatException
+            ? error.message
+            : 'Logo gagal dipasang. Logo lama tetap dipertahankan; coba lagi.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logo gagal dipasang. Periksa file dan coba lagi.'),
-          ),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {
