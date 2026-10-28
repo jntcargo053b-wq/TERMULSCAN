@@ -336,12 +336,17 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
 
   Future<void> _save() async {
     if (_isSavingSettings || _isSaving) return;
+    // Ambil snapshot sebelum operasi async agar satu kali tekan Simpan
+    // selalu menyimpan satu set nilai yang konsisten.
+    final name = _operatorController.text.trim();
+    final style = _selectedStyle;
+    final position = _selectedPosition;
+
     setState(() => _isSavingSettings = true);
     try {
-      final name = _operatorController.text.trim();
       await _settings.setOperatorName(name);
-      await _settings.setWatermarkStyle(_selectedStyle);
-      await _settings.setWatermarkPosition(_selectedPosition);
+      await _settings.setWatermarkStyle(style);
+      await _settings.setWatermarkPosition(position);
       if (!mounted) return;
       // Ambil messenger sebelum route ditutup agar tidak melakukan lookup
       // menggunakan BuildContext dari sheet yang sudah dilepas.
