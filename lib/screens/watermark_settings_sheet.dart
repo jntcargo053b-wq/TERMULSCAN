@@ -920,7 +920,95 @@ class _WatermarkStyleOption extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (style == 'classic' || style == 'timemark')
+                    if (style == 'timemark') ...[
+                      const Positioned(
+                        right: 4,
+                        top: 3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('TERMULSCAN', style: TextStyle(
+                              color: Color(0xFFFFC247),
+                              fontSize: 6,
+                              fontWeight: FontWeight.w900,
+                              shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
+                            )),
+                            Text('Foto dengan metadata', style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 4,
+                              shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
+                            )),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        left: 4,
+                        bottom: 3,
+                        child: SizedBox(
+                          width: 94,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                height: 19,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8F8F5),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Text('16:45', style: TextStyle(
+                                      color: Color(0xFF123B75),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                    )),
+                                    const Spacer(),
+                                    Container(
+                                      width: 24,
+                                      height: 13,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFB7B7B2),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                      child: const Center(
+                                        child: Text('LOGO', style: TextStyle(
+                                          fontSize: 4,
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.w900,
+                                        )),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(width: 2, height: 18, color: Colors.amber),
+                                  const SizedBox(width: 3),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(height: 3, width: 54, color: Colors.white),
+                                        const SizedBox(height: 3),
+                                        Container(height: 2, width: 80, color: Colors.white70),
+                                        const SizedBox(height: 2),
+                                        Container(height: 2, width: 59, color: Colors.white70),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (style == 'classic')
                       Positioned(
                         left: 4,
                         bottom: 3,
@@ -986,7 +1074,7 @@ class _WatermarkStyleOption extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (style != 'classic')
+                    if (style != 'classic' && style != 'timemark')
                     Positioned(
                       left: style == 'modern' || style == 'minimal' ? 4 : null,
                       right: style == 'classic' || style == 'top' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
