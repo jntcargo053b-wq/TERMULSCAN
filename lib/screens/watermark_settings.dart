@@ -41,9 +41,9 @@ class WatermarkSettings extends ChangeNotifier {
   }
 
   Future<void> setOperatorName(String name) async {
-    _operatorName = name;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyOperator, name);
+    _operatorName = name;
     notifyListeners();
   }
 
@@ -64,17 +64,19 @@ class WatermarkSettings extends ChangeNotifier {
       'topLeft', 'topCenter', 'topRight', 'centerLeft', 'center',
       'centerRight', 'bottomLeft', 'bottomCenter', 'bottomRight',
     };
-    _watermarkPosition = supported.contains(position) ? position : 'bottomRight';
+    final normalized = supported.contains(position) ? position : 'bottomRight';
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWatermarkPosition, _watermarkPosition);
+    await prefs.setString(_keyWatermarkPosition, normalized);
+    _watermarkPosition = normalized;
     notifyListeners();
   }
 
   Future<void> setWatermarkStyle(String style) async {
     const supported = {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'};
-    _watermarkStyle = supported.contains(style) ? style : 'classic';
+    final normalized = supported.contains(style) ? style : 'classic';
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyWatermarkStyle, _watermarkStyle);
+    await prefs.setString(_keyWatermarkStyle, normalized);
+    _watermarkStyle = normalized;
     notifyListeners();
   }
 }
