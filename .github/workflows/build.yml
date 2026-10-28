@@ -46,6 +46,29 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Install Android NDK with retry
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          NDK_PACKAGE="ndk;28.2.13676358"
+          test -x "$SDKMANAGER"
+          for attempt in 1 2 3; do
+            echo "Installing $NDK_PACKAGE (attempt $attempt/3)"
+            if yes | "$SDKMANAGER" --install "$NDK_PACKAGE"; then
+              if [ -d "$ANDROID_SDK_ROOT/ndk/28.2.13676358" ]; then
+                echo "NDK installation verified."
+                exit 0
+              fi
+            fi
+            echo "NDK install attempt $attempt failed."
+            rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.cache"
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+          echo "NDK installation failed after 3 attempts." >&2
+          exit 1
+
       - name: Build release APK
         if: github.event_name != 'pull_request'
         run: flutter build apk --release
