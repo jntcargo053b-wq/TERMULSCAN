@@ -424,7 +424,7 @@ class WatermarkService {
     _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
       color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
-      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+      color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
     if (logo != null && !logoOnOwnRow) {
       final resized = img.copyResize(logo, width: logoMax,
         height: logoHeight);
@@ -436,7 +436,7 @@ class WatermarkService {
     for (final line in content) {
       if (y + small.lineHeight >= bottom - pad) break;
       _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
-        color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+        color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
       y += lineH;
     }
     if (awbText.isNotEmpty && y + small.lineHeight < bottom) {
