@@ -117,14 +117,21 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     // dari versi aplikasi lama atau konfigurasi lain.
     final oldPath = _settings.logoPath;
     await _settings.setLogoPath(null);
-    if (oldPath != null && File(oldPath).uri.pathSegments.isNotEmpty &&
-        File(oldPath).uri.pathSegments.last == 'wm_logo.png') {
-      final oldFile = File(oldPath);
+    if (oldPath != null) {
       try {
-        await FileImage(oldFile).evict();
-        if (await oldFile.exists()) await oldFile.delete();
-      } catch (error) {
+        // Cocokkan path absolut dengan file milik aplikasi. Nama basename saja
+        // tidak cukup: file eksternal juga mungkin bernama wm_logo.png.
+        final appDir = await getApplicationDocumentsDirectory();
+        final managedPath =
+            File('${appDir.path}/wm_logo.png').absolute.path;
+        final oldFile = File(oldPath).absolute;
+        if (oldFile.path == managedPath) {
+          await FileImage(oldFile).evict();
+          if (await oldFile.exists()) await oldFile.delete();
+        }
+      } catch (error, stack) {
         debugPrint('Gagal membersihkan file logo watermark: $error');
+        debugPrint('$stack');
       }
     }
     if (mounted) setState(() {});
@@ -245,8 +252,11 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       await _settings.setOperatorName(name);
       await _settings.setWatermarkStyle(_selectedStyle);
       if (!mounted) return;
+      // Ambil messenger sebelum route ditutup agar tidak melakukan lookup
+      // menggunakan BuildContext dari sheet yang sudah dilepas.
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('✓ Pengaturan watermark disimpan'),
           backgroundColor: Colors.green,
