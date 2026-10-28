@@ -693,7 +693,6 @@ class _RecentThumbnailState extends State<_RecentThumbnail> {
   @override
   Widget build(BuildContext context) {
     final entry = widget.entry;
-    final color = widget.color;
     if (!entry.isPhoto) {
       return _placeholder(Icons.qr_code_scanner);
     }
@@ -836,7 +835,7 @@ class _RecentThumbnailState extends State<_RecentThumbnail> {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
+        color: widget.color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(8),
       ),
       child: loading
@@ -847,7 +846,7 @@ class _RecentThumbnailState extends State<_RecentThumbnail> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          : Icon(icon, color: color, size: 20),
+          : Icon(icon, color: widget.color, size: 20),
     );
   }
 }
