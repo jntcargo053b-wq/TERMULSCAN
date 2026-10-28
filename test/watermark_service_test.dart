@@ -235,6 +235,47 @@ void main() {
       }
     });
 
+    test('all style and position combinations render safely', () async {
+      final source = File('${tempDir.path}/style-position-matrix-source.png');
+      final original = img.Image(width: 480, height: 640);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      const styles = [
+        'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+      ];
+      const positions = [
+        'topLeft', 'topCenter', 'topRight',
+        'centerLeft', 'center', 'centerRight',
+        'bottomLeft', 'bottomCenter', 'bottomRight',
+      ];
+
+      for (final style in styles) {
+        for (final position in positions) {
+          final destination =
+              '${tempDir.path}/matrix-${style}-${position}.png';
+          await WatermarkService.burn(
+            sourcePath: source.path,
+            destPath: destination,
+            lines: const [
+              'WAKTU: 2026-10-28 08:30:00',
+              'GPS: -7.966620, 112.632630',
+              'AWB: TERMULSCAN-MATRIX-12345',
+            ],
+            style: style,
+            position: position,
+          );
+
+          final outputBytes = await File(destination).readAsBytes();
+          final output = img.decodeImage(outputBytes);
+          expect(output, isNotNull, reason: '$style / $position');
+          expect(output!.width, 480, reason: '$style / $position');
+          expect(output.height, 640, reason: '$style / $position');
+          expect(outputBytes, isNotEmpty, reason: '$style / $position');
+        }
+      }
+    });
+
     test('all six watermark styles render without changing dimensions', () async {
       final source = File('${tempDir.path}/all-styles-source.jpg');
       final original = img.Image(width: 1280, height: 720);
