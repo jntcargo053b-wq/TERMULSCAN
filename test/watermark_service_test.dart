@@ -276,6 +276,52 @@ void main() {
       }
     });
 
+    test('style and position combinations support company logos', () async {
+      final source = File('${tempDir.path}/logo-matrix-source.png');
+      final original = img.Image(width: 480, height: 640);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      final logo = img.Image(width: 96, height: 48);
+      img.fill(logo, color: img.ColorRgba8(30, 150, 220, 220));
+      final logoBytes = Uint8List.fromList(img.encodePng(logo));
+      const styles = [
+        'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+      ];
+      const positions = [
+        'topLeft', 'topCenter', 'topRight',
+        'centerLeft', 'center', 'centerRight',
+        'bottomLeft', 'bottomCenter', 'bottomRight',
+      ];
+
+      for (final style in styles) {
+        for (final position in positions) {
+          final destination =
+              '${tempDir.path}/logo-matrix-${style}-${position}.png';
+          await WatermarkService.burn(
+            sourcePath: source.path,
+            destPath: destination,
+            lines: const [
+              'WAKTU: 2026-10-28 08:30:00',
+              'GPS: -7.966620, 112.632630',
+              'ALAMAT: Gudang pengiriman, Malang',
+              'AWB: TERMULSCAN-LOGO-12345',
+            ],
+            logoBytes: logoBytes,
+            style: style,
+            position: position,
+          );
+
+          final outputBytes = await File(destination).readAsBytes();
+          final output = img.decodeImage(outputBytes);
+          expect(output, isNotNull, reason: '$style / $position dengan logo');
+          expect(output!.width, 480, reason: '$style / $position dengan logo');
+          expect(output.height, 640, reason: '$style / $position dengan logo');
+          expect(outputBytes, isNotEmpty, reason: '$style / $position dengan logo');
+        }
+      }
+    });
+
     test('all six watermark styles render without changing dimensions', () async {
       final source = File('${tempDir.path}/all-styles-source.jpg');
       final original = img.Image(width: 1280, height: 720);
