@@ -101,8 +101,22 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   }
 
   Future<void> _removeLogo() async {
+    // Simpan path sebelum menghapus preferensi. Hanya hapus file logo yang
+    // dikelola layar ini; jangan menyentuh path eksternal yang mungkin berasal
+    // dari versi aplikasi lama atau konfigurasi lain.
+    final oldPath = _settings.logoPath;
     await _settings.setLogoPath(null);
-    setState(() {});
+    if (oldPath != null && File(oldPath).uri.pathSegments.isNotEmpty &&
+        File(oldPath).uri.pathSegments.last == 'wm_logo.png') {
+      final oldFile = File(oldPath);
+      try {
+        await FileImage(oldFile).evict();
+        if (await oldFile.exists()) await oldFile.delete();
+      } catch (error) {
+        debugPrint('Gagal membersihkan file logo watermark: $error');
+      }
+    }
+    if (mounted) setState(() {});
     await _refreshPreview();
   }
 
