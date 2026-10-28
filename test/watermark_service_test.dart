@@ -318,6 +318,33 @@ void main() {
       }
     });
 
+    test('keeps an existing output intact when source image is invalid', () async {
+      final source = File('${tempDir.path}/invalid-source.jpg');
+      final destination = File('${tempDir.path}/safe-existing-output.png');
+      await source.writeAsBytes('not-an-image'.codeUnits);
+      final previous = img.Image(width: 24, height: 18);
+      img.fill(previous, color: img.ColorRgb8(35, 95, 155));
+      final previousBytes = img.encodePng(previous);
+      await destination.writeAsBytes(previousBytes);
+
+      await expectLater(
+        WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination.path,
+          lines: const ['AWB: KEEP-EXISTING'],
+          style: 'classic',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final after = await destination.readAsBytes();
+      expect(after, equals(previousBytes));
+      final leftovers = tempDir.listSync().where((entity) =>
+          entity.path.contains('.wm_tmp_') ||
+          entity.path.contains('.wm_backup_'));
+      expect(leftovers, isEmpty);
+    });
+
     test('does not silently truncate metadata that cannot fit the photo', () async {
       final source = File('${tempDir.path}/oversized-metadata-source.jpg');
       final destination = File('${tempDir.path}/existing-safe-output.jpg');
