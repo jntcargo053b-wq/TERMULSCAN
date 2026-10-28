@@ -324,7 +324,10 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
         ),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: availableHeight.clamp(240.0, media.size.height * 0.92),
+            // Jangan memaksa tinggi minimum 240 px: saat keyboard terbuka
+            // ruang yang tersisa bisa lebih kecil dan menyebabkan overflow.
+            maxHeight: availableHeight
+                .clamp(0.0, media.size.height * 0.92),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
