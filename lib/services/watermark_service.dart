@@ -324,6 +324,10 @@ class WatermarkService {
     final totalHeight = pad + logoRowHeight + timeH + lineH + gap + content.length * lineH +
         (awbText.isEmpty ? 0 : awbText.length * lineH + gap) + pad;
     final verticalInset = (12 * scale).round();
+    // Jangan gunakan layout Classic jika seluruh konten tidak muat pada foto.
+    // Renderer umum akan menolak metadata berlebih sebelum file tujuan diganti,
+    // sehingga foto lama tetap aman dan metadata tidak hilang diam-diam.
+    if (totalHeight > image.height - verticalInset) return false;
     final top = (style == 'top'
         ? verticalInset
         : (image.height - totalHeight - verticalInset)).clamp(0, image.height - 1).toInt();
