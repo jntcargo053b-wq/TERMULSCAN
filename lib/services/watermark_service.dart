@@ -432,7 +432,7 @@ class WatermarkService {
     String style = 'classic',
     String position = 'bottomRight',
   }) {
-    if (style == 'classic' || style == 'timemark') {
+    if (style == 'timemark') {
       return _drawReferenceTimestampLayout(
         image, lines: lines, logo: logo, scale: scale, position: position,
       );
@@ -757,7 +757,7 @@ class WatermarkService {
       final bytes = File(req.sourcePath).readAsBytesSync();
       var image = img.decodeImage(bytes);
       if (image == null) {
-        throw Exception('Gagal decode gambar: ${req.sourcePath}');
+        throw StateError('Gagal decode gambar: ${req.sourcePath}');
       }
 
       // Bakar orientasi EXIF sebelum menghitung posisi watermark.
@@ -864,7 +864,7 @@ class WatermarkService {
             '${image.width}x${image.height}; kurangi jumlah/panjang baris.',
           );
         }
-        final insetStyles = const {'modern', 'minimal', 'badge'};
+        final insetStyles = const {'classic', 'modern', 'minimal', 'badge'};
         final inset = insetStyles.contains(style)
             ? (10 * scale).round().clamp(5, 18).toInt()
             : 0;

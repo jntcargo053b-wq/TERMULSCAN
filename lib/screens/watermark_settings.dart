@@ -72,7 +72,7 @@ class WatermarkSettings extends ChangeNotifier {
   }
 
   Future<void> setWatermarkStyle(String style) async {
-    const supported = {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'};
+    const supported = {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'};
     final normalized = supported.contains(style) ? style : 'classic';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyWatermarkStyle, normalized);
