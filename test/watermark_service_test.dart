@@ -250,6 +250,43 @@ void main() {
       }
     });
 
+    test('all six watermark styles fit portrait photos with long AWB', () async {
+      final source = File('${tempDir.path}/portrait-styles-source.png');
+      final original = img.Image(width: 720, height: 1280);
+      img.fill(original, color: img.ColorRgb8(175, 180, 185));
+      await source.writeAsBytes(img.encodePng(original));
+
+      const styles = [
+        'classic',
+        'compact',
+        'top',
+        'modern',
+        'minimal',
+        'badge',
+      ];
+
+      for (final style in styles) {
+        final destination = '${tempDir.path}/portrait-$style.png';
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination,
+          lines: const [
+            'WAKTU: 2026-10-27 08:30:00',
+            'GPS: -7.966620, 112.632630',
+            'ALAMAT: Jalan utama kawasan gudang, Malang, Jawa Timur',
+            'AWB: TERMULSCAN-12345678901234567890',
+          ],
+          style: style,
+        );
+
+        final outputBytes = await File(destination).readAsBytes();
+        final output = img.decodeImage(outputBytes);
+        expect(output, isNotNull, reason: 'style=$style');
+        expect(output!.width, 720, reason: 'style=$style');
+        expect(output.height, 1280, reason: 'style=$style');
+      }
+    });
+
     test('does not silently truncate metadata that cannot fit the photo', () async {
       final source = File('${tempDir.path}/oversized-metadata-source.jpg');
       final destination = File('${tempDir.path}/existing-safe-output.jpg');
