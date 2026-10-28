@@ -89,7 +89,7 @@ void main() {
     });
 
 
-    test('classic layout keeps long GPS and photo codes inside a narrow photo', () async {
+    test('classic layout keeps long GPS and AWB values inside a narrow photo', () async {
       final source = File('${tempDir.path}/classic-long-source.png');
       final destination = '${tempDir.path}/classic-long-watermarked.png';
       final original = img.Image(width: 320, height: 320);

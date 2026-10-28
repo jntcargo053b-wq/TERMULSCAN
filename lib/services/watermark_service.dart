@@ -217,7 +217,7 @@ class WatermarkService {
     String? rawTime;
     String? address;
     String? gps;
-    String? photoCode;
+    String? awbValue;
     final extras = <String>[];
     for (final line in lines) {
       final split = line.indexOf(':');
@@ -233,7 +233,8 @@ class WatermarkService {
       } else if (key == 'GPS' || key == 'KOORDINAT') {
         gps = value;
       } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
-        photoCode = value;
+        // Terima alias lama untuk kompatibilitas data, tetapi tampilkan label AWB.
+        awbValue = value;
       } else {
         extras.add(line);
       }
@@ -289,14 +290,14 @@ class WatermarkService {
     for (final extra in extras) {
       content.addAll(_wrapText(extra, small, maxWidth));
     }
-    final codeText = photoCode == null || photoCode.isEmpty
+    final awbText = awbValue == null || awbValue.isEmpty
         ? <String>[]
-        : _wrapText('AWB: $photoCode', small, maxWidth);
+        : _wrapText('AWB: $awbValue', small, maxWidth);
     var contentWidth = headerWidthEstimate;
     for (final line in content) {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
-    for (final line in codeText) {
+    for (final line in awbText) {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
     final left = (16 * scale).round().clamp(4, 48).toInt();
@@ -317,7 +318,7 @@ class WatermarkService {
     final logoOnOwnRow = logo != null && headerWidthEstimate + pad * 2 > panelMaxWidth;
     final logoRowHeight = logoOnOwnRow ? logoHeight + gap : 0;
     final totalHeight = pad + logoRowHeight + timeH + lineH + gap + content.length * lineH +
-        (codeText.isEmpty ? 0 : codeText.length * lineH + gap) + pad;
+        (awbText.isEmpty ? 0 : awbText.length * lineH + gap) + pad;
     final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
@@ -361,12 +362,12 @@ class WatermarkService {
         color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
       y += lineH;
     }
-    if (codeText.isNotEmpty && y + small.lineHeight < bottom) {
+    if (awbText.isNotEmpty && y + small.lineHeight < bottom) {
       final dividerY = (y - gap ~/ 2).clamp(top, bottom).toInt();
       img.fillRect(image, x1: left + pad, y1: dividerY, x2: right - pad, y2: dividerY,
         color: img.ColorRgba8(255, 255, 255, 85));
       y += gap;
-      for (final line in codeText) {
+      for (final line in awbText) {
         if (y + small.lineHeight >= bottom) break;
         _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
           color: img.ColorRgb8(220, 225, 225), shadowOffset: math.max(1, (scale * 1.2).round()));
