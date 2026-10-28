@@ -219,6 +219,9 @@ void main() {
         'badge',
       ];
 
+      // Selain memastikan file valid, setiap gaya harus benar-benar
+      // menghasilkan tampilan berbeda, bukan hanya menyimpan nama gaya.
+      final renderedSignatures = <String>{};
       for (final style in styles) {
         final destination = '${tempDir.path}/style-$style.jpg';
         await WatermarkService.burn(
@@ -234,10 +237,16 @@ void main() {
 
         final file = File(destination);
         expect(await file.exists(), isTrue, reason: 'style=$style');
-        final output = img.decodeImage(await file.readAsBytes());
+        final outputBytes = await file.readAsBytes();
+        final output = img.decodeImage(outputBytes);
         expect(output, isNotNull, reason: 'style=$style');
         expect(output!.width, 1280, reason: 'style=$style');
         expect(output.height, 720, reason: 'style=$style');
+        expect(
+          renderedSignatures.add(outputBytes.join(',')),
+          isTrue,
+          reason: 'Gaya $style harus berbeda secara visual dari gaya lain',
+        );
       }
     });
 
