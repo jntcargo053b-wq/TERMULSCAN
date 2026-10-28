@@ -213,6 +213,7 @@ class WatermarkService {
     required List<String> lines,
     required img.Image? logo,
     required double scale,
+    String style = 'classic',
   }) {
     String? rawTime;
     String? address;
@@ -268,7 +269,7 @@ class WatermarkService {
     final timeH = (large.lineHeight * timeScale).round() + gap;
     // Ukuran panel mengikuti konten, bukan pita dengan lebar tetap.
     // Sisakan ruang untuk logo di header agar tidak bertumpuk dengan tanggal.
-    final panelRatio = 0.86;
+    final panelRatio = style == 'compact' || style == 'badge' ? 0.72 : 0.86;
     final logoMax = (image.width * 0.075).round().clamp(12, 96).toInt();
     final logoWidth = logo == null
         ? 0
@@ -300,7 +301,10 @@ class WatermarkService {
     for (final line in awbText) {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
-    final left = (16 * scale).round().clamp(4, 48).toInt();
+    final inset = (12 * scale).round().clamp(4, 36).toInt();
+    final left = (style == 'compact' || style == 'badge'
+        ? (image.width * (1 - panelRatio)).round() - inset
+        : inset).clamp(4, 48).toInt();
     final rightMargin = left;
     // Panel harus menyisakan margin di kedua sisi foto. Batas sebelumnya hanya
     // menghitung persentase lebar foto, sehingga pada foto kecil/teks panjang
@@ -319,13 +323,23 @@ class WatermarkService {
     final logoRowHeight = logoOnOwnRow ? logoHeight + gap : 0;
     final totalHeight = pad + logoRowHeight + timeH + lineH + gap + content.length * lineH +
         (awbText.isEmpty ? 0 : awbText.length * lineH + gap) + pad;
-    final top = (image.height - totalHeight - (12 * scale).round()).clamp(0, image.height - 1).toInt();
+    final verticalInset = (12 * scale).round();
+    final top = (style == 'top'
+        ? verticalInset
+        : (image.height - totalHeight - verticalInset)).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
+    final (panelTop, panelBottom, accentColor) = switch (style) {
+      'compact' => (img.ColorRgba8(20, 76, 64, 164), img.ColorRgba8(12, 48, 42, 184), img.ColorRgb8(92, 230, 174)),
+      'top' => (img.ColorRgba8(92, 36, 52, 166), img.ColorRgba8(56, 22, 34, 184), img.ColorRgb8(255, 132, 150)),
+      'modern' => (img.ColorRgba8(12, 44, 68, 172), img.ColorRgba8(6, 25, 42, 190), img.ColorRgb8(0, 210, 225)),
+      'minimal' => (img.ColorRgba8(28, 62, 62, 148), img.ColorRgba8(18, 42, 44, 166), img.ColorRgb8(112, 220, 192)),
+      'badge' => (img.ColorRgba8(246, 190, 74, 194), img.ColorRgba8(222, 151, 36, 208), img.ColorRgb8(255, 236, 174)),
+      _ => (img.ColorRgba8(22, 27, 28, 145), img.ColorRgba8(18, 22, 23, 178), img.ColorRgb8(255, 190, 55)),
+    };
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: right, y2: bottom,
       radius: (12 * scale).round().clamp(3, 32).toInt(),
-      color: img.ColorRgba8(22, 27, 28, 145),
-      colorBottom: img.ColorRgba8(18, 22, 23, 178));
+      color: panelTop, colorBottom: panelBottom);
 
     var y = top + pad;
     if (logoOnOwnRow) {
@@ -342,7 +356,7 @@ class WatermarkService {
     final timeWidth = (_textWidth(timeText, large) * timeScale).round();
     final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
     img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (3 * scale).round().clamp(2, 5).toInt(),
-      y2: y + timeH - gap, color: img.ColorRgb8(255, 190, 55));
+      y2: y + timeH - gap, color: accentColor);
     final dateX = separatorX + (10 * scale).round();
     _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
@@ -445,12 +459,15 @@ class WatermarkService {
           ? null
           : _removeConnectedDarkLogoBackground(img.decodeImage(req.logoBytes!)!);
 
-      final useClassicLayout = req.style == 'classic' && hasText &&
+      final supportedStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}
+          .contains(req.style) ? req.style : 'classic';
+      final useClassicLayout = hasText &&
           _drawClassicTimestampLayout(
             image,
             lines: req.lines,
             logo: decodedLogo,
             scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
+            style: supportedStyle,
           );
 
       if (!hasText && decodedLogo == null) {
