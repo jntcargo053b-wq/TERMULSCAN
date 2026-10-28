@@ -682,18 +682,126 @@ class _RecentThumbnail extends StatelessWidget {
         if (path == null || path.isEmpty) {
           return _placeholder(Icons.broken_image_outlined);
         }
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(path),
-            width: 48,
-            height: 48,
-            fit: BoxFit.cover,
-            cacheWidth: 144,
-            errorBuilder: (_, __, ___) => _placeholder(Icons.broken_image_outlined),
+
+        return Semantics(
+          button: true,
+          label: 'Lihat preview foto scan',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _showPhotoPreview(context, path),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    File(path),
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    cacheWidth: 144,
+                    errorBuilder: (_, __, ___) =>
+                        _placeholder(Icons.broken_image_outlined),
+                  ),
+                ),
+                const Positioned(
+                  right: 2,
+                  bottom: 2,
+                  child: Icon(
+                    Icons.zoom_in,
+                    size: 14,
+                    color: Colors.white,
+                    shadows: [Shadow(color: Colors.black87, blurRadius: 3)],
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  void _showPhotoPreview(BuildContext context, String path) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: const Color(0xFF171717),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 640,
+            maxHeight: MediaQuery.of(dialogContext).size.height * 0.88,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.image_outlined,
+                        color: AppTheme.accentOrange, size: 20),
+                    const Gap(8),
+                    const Expanded(
+                      child: Text(
+                        'Preview Foto Scan',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Tutup preview',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: InteractiveViewer(
+                  minScale: 0.7,
+                  maxScale: 4,
+                  child: Image.file(
+                    File(path),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.broken_image_outlined,
+                              color: Colors.orange, size: 42),
+                          Gap(8),
+                          Text(
+                            'Foto tidak dapat dibuka.',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Selesai'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
