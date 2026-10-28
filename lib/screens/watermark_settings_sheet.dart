@@ -24,6 +24,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   bool _isSaving = false;
   bool _isSavingSettings = false;
   String _selectedStyle = 'classic';
+  String _selectedPosition = 'bottomRight';
   String? _previewPath;
   String? _previewError;
   bool _isRefreshingPreview = false;
@@ -35,6 +36,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     super.initState();
     _operatorController.text = _settings.operatorName;
     _selectedStyle = _settings.watermarkStyle;
+    _selectedPosition = _settings.watermarkPosition;
     _settings.load().then((_) {
       if (!mounted) return;
       setState(() {
@@ -221,6 +223,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
         ],
         logoBytes: logoBytes,
         style: _selectedStyle,
+        position: _selectedPosition,
       );
 
       // Pastikan hasil benar-benar bisa didekode sebelum menampilkannya.
@@ -272,6 +275,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       final name = _operatorController.text.trim();
       await _settings.setOperatorName(name);
       await _settings.setWatermarkStyle(_selectedStyle);
+      await _settings.setWatermarkPosition(_selectedPosition);
       if (!mounted) return;
       // Ambil messenger sebelum route ditutup agar tidak melakukan lookup
       // menggunakan BuildContext dari sheet yang sudah dilepas.
@@ -600,6 +604,51 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           ),
           const Gap(20),
 
+          const Text('POSISI PANEL', style: TextStyle(
+            color: AppTheme.textSecondary, fontSize: 11,
+            fontWeight: FontWeight.w700, letterSpacing: 1.2,
+          )),
+          const Gap(8),
+          Center(
+            child: SizedBox(
+              width: 220,
+              child: Column(
+                children: [
+                  for (final row in const [
+                    ['topLeft', 'topCenter', 'topRight'],
+                    ['centerLeft', 'center', 'centerRight'],
+                    ['bottomLeft', 'bottomCenter', 'bottomRight'],
+                  ])
+                    Row(
+                      children: [
+                        for (final position in row)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(3),
+                              child: _PositionOption(
+                                position: position,
+                                selected: _selectedPosition == position,
+                                onTap: () {
+                                  setState(() => _selectedPosition = position);
+                                  _refreshPreview();
+                                },
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const Gap(6),
+          const Text(
+            'Pilih salah satu dari 9 posisi. Preview mengikuti posisi yang tersimpan pada foto baru.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+          ),
+          const Gap(20),
+
           // Gambar pratinjau dihasilkan oleh WatermarkService yang sama dengan foto final.
           Container(
             width: double.infinity,
@@ -837,6 +886,57 @@ class _WatermarkStyleOption extends StatelessWidget {
             const Gap(2),
             Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 9)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PositionOption extends StatelessWidget {
+  final String position;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PositionOption({
+    required this.position,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final alignment = switch (position) {
+      'topLeft' => Alignment.topLeft,
+      'topCenter' => Alignment.topCenter,
+      'topRight' => Alignment.topRight,
+      'centerLeft' => Alignment.centerLeft,
+      'center' => Alignment.center,
+      'centerRight' => Alignment.centerRight,
+      'bottomLeft' => Alignment.bottomLeft,
+      'bottomCenter' => Alignment.bottomCenter,
+      _ => Alignment.bottomRight,
+    };
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 42,
+        decoration: BoxDecoration(
+          color: selected ? Colors.amber.withValues(alpha: 0.16) : const Color(0xFF2A2A2A),
+          border: Border.all(color: selected ? Colors.amber : Colors.white24, width: selected ? 2 : 1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Align(
+          alignment: alignment,
+          child: Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: selected ? Colors.amber : Colors.white54,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
         ),
       ),
     );

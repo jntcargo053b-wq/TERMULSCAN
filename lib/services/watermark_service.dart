@@ -10,6 +10,7 @@ class WatermarkBurnRequest {
   final List<String> lines;
   final Uint8List? logoBytes;
   final String style;
+  final String position;
 
   const WatermarkBurnRequest({
     required this.sourcePath,
@@ -17,6 +18,7 @@ class WatermarkBurnRequest {
     required this.lines,
     this.logoBytes,
     this.style = 'classic',
+    this.position = 'bottomRight',
   });
 }
 
@@ -30,6 +32,7 @@ class WatermarkService {
     required List<String> lines,
     Uint8List? logoBytes,
     String style = 'classic',
+    String position = 'bottomRight',
   }) async {
     final nonEmptyLines = lines
         .map((line) => line.trim())
@@ -43,6 +46,7 @@ class WatermarkService {
         lines: nonEmptyLines,
         logoBytes: logoBytes,
         style: style,
+        position: position,
       ),
     );
   }
@@ -619,10 +623,26 @@ class WatermarkService {
         final inset = insetStyles.contains(style)
             ? (10 * scale).round().clamp(5, 18).toInt()
             : 0;
-        final barY = style == 'top'
-            ? 0
+        const supportedPositions = {
+          'topLeft', 'topCenter', 'topRight',
+          'centerLeft', 'center', 'centerRight',
+          'bottomLeft', 'bottomCenter', 'bottomRight',
+        };
+        final position = supportedPositions.contains(req.position)
+            ? req.position
+            : 'bottomRight';
+        final vertical = position.startsWith('top')
+            ? 'top'
+            : position.startsWith('center')
+                ? 'center'
+                : 'bottom';
+        final barY = vertical == 'top'
+            ? inset
+            : vertical == 'center'
+                ? ((image.height - barHeight) / 2).round()
+                    .clamp(0, image.height - barHeight).toInt()
             : (image.height - barHeight - inset)
-                .clamp(0, image.height - 1).toInt();
+                .clamp(0, image.height - barHeight).toInt();
         var contentWidth = 0;
         for (final line in wrappedLines) {
           final width = _textWidth(line, font);
@@ -645,11 +665,17 @@ class WatermarkService {
                 style == 'compact')
             ? inset
             : 0;
-        var panelX = style == 'compact' || style == 'badge'
-            ? image.width - panelWidth - panelRightInset
-            : (style == 'modern' || style == 'minimal')
-                ? inset
-                : 0;
+        final horizontal = position == 'center' || position.endsWith('Center')
+            ? 'center'
+            : position.endsWith('Left')
+                ? 'left'
+                : 'right';
+        var panelX = horizontal == 'left'
+            ? inset
+            : horizontal == 'center'
+                ? ((image.width - panelWidth) / 2).round()
+                    .clamp(0, image.width - panelWidth).toInt()
+            : image.width - panelWidth - inset;
         // Classic/modern/minimal/header kini memakai panel selebar konten,
         // bukan satu pita penuh yang menutupi objek foto.
         var panelRight = (panelX + panelWidth - 1)

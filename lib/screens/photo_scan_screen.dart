@@ -510,6 +510,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           lines: lines,
           logoBytes: logoBytes,
           style: _wmSettings.watermarkStyle,
+          position: _wmSettings.watermarkPosition,
         );
 
         if (!completer.isCompleted) completer.complete();

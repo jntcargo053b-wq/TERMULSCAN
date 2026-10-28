@@ -196,6 +196,7 @@ class PhotoTaskRecoveryService {
           lines: lines,
           logoBytes: logoBytes,
           style: _settings.watermarkStyle,
+          position: _settings.watermarkPosition,
         );
         await _evictPublicImage(publicPath);
       } catch (e, st) {
@@ -259,6 +260,8 @@ class PhotoTaskRecoveryService {
       destPath: publicPath,
       lines: lines,
       logoBytes: logoBytes,
+      style: _settings.watermarkStyle,
+      position: _settings.watermarkPosition,
     );
     await _evictPublicImage(publicPath);
 
