@@ -112,30 +112,51 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   }
 
   Future<void> _removeLogo() async {
-    // Simpan path sebelum menghapus preferensi. Hanya hapus file logo yang
-    // dikelola layar ini; jangan menyentuh path eksternal yang mungkin berasal
-    // dari versi aplikasi lama atau konfigurasi lain.
-    final oldPath = _settings.logoPath;
-    await _settings.setLogoPath(null);
-    if (oldPath != null) {
-      try {
-        // Cocokkan path absolut dengan file milik aplikasi. Nama basename saja
-        // tidak cukup: file eksternal juga mungkin bernama wm_logo.png.
-        final appDir = await getApplicationDocumentsDirectory();
-        final managedPath =
-            File('${appDir.path}/wm_logo.png').absolute.path;
-        final oldFile = File(oldPath).absolute;
-        if (oldFile.path == managedPath) {
-          await FileImage(oldFile).evict();
-          if (await oldFile.exists()) await oldFile.delete();
+    if (_isSaving || _isSavingSettings) return;
+
+    setState(() => _isSaving = true);
+    try {
+      // Simpan path sebelum menghapus preferensi. Hanya hapus file logo yang
+      // dikelola layar ini; jangan menyentuh path eksternal dari versi lama.
+      final oldPath = _settings.logoPath;
+      await _settings.setLogoPath(null);
+      if (!mounted) return;
+
+      if (oldPath != null) {
+        try {
+          // Cocokkan path absolut dengan file milik aplikasi. Nama basename
+          // saja tidak cukup karena file eksternal bisa bernama sama.
+          final appDir = await getApplicationDocumentsDirectory();
+          final managedPath =
+              File('${appDir.path}/wm_logo.png').absolute.path;
+          final oldFile = File(oldPath).absolute;
+          if (oldFile.path == managedPath) {
+            await FileImage(oldFile).evict();
+            if (await oldFile.exists()) await oldFile.delete();
+          }
+        } catch (error, stack) {
+          debugPrint('Gagal membersihkan file logo watermark: $error');
+          debugPrint('$stack');
         }
-      } catch (error, stack) {
-        debugPrint('Gagal membersihkan file logo watermark: $error');
-        debugPrint('$stack');
       }
+
+      if (mounted) {
+        setState(() {});
+        await _refreshPreview();
+      }
+    } catch (error, stack) {
+      debugPrint('Gagal menghapus logo watermark: $error');
+      debugPrint('$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Logo gagal dihapus. Silakan coba lagi.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-    if (mounted) setState(() {});
-    await _refreshPreview();
   }
 
   /// Render pratinjau menggunakan renderer bitmap yang sama dengan foto final.
