@@ -52,21 +52,26 @@ jobs:
         run: |
           set -euo pipefail
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          NDK_PACKAGE="ndk;28.2.13676358"
+          NDK_VERSION="27.0.12077973"
+          NDK_DIR="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           test -x "$SDKMANAGER"
           for attempt in 1 2 3; do
-            echo "Installing $NDK_PACKAGE (attempt $attempt/3)"
-            if yes | "$SDKMANAGER" --install "$NDK_PACKAGE"; then
-              if [ -d "$ANDROID_SDK_ROOT/ndk/28.2.13676358" ]; then
-                echo "NDK installation verified."
-                exit 0
-              fi
+            echo "Installing NDK $NDK_VERSION (attempt $attempt/3)"
+            # sdkmanager may close stdin after accepting input; do not let
+            # the 'yes' process's expected SIGPIPE mask sdkmanager's result.
+            set +o pipefail
+            yes | "$SDKMANAGER" --install "ndk;$NDK_VERSION"
+            install_status=$?
+            set -o pipefail
+            if [ -f "$NDK_DIR/source.properties" ]; then
+              echo "NDK $NDK_VERSION installation verified."
+              exit 0
             fi
-            echo "NDK install attempt $attempt failed."
-            rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.cache"
+            echo "NDK install attempt $attempt failed (sdkmanager exit $install_status)."
+            rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.cache" "$NDK_DIR"
             if [ "$attempt" -lt 3 ]; then sleep 10; fi
           done
-          echo "NDK installation failed after 3 attempts." >&2
+          echo "NDK $NDK_VERSION installation failed after 3 attempts." >&2
           exit 1
 
       - name: Build release APK
