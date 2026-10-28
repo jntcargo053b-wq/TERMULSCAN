@@ -920,11 +920,26 @@ class _PositionOption extends StatelessWidget {
       'bottomCenter' => Alignment.bottomCenter,
       _ => Alignment.bottomRight,
     };
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 42,
+    const labels = {
+      'topLeft': 'Kiri atas',
+      'topCenter': 'Tengah atas',
+      'topRight': 'Kanan atas',
+      'centerLeft': 'Kiri tengah',
+      'center': 'Tengah',
+      'centerRight': 'Kanan tengah',
+      'bottomLeft': 'Kiri bawah',
+      'bottomCenter': 'Tengah bawah',
+      'bottomRight': 'Kanan bawah',
+    };
+    return Semantics(
+      label: 'Posisi watermark: ${labels[position] ?? 'Kanan bawah'}',
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 42,
         decoration: BoxDecoration(
           color: selected ? Colors.amber.withValues(alpha: 0.16) : const Color(0xFF2A2A2A),
           border: Border.all(color: selected ? Colors.amber : Colors.white24, width: selected ? 2 : 1),
@@ -940,6 +955,7 @@ class _PositionOption extends StatelessWidget {
               color: selected ? Colors.amber : Colors.white54,
               borderRadius: BorderRadius.circular(3),
             ),
+          ),
           ),
         ),
       ),
