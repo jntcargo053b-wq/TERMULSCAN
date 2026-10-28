@@ -302,18 +302,16 @@ class WatermarkService {
       contentWidth = math.max(contentWidth, _textWidth(line, small));
     }
     final inset = (12 * scale).round().clamp(4, 36).toInt();
-    final left = (style == 'compact' || style == 'badge'
-        ? (image.width * (1 - panelRatio)).round() - inset
-        : inset).clamp(4, 48).toInt();
-    final rightMargin = left;
-    // Panel harus menyisakan margin di kedua sisi foto. Batas sebelumnya hanya
-    // menghitung persentase lebar foto, sehingga pada foto kecil/teks panjang
-    // sisi kanan panel dapat terpotong setelah posisi kiri ditambahkan.
+    // Hitung lebar panel terlebih dahulu agar Compact dan Badge benar-benar
+    // menempel ke sisi kanan dengan margin aman, meskipun kontennya pendek.
     final panelMaxWidth = math.min(
       (image.width * panelRatio).round(),
-      image.width - left - rightMargin,
+      image.width - inset * 2,
     ).clamp(1, image.width).toInt();
     final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
+    final left = (style == 'compact' || style == 'badge'
+        ? image.width - panelWidth - inset
+        : inset).clamp(0, image.width - panelWidth).toInt();
     // Pada foto sempit, pindahkan logo ke baris tersendiri agar tidak menimpa
     // tanggal/hari. Ukuran baris dihitung dari rasio logo yang sebenarnya.
     final logoHeight = logo == null
