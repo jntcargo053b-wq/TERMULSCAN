@@ -50,6 +50,14 @@ void main() {
     }
   });
 
+  test('unsupported position setter stores the safe default', () async {
+    await settings.setWatermarkPosition('not-a-position');
+
+    expect(settings.watermarkPosition, 'bottomRight');
+    await settings.load();
+    expect(settings.watermarkPosition, 'bottomRight');
+  });
+
   test('unknown saved position safely falls back to bottomRight', () async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('wm_position', 'unsupported-position');
