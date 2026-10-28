@@ -36,6 +36,29 @@ void main() {
     }
   });
 
+  test('all nine watermark positions persist after reload', () async {
+    const positions = [
+      'topLeft', 'topCenter', 'topRight',
+      'centerLeft', 'center', 'centerRight',
+      'bottomLeft', 'bottomCenter', 'bottomRight',
+    ];
+
+    for (final position in positions) {
+      await settings.setWatermarkPosition(position);
+      await settings.load();
+      expect(settings.watermarkPosition, position);
+    }
+  });
+
+  test('unknown saved position safely falls back to bottomRight', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wm_position', 'unsupported-position');
+
+    await settings.load();
+
+    expect(settings.watermarkPosition, 'bottomRight');
+  });
+
   test('unknown saved style safely falls back to classic', () async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('wm_style', 'unsupported-style');
