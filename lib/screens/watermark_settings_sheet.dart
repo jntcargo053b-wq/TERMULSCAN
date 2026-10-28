@@ -73,28 +73,38 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   }
 
   Future<void> _pickLogo() async {
-    final file = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-    );
-    if (file == null) return;
+    if (_isSaving) return;
 
-    setState(() => _isSaving = true);
     try {
-      // Salin logo ke direktori permanen app
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      // Image picker dapat kembali setelah sheet ditutup.
+      if (file == null || !mounted) return;
+
+      setState(() => _isSaving = true);
       final appDir = await getApplicationDocumentsDirectory();
+      if (!mounted) return;
+
       final dest = '${appDir.path}/wm_logo.png';
       await File(file.path).copy(dest);
 
-      // Path tujuan selalu sama (wm_logo.png) supaya "ganti logo" langsung
-      // menimpa file lama. Tapi Flutter's ImageCache mengunci gambar
-      // berdasarkan path saja, bukan isinya — kalau tidak di-evict, preview
-      // & watermark bisa terus menampilkan logo LAMA walau file sudah
-      // diganti. Evict dulu supaya widget berikutnya baca ulang dari disk.
+      // Path tujuan tetap agar kompatibel dengan preferensi yang tersimpan.
+      // Evict cache karena cache Flutter menggunakan path sebagai kunci.
       await FileImage(File(dest)).evict();
-
       await _settings.setLogoPath(dest);
-      await _refreshPreview();
+      if (mounted) await _refreshPreview();
+    } catch (error, stack) {
+      debugPrint('Gagal memilih logo watermark: $error');
+      debugPrint('$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Logo gagal dipasang. Periksa file dan coba lagi.'),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
