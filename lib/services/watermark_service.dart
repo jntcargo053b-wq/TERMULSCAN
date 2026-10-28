@@ -333,6 +333,13 @@ class WatermarkService {
         : (image.height - totalHeight - verticalInset)).clamp(0, image.height - 1).toInt();
     final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
     final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
+    // Badge memakai panel terang, jadi teks harus gelap agar kontrasnya tetap baik.
+    final primaryTextColor = style == 'badge'
+        ? img.ColorRgb8(48, 38, 24)
+        : img.ColorRgb8(255, 255, 255);
+    final secondaryTextColor = style == 'badge'
+        ? img.ColorRgb8(68, 49, 25)
+        : img.ColorRgb8(220, 225, 225);
     final (panelTop, panelBottom, accentColor) = switch (style) {
       'compact' => (img.ColorRgba8(20, 76, 64, 164), img.ColorRgba8(12, 48, 42, 184), img.ColorRgb8(92, 230, 174)),
       'top' => (img.ColorRgba8(92, 36, 52, 166), img.ColorRgba8(56, 22, 34, 184), img.ColorRgb8(255, 132, 150)),
@@ -355,7 +362,7 @@ class WatermarkService {
     }
     final timeText = '$hour:$minute';
     _drawScaledBitmapText(image, timeText, font: large, x: left + pad, y: y,
-      color: img.ColorRgb8(255, 255, 255), factor: timeScale,
+      color: primaryTextColor, factor: timeScale,
       shadowOffset: math.max(1, (scale * 1.2).round()));
     final timeWidth = (_textWidth(timeText, large) * timeScale).round();
     final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
@@ -363,7 +370,7 @@ class WatermarkService {
       y2: y + timeH - gap, color: accentColor);
     final dateX = separatorX + (10 * scale).round();
     _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
-      color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
+      color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
     _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
       color: img.ColorRgb8(255, 255, 255), shadowOffset: math.max(1, (scale * 1.2).round()));
     if (logo != null && !logoOnOwnRow) {
@@ -388,7 +395,7 @@ class WatermarkService {
       for (final line in awbText) {
         if (y + small.lineHeight >= bottom) break;
         _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
-          color: img.ColorRgb8(220, 225, 225), shadowOffset: math.max(1, (scale * 1.2).round()));
+          color: secondaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
         y += lineH;
       }
     }
