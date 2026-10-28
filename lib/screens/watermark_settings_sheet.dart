@@ -283,6 +283,9 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     final media = MediaQuery.of(context);
     final availableHeight =
         media.size.height - media.viewInsets.bottom - media.padding.top - 16;
+    final styleOptionWidth = media.size.width < 380
+        ? (media.size.width - 48) / 2
+        : (media.size.width - 64) / 3;
 
     return SafeArea(
       top: false,
@@ -508,7 +511,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
             runSpacing: 8,
             children: [
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Classic',
                   subtitle: 'Panel bawah',
@@ -518,7 +521,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 ),
               ),
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Compact',
                   subtitle: 'Panel kanan',
@@ -528,7 +531,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 ),
               ),
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Header',
                   subtitle: 'Bagian atas',
@@ -538,7 +541,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 ),
               ),
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Modern',
                   subtitle: 'Aksen cyan',
@@ -548,7 +551,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 ),
               ),
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Minimal',
                   subtitle: 'Ringkas kiri',
@@ -558,7 +561,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 ),
               ),
               SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 3,
+                width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Badge',
                   subtitle: 'Aksen amber',
