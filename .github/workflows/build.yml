@@ -60,8 +60,11 @@ jobs:
             # sdkmanager may close stdin after accepting input; do not let
             # the 'yes' process's expected SIGPIPE mask sdkmanager's result.
             set +o pipefail
-            yes | "$SDKMANAGER" --install "ndk;$NDK_VERSION"
-            install_status=$?
+            if yes | "$SDKMANAGER" --install "ndk;$NDK_VERSION"; then
+              install_status=0
+            else
+              install_status=$?
+            fi
             set -o pipefail
             if [ -f "$NDK_DIR/source.properties" ]; then
               echo "NDK $NDK_VERSION installation verified."
