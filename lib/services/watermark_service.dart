@@ -57,6 +57,7 @@ class WatermarkService {
 
   /// Render teks antialias menggunakan TextPainter/font TTF Flutter pada
   /// resolusi foto asli. Hasil PNG transparan digabung ke foto di isolate.
+  // ignore: unused_element
   static Future<Uint8List> _renderTextOverlay({
     required int width, required int height, required List<String> lines,
     required Uint8List? logoBytes, required String style, required String position,
