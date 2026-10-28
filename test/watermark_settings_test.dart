@@ -15,6 +15,10 @@ void main() {
     await settings.load();
   });
 
+  test('new installations default to the Timemark reference layout', () {
+    expect(settings.watermarkStyle, 'timemark');
+  });
+
   test('operator name and watermark style persist after reload', () async {
     await settings.setOperatorName('Operator Gudang');
     await settings.setWatermarkStyle('modern');

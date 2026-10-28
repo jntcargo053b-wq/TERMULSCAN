@@ -10,7 +10,7 @@ class WatermarkSettings extends ChangeNotifier {
 
   String _operatorName = '';
   String? _logoPath;
-  String _watermarkStyle = 'classic';
+  String _watermarkStyle = 'timemark';
   String _watermarkPosition = 'bottomRight';
 
   String get operatorName => _operatorName;
@@ -28,7 +28,7 @@ class WatermarkSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
-    final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'classic';
+    final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'timemark';
     _watermarkStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
         ? savedStyle
         : 'classic';

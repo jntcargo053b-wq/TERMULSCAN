@@ -23,7 +23,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   final _picker = ImagePicker();
   bool _isSaving = false;
   bool _isSavingSettings = false;
-  String _selectedStyle = 'classic';
+  String _selectedStyle = 'timemark';
   String _selectedPosition = 'bottomRight';
   String? _previewPath;
   String? _previewError;
@@ -260,7 +260,32 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       }
       if (!sourceValid) {
         final sample = img.Image(width: 1024, height: 768);
-        img.fill(sample, color: img.ColorRgb8(88, 108, 122));
+        // Ilustrasi foto sederhana, bukan bidang abu-abu polos, agar pengguna
+        // dapat menilai kontras dan bentuk watermark di atas latar foto.
+        img.fill(sample, color: img.ColorRgb8(172, 197, 207));
+        img.fillRect(sample, x1: 0, y1: 0, x2: 1023, y2: 300,
+          color: img.ColorRgb8(177, 204, 216));
+        img.fillRect(sample, x1: 0, y1: 300, x2: 1023, y2: 540,
+          color: img.ColorRgb8(174, 174, 160));
+        img.fillRect(sample, x1: 130, y1: 190, x2: 680, y2: 500,
+          color: img.ColorRgb8(111, 119, 123));
+        img.fillRect(sample, x1: 175, y1: 230, x2: 635, y2: 480,
+          color: img.ColorRgb8(202, 203, 194));
+        img.fillRect(sample, x1: 210, y1: 270, x2: 290, y2: 370,
+          color: img.ColorRgb8(54, 94, 119));
+        img.fillRect(sample, x1: 320, y1: 270, x2: 400, y2: 370,
+          color: img.ColorRgb8(54, 94, 119));
+        img.fillRect(sample, x1: 430, y1: 270, x2: 510, y2: 370,
+          color: img.ColorRgb8(54, 94, 119));
+        img.fillRect(sample, x1: 0, y1: 540, x2: 1023, y2: 767,
+          color: img.ColorRgb8(81, 104, 82));
+        img.drawLine(sample, x1: 0, y1: 630, x2: 1023, y2: 570,
+          color: img.ColorRgb8(54, 61, 58), thickness: 5);
+        for (var i = 0; i < 8; i++) {
+          final x = 40 + i * 125;
+          img.fillRect(sample, x1: x, y1: 555 - (i % 3) * 10,
+            x2: x + 35, y2: 600, color: img.ColorRgb8(68, 108, 70));
+        }
         await source.writeAsBytes(img.encodeJpg(sample, quality: 85), flush: true);
       }
 
@@ -619,7 +644,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                 width: styleOptionWidth,
                 child: _WatermarkStyleOption(
                   title: 'Timemark',
-                  subtitle: 'Jam, tanggal, GPS',
+                  subtitle: 'Referensi: jam + garis kuning',
                   style: 'timemark',
                   selected: _selectedStyle == 'timemark',
                   onTap: () { setState(() => _selectedStyle = 'timemark'); _refreshPreview(); },
