@@ -518,13 +518,19 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   Column(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.amber, size: 18),
-                        onPressed: _pickLogo,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.edit, color: Colors.amber, size: 18),
+                        onPressed: _isSaving || _isSavingSettings ? null : _pickLogo,
                         tooltip: 'Ganti logo',
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                        onPressed: _removeLogo,
+                        onPressed: _isSaving || _isSavingSettings ? null : _removeLogo,
                         tooltip: 'Hapus logo',
                       ),
                     ],
