@@ -42,22 +42,15 @@ class WatermarkService {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList(growable: false);
-    Uint8List? textOverlayBytes;
-    if (nonEmptyLines.isNotEmpty) {
-      final decoded = img.decodeImage(await File(sourcePath).readAsBytes());
-      if (decoded == null) throw StateError('Tidak dapat membaca foto untuk watermark.');
-      final oriented = img.bakeOrientation(decoded);
-      textOverlayBytes = await _renderTextOverlay(
-        width: oriented.width, height: oriented.height, lines: nonEmptyLines,
-        logoBytes: logoBytes, style: style, position: position,
-      );
-    }
+    // Gunakan renderer watermark khusus di isolate. Renderer overlay Flutter
+    // yang generik sebelumnya menggambar kotak yang sama untuk semua style,
+    // sehingga layout Classic/Compact/Top/Modern/Minimal/Badge tidak terlihat.
+    // Biarkan textOverlayBytes null agar _burnIsolate memilih layout style-aware.
     await compute(
       _burnIsolate,
       WatermarkBurnRequest(
         sourcePath: sourcePath, destPath: destPath, lines: nonEmptyLines,
         logoBytes: logoBytes, style: style, position: position,
-        textOverlayBytes: textOverlayBytes,
       ),
     );
   }
