@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 
 /// Payload untuk isolate background.
@@ -11,6 +14,7 @@ class WatermarkBurnRequest {
   final Uint8List? logoBytes;
   final String style;
   final String position;
+  final Uint8List? textOverlayBytes;
 
   const WatermarkBurnRequest({
     required this.sourcePath,
@@ -19,6 +23,7 @@ class WatermarkBurnRequest {
     this.logoBytes,
     this.style = 'classic',
     this.position = 'bottomRight',
+    this.textOverlayBytes,
   });
 }
 
@@ -38,17 +43,120 @@ class WatermarkService {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList(growable: false);
+    Uint8List? textOverlayBytes;
+    if (nonEmptyLines.isNotEmpty) {
+      final decoded = img.decodeImage(await File(sourcePath).readAsBytes());
+      if (decoded == null) throw StateError('Tidak dapat membaca foto untuk watermark.');
+      final oriented = img.bakeOrientation(decoded);
+      textOverlayBytes = await _renderTextOverlay(
+        width: oriented.width, height: oriented.height, lines: nonEmptyLines,
+        logoBytes: logoBytes, style: style, position: position,
+      );
+    }
     await compute(
       _burnIsolate,
       WatermarkBurnRequest(
-        sourcePath: sourcePath,
-        destPath: destPath,
-        lines: nonEmptyLines,
-        logoBytes: logoBytes,
-        style: style,
-        position: position,
+        sourcePath: sourcePath, destPath: destPath, lines: nonEmptyLines,
+        logoBytes: logoBytes, style: style, position: position,
+        textOverlayBytes: textOverlayBytes,
       ),
     );
+  }
+
+  /// Render teks antialias menggunakan TextPainter/font TTF Flutter pada
+  /// resolusi foto asli. Hasil PNG transparan digabung ke foto di isolate.
+  static Future<Uint8List> _renderTextOverlay({
+    required int width, required int height, required List<String> lines,
+    required Uint8List? logoBytes, required String style, required String position,
+  }) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final scale = (width / 1080).clamp(0.55, 3.75).toDouble();
+    final pad = (18 * scale).round().clamp(8, 48).toDouble();
+    final fontSize = (22 * scale).clamp(12, 52).toDouble();
+    final maxPanelWidth = (width * 0.86).clamp(1, width).toDouble();
+    final textMaxWidth = maxPanelWidth - pad * 2;
+    final painters = <TextPainter>[];
+    for (final line in lines) {
+      final painter = TextPainter(
+        text: TextSpan(text: line, style: TextStyle(
+          fontFamily: 'Roboto', fontSize: fontSize, height: 1.18,
+          color: style == 'badge' ? const ui.Color(0xFF302618) : const ui.Color(0xFFFFFFFF),
+          fontWeight: FontWeight.w500,
+        )),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: textMaxWidth);
+      painters.add(painter);
+    }
+    ui.Image? logoImage;
+    if (logoBytes != null) {
+      try {
+        final codec = await ui.instantiateImageCodec(logoBytes);
+        logoImage = (await codec.getNextFrame()).image;
+        codec.dispose();
+      } catch (_) {}
+    }
+    final logoWidth = logoImage == null ? 0.0 : (width * 0.075).clamp(16, 100).toDouble();
+    final logoHeight = logoImage == null ? 0.0 : logoWidth * logoImage.height / logoImage.width;
+    final gap = (8 * scale).clamp(4, 24).toDouble();
+    final textHeight = painters.fold<double>(0, (sum, painter) => sum + painter.height);
+    final panelHeight = pad * 2 + (logoImage == null ? 0 : logoHeight + gap) +
+        textHeight + gap * math.max(0, lines.length - 1);
+    if (panelHeight > height - 8) {
+      logoImage?.dispose();
+      for (final painter in painters) { painter.dispose(); }
+      throw StateError('Metadata watermark terlalu panjang untuk foto.');
+    }
+    var textWidth = 0.0;
+    for (final painter in painters) { textWidth = math.max(textWidth, painter.width); }
+    final panelWidth = math.min(maxPanelWidth, textWidth + pad * 2);
+    const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
+    final pos = valid.contains(position) ? position : 'bottomRight';
+    final horizontal = pos == 'center' || pos.endsWith('Center') ? 'center' : (pos.endsWith('Left') ? 'left' : 'right');
+    final vertical = pos.startsWith('top') ? 'top' : (pos.startsWith('center') ? 'center' : 'bottom');
+    final inset = (12 * scale).clamp(6, 36).toDouble();
+    final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (width-panelWidth)/2 : width-panelWidth-inset).clamp(0.0, width-panelWidth);
+    final top = (vertical == 'top' ? inset : vertical == 'center' ? (height-panelHeight)/2 : height-panelHeight-inset).clamp(0.0, height-panelHeight);
+    final palettes = <String,List<ui.Color>>{
+      'classic':[const ui.Color(0xB5223A5C),const ui.Color(0xC012243E),const ui.Color(0xFFFFBE37)],
+      'compact':[const ui.Color(0xB41A4C40),const ui.Color(0xC00C302A),const ui.Color(0xFF5CE6AE)],
+      'top':[const ui.Color(0xB65C2434),const ui.Color(0xC0381622),const ui.Color(0xFFFF8496)],
+      'modern':[const ui.Color(0xB00C2C44),const ui.Color(0xC006192A),const ui.Color(0xFF00D2E1)],
+      'minimal':[const ui.Color(0x942C3E3E),const ui.Color(0xA6122A2C),const ui.Color(0xFF70DCC0)],
+      'badge':[const ui.Color(0xC2F6BE4A),const ui.Color(0xD0DE9724),const ui.Color(0xFFFFECAE)],
+    };
+    final palette = palettes[style] ?? palettes['classic']!;
+    final rect = ui.Rect.fromLTWH(left,top,panelWidth,panelHeight);
+    final radius = (12*scale).clamp(4,32).toDouble();
+    final panelPaint = ui.Paint()..shader = ui.Gradient.linear(
+      ui.Offset(0,top),ui.Offset(0,top+panelHeight),[palette[0],palette[1]]);
+    canvas.drawRRect(ui.RRect.fromRectAndRadius(rect,ui.Radius.circular(radius)),panelPaint);
+    final accent = ui.Paint()..color=palette[2];
+    switch(style) {
+      case 'compact':
+        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left+panelWidth-(5*scale).clamp(3,10),top,(5*scale).clamp(3,10),panelHeight),ui.Radius.circular(radius)),accent);
+      case 'top':
+      case 'badge':
+        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left,top,panelWidth,(5*scale).clamp(3,10)),ui.Radius.circular(radius)),accent);
+      case 'minimal':
+        canvas.drawRect(ui.Rect.fromLTWH(left+pad/2,top+pad,(3*scale).clamp(2,5),panelHeight-pad*2),accent);
+      default:
+        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left,top,(5*scale).clamp(3,10),panelHeight),ui.Radius.circular(radius)),accent);
+    }
+    var y=top+pad;
+    if (logoImage != null) {
+      canvas.drawImageRect(logoImage,ui.Rect.fromLTWH(0,0,logoImage.width.toDouble(),logoImage.height.toDouble()),
+        ui.Rect.fromLTWH(left+pad,y,logoWidth,logoHeight),ui.Paint());
+      y+=logoHeight+gap;
+    }
+    for (final painter in painters) { painter.paint(canvas,ui.Offset(left+pad,y)); y+=painter.height+gap; }
+    final picture=recorder.endRecording();
+    final overlay=await picture.toImage(width,height);
+    final data=await overlay.toByteData(format:ui.ImageByteFormat.png);
+    final bytes=Uint8List.fromList(data!.buffer.asUint8List(data.offsetInBytes,data.lengthInBytes));
+    overlay.dispose(); picture.dispose(); logoImage?.dispose();
+    for (final painter in painters) { painter.dispose(); }
+    return bytes;
   }
 
   /// Rounded rectangle anti-aliased dengan alpha blending dan gradasi opsional.
@@ -551,18 +659,19 @@ class WatermarkService {
       final decodedLogo = req.logoBytes == null
           ? null
           : _removeConnectedDarkLogoBackground(img.decodeImage(req.logoBytes!)!);
-
-      final supportedStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}
-          .contains(req.style) ? req.style : 'classic';
-      final useClassicLayout = hasText &&
-          _drawClassicTimestampLayout(
-            image,
-            lines: req.lines,
-            logo: decodedLogo,
-            scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
-            style: supportedStyle,
-            position: req.position,
-          );
+      if (req.textOverlayBytes != null) {
+        final overlay = img.decodePng(req.textOverlayBytes!);
+        if (overlay == null || overlay.width != image.width || overlay.height != image.height) {
+          throw StateError('Overlay watermark tidak cocok dengan ukuran foto.');
+        }
+        img.compositeImage(image, overlay);
+      } else {
+        final supportedStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}
+            .contains(req.style) ? req.style : 'classic';
+        final useClassicLayout = hasText &&
+            _drawClassicTimestampLayout(image, lines: req.lines, logo: decodedLogo,
+              scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
+              style: supportedStyle, position: req.position);
 
       if (!hasText && decodedLogo == null) {
         if (req.sourcePath != req.destPath) {
@@ -1006,6 +1115,7 @@ class WatermarkService {
         );
       }
 
+      }
       final destLower = req.destPath.toLowerCase();
       final outBytes = destLower.endsWith('.png')
           ? img.encodePng(image)
