@@ -42,6 +42,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       setState(() {
         _operatorController.text = _settings.operatorName;
         _selectedStyle = _settings.watermarkStyle;
+        _selectedPosition = _settings.watermarkPosition;
       });
       _refreshPreview();
     });
