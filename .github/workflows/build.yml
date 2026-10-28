@@ -46,27 +46,31 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Install Android NDK with retry
+      - name: Ensure Android NDK is available
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
+          NDK_VERSION="27.0.12077973"
+          NDK_DIR="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          NDK_PACKAGE="ndk;28.2.13676358"
+          if [ -d "$NDK_DIR" ]; then
+            echo "Using preinstalled NDK $NDK_VERSION"
+            exit 0
+          fi
           test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           for attempt in 1 2 3; do
-            echo "Installing $NDK_PACKAGE (attempt $attempt/3)"
-            if yes | "$SDKMANAGER" --install "$NDK_PACKAGE"; then
-              if [ -d "$ANDROID_SDK_ROOT/ndk/28.2.13676358" ]; then
-                echo "NDK installation verified."
-                exit 0
-              fi
+            echo "Installing NDK $NDK_VERSION (attempt $attempt/3)"
+            if "$SDKMANAGER" --install "ndk;$NDK_VERSION" && [ -d "$NDK_DIR" ]; then
+              echo "NDK installation verified."
+              exit 0
             fi
             echo "NDK install attempt $attempt failed."
             rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.cache"
             if [ "$attempt" -lt 3 ]; then sleep 10; fi
           done
-          echo "NDK installation failed after 3 attempts." >&2
+          echo "NDK $NDK_VERSION unavailable after 3 attempts." >&2
           exit 1
 
       - name: Build release APK
