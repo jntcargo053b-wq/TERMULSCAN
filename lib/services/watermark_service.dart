@@ -365,7 +365,7 @@ class WatermarkService {
     final timeWidth = (_textWidth(time, large) * factor).round();
     final logoWidth = logo == null ? 0 : (image.width * 0.105).round().clamp(20, 132).toInt();
     final logoHeight = logo == null ? 0 : (logo.height * logoWidth / logo.width).round();
-    final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight) + pad * 2;
+    final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight).toInt() + pad * 2;
     final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
     final maxText = (image.width * 0.82).round().clamp(1, image.width - inset * 2).toInt();
     final metadata = <String>[];
@@ -377,7 +377,7 @@ class WatermarkService {
     final detailsHeight = lineHeight + metadata.length * lineHeight + (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
     final totalHeight = capsuleHeight + gap * 2 + detailsHeight;
     if (totalHeight >= image.height - inset) return false;
-    final textWidth = metadata.fold<int>(_textWidth(dateLine, small), (w, line) => math.max(w, _textWidth(line, small)));
+    final textWidth = metadata.fold<int>(_textWidth(dateLine, small), (w, line) { final lineWidth = _textWidth(line, small); return w > lineWidth ? w : lineWidth; });
     final blockWidth = math.min(image.width - inset * 2, math.max(capsuleWidth, textWidth + pad));
     const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
     final pos = valid.contains(position) ? position : 'bottomLeft';
