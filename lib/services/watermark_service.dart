@@ -311,6 +311,117 @@ class WatermarkService {
     img.compositeImage(image, scaled, dstX: x, dstY: y);
   }
 
+  /// Layout referensi: jam dalam kapsul putih, logo di kanan, tanggal tebal,
+  /// dan metadata putih dengan garis kuning tanpa panel gelap besar.
+  static bool _drawReferenceTimestampLayout(
+    img.Image image, {
+    required List<String> lines,
+    required img.Image? logo,
+    required double scale,
+    required String position,
+  }) {
+    String? rawTime, address, gps, photoCode;
+    final extras = <String>[];
+    for (final line in lines) {
+      final split = line.indexOf(':');
+      final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
+      final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
+      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP' || key == 'TANGGAL') {
+        rawTime = value;
+      } else if (RegExp(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').hasMatch(line) ||
+          RegExp(r'^\d{2}[/-]\d{2}[/-]\d{4}[ T]\d{2}:\d{2}').hasMatch(line)) {
+        rawTime = line.trim();
+      } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
+        address = value;
+      } else if (key == 'GPS' || key == 'KOORDINAT') {
+        gps = value;
+      } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
+        photoCode = value;
+      } else {
+        extras.add(line);
+      }
+    }
+    if (rawTime == null) return false;
+    final iso = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
+    final local = RegExp(r'^(\d{2})[/-](\d{2})[/-](\d{4})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
+    if (iso == null && local == null) return false;
+    final m = iso ?? local!;
+    final year = int.parse(m.group(iso != null ? 1 : 3)!);
+    final month = int.parse(m.group(2)!);
+    final day = int.parse(m.group(iso != null ? 3 : 1)!);
+    final date = DateTime(year, month, day);
+    final hour = m.group(4)!;
+    final minute = m.group(5)!;
+    const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    const weekdays = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+    final dateLine = '${weekdays[date.weekday - 1]}, $day ${months[month - 1]} $year';
+    final small = image.width < 720 ? img.arial14 : img.arial24;
+    final large = image.width < 720 ? img.arial24 : img.arial48;
+    final factor = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
+    final pad = (12 * scale).round().clamp(6, 36).toInt();
+    final gap = (7 * scale).round().clamp(3, 18).toInt();
+    final inset = (18 * scale).round().clamp(8, 48).toInt();
+    final time = '$hour:$minute';
+    final timeWidth = (_textWidth(time, large) * factor).round();
+    final logoWidth = logo == null ? 0 : (image.width * 0.105).round().clamp(20, 132).toInt();
+    final logoHeight = logo == null ? 0 : (logo.height * logoWidth / logo.width).round();
+    final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight) + pad * 2;
+    final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
+    final maxText = (image.width * 0.82).round().clamp(1, image.width - inset * 2).toInt();
+    final metadata = <String>[];
+    if (address != null && address.isNotEmpty) metadata.addAll(_wrapText(address, small, maxText - pad));
+    if (gps != null && gps.isNotEmpty) metadata.addAll(_wrapText(gps, small, maxText - pad));
+    for (final extra in extras) { metadata.addAll(_wrapText(extra, small, maxText - pad)); }
+    final codes = photoCode == null || photoCode.isEmpty ? <String>[] : _wrapText('Kode Foto: $photoCode', small, maxText - pad);
+    final lineHeight = small.lineHeight + gap;
+    final detailsHeight = lineHeight + metadata.length * lineHeight + (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
+    final totalHeight = capsuleHeight + gap * 2 + detailsHeight;
+    if (totalHeight >= image.height - inset) return false;
+    final textWidth = metadata.fold<int>(_textWidth(dateLine, small), (w, line) => math.max(w, _textWidth(line, small)));
+    final blockWidth = math.min(image.width - inset * 2, math.max(capsuleWidth, textWidth + pad));
+    const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
+    final pos = valid.contains(position) ? position : 'bottomLeft';
+    final horizontal = pos == 'center' || pos.endsWith('Center') ? 'center' : pos.endsWith('Left') ? 'left' : 'right';
+    final vertical = pos.startsWith('top') ? 'top' : pos.startsWith('center') ? 'center' : 'bottom';
+    final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (image.width - blockWidth) ~/ 2 : image.width - blockWidth - inset).clamp(0, image.width - blockWidth).toInt();
+    final top = (vertical == 'top' ? inset : vertical == 'center' ? (image.height - totalHeight) ~/ 2 : image.height - totalHeight - inset).clamp(0, image.height - totalHeight).toInt();
+
+    _fillRoundedRectBlended(image, x1: left, y1: top, x2: left + capsuleWidth, y2: top + capsuleHeight,
+      radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
+    _drawScaledBitmapText(image, time, font: large, x: left + pad,
+      y: top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2,
+      color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
+    if (logo != null) {
+      final resized = img.copyResize(logo, width: logoWidth, height: logoHeight);
+      final logoX = left + capsuleWidth - pad - logoWidth;
+      final logoY = top + (capsuleHeight - logoHeight) ~/ 2;
+      _fillRoundedRectBlended(image, x1: logoX - gap, y1: top + pad ~/ 2,
+        x2: left + capsuleWidth - pad ~/ 2, y2: top + capsuleHeight - pad ~/ 2,
+        radius: (6 * scale).round().clamp(3, 18).toInt(), color: img.ColorRgba8(238, 238, 238, 255));
+      img.compositeImage(image, resized, dstX: logoX, dstY: logoY);
+    }
+    var y = top + capsuleHeight + gap * 2;
+    final textX = left + pad;
+    final shadow = math.max(1, (scale * 1.2).round());
+    _drawStringCrisp(image, dateLine, font: small, x: textX, y: y, color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow);
+    y += lineHeight;
+    for (final line in metadata) {
+      _drawStringCrisp(image, line, font: small, x: textX, y: y, color: img.ColorRgb8(250, 250, 250), shadowOffset: shadow);
+      y += lineHeight;
+    }
+    if (codes.isNotEmpty) {
+      y += gap;
+      for (final line in codes) {
+        _drawStringCrisp(image, line, font: small, x: textX, y: y, color: img.ColorRgb8(215, 220, 225), shadowOffset: shadow);
+        y += lineHeight;
+      }
+    }
+    img.drawLine(image, x1: left, y1: top + capsuleHeight + gap,
+      x2: left, y2: math.min(image.height - 1, y - gap),
+      color: img.ColorRgb8(255, 190, 55), thickness: (3 * scale).round().clamp(2, 8).toInt());
+    return true;
+  }
+
   /// Layout timestamp profesional dengan waktu dominan dan metadata bertingkat.
   static bool _drawClassicTimestampLayout(
     img.Image image, {
@@ -320,6 +431,11 @@ class WatermarkService {
     String style = 'classic',
     String position = 'bottomRight',
   }) {
+    if (style == 'classic') {
+      return _drawReferenceTimestampLayout(
+        image, lines: lines, logo: logo, scale: scale, position: position,
+      );
+    }
     String? rawTime;
     String? address;
     String? gps;
