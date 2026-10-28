@@ -660,20 +660,46 @@ class _RecentItem extends StatelessWidget {
   }
 }
 
-class _RecentThumbnail extends StatelessWidget {
+class _RecentThumbnail extends StatefulWidget {
   final ScanEntry entry;
   final Color color;
 
   const _RecentThumbnail({required this.entry, required this.color});
 
   @override
+  State<_RecentThumbnail> createState() => _RecentThumbnailState();
+}
+
+class _RecentThumbnailState extends State<_RecentThumbnail> {
+  late Future<String?> _imagePathFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _imagePathFuture = _resolveImagePath();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecentThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry != widget.entry) {
+      _imagePathFuture = _resolveImagePath();
+    }
+  }
+
+  Future<String?> _resolveImagePath() =>
+      StorageService().resolveImagePath(widget.entry);
+
+  @override
   Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final color = widget.color;
     if (!entry.isPhoto) {
       return _placeholder(Icons.qr_code_scanner);
     }
 
     return FutureBuilder<String?>(
-      future: StorageService().resolveImagePath(entry),
+      future: _imagePathFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _placeholder(Icons.image_outlined, loading: true);
