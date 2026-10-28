@@ -242,7 +242,7 @@ void main() {
       await source.writeAsBytes(img.encodePng(original));
 
       const styles = [
-        'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+        'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge',
       ];
       const positions = [
         'topLeft', 'topCenter', 'topRight',
@@ -330,6 +330,7 @@ void main() {
 
       const styles = [
         'classic',
+        'timemark',
         'compact',
         'top',
         'modern',

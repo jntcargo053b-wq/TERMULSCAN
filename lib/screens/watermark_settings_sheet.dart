@@ -618,6 +618,16 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
               SizedBox(
                 width: styleOptionWidth,
                 child: _WatermarkStyleOption(
+                  title: 'Timemark',
+                  subtitle: 'Jam, tanggal, GPS',
+                  style: 'timemark',
+                  selected: _selectedStyle == 'timemark',
+                  onTap: () { setState(() => _selectedStyle = 'timemark'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
                   title: 'Classic',
                   subtitle: 'Panel bawah',
                   style: 'classic',
@@ -910,7 +920,7 @@ class _WatermarkStyleOption extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (style == 'classic')
+                    if (style == 'classic' || style == 'timemark')
                       Positioned(
                         left: 4,
                         bottom: 3,

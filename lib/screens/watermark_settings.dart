@@ -29,7 +29,7 @@ class WatermarkSettings extends ChangeNotifier {
     _operatorName = prefs.getString(_keyOperator) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
     final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'classic';
-    _watermarkStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
+    _watermarkStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
         ? savedStyle
         : 'classic';
     final savedPosition = prefs.getString(_keyWatermarkPosition) ?? 'bottomRight';

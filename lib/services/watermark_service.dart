@@ -432,7 +432,7 @@ class WatermarkService {
     String style = 'classic',
     String position = 'bottomRight',
   }) {
-    if (style == 'classic') {
+    if (style == 'classic' || style == 'timemark') {
       return _drawReferenceTimestampLayout(
         image, lines: lines, logo: logo, scale: scale, position: position,
       );
@@ -775,7 +775,7 @@ class WatermarkService {
         }
         img.compositeImage(image, overlay);
       } else {
-        final supportedStyle = const {'classic', 'compact', 'top', 'modern', 'minimal', 'badge'}
+        final supportedStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}
             .contains(req.style) ? req.style : 'classic';
         final useClassicLayout = hasText &&
             _drawClassicTimestampLayout(image, lines: req.lines, logo: decodedLogo,
@@ -805,10 +805,10 @@ class WatermarkService {
               : img.arial48;
       final lineHeight = font.lineHeight + (2 * scale).round();
       final style = const {
-        'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+        'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge',
       }.contains(req.style) ? req.style : 'classic';
       // Batasi lebar teks agar panel tidak membentang menutupi foto.
-      final maxTextRatio = style == 'compact' || style == 'badge'
+      final maxTextRatio = style == 'compact' || style == 'badge' || style == 'timemark'
           ? 0.46
           : style == 'minimal'
               ? 0.50

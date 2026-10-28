@@ -27,7 +27,7 @@ void main() {
   });
 
   test('all supported watermark styles can be restored', () async {
-    const styles = ['classic', 'compact', 'top', 'modern', 'minimal', 'badge'];
+    const styles = ['classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'];
 
     for (final style in styles) {
       await settings.setWatermarkStyle(style);
