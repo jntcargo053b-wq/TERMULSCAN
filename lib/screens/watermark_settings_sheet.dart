@@ -797,11 +797,15 @@ class _WatermarkStyleOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(7),
+    return Semantics(
+      label: 'Model watermark: $title. $subtitle',
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(7),
         decoration: BoxDecoration(
           color: selected ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF2A2A2A),
           borderRadius: BorderRadius.circular(10),
@@ -890,6 +894,7 @@ class _WatermarkStyleOption extends StatelessWidget {
             const Gap(2),
             Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 9)),
           ],
+          ),
         ),
       ),
     );
