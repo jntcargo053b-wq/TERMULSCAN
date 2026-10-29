@@ -236,12 +236,18 @@ class WatermarkService {
     required int y,
     required img.Color color,
     int shadowOffset = 1,
+    bool bold = false,
   }) {
     img.drawString(
       image, text, font: font, x: x + shadowOffset, y: y + shadowOffset,
       color: img.ColorRgb8(8, 12, 18),
     );
     img.drawString(image, text, font: font, x: x, y: y, color: color);
+    // Tambahan satu piksel hanya untuk teks prioritas agar tampak lebih tegas
+    // tanpa mengubah ukuran font atau tinggi baris.
+    if (bold) {
+      img.drawString(image, text, font: font, x: x + 1, y: y, color: color);
+    }
   }
 
   /// Menghapus latar hitam yang menempel pada tepi logo, tanpa menghapus
@@ -357,7 +363,8 @@ class WatermarkService {
     final minute = m.group(5)!;
     const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     const weekdays = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
-    final dateLine = '${weekdays[date.weekday - 1]}, $day ${months[month - 1]} $year';
+    final dateLine =
+        '${weekdays[date.weekday - 1].toUpperCase()}, $day ${months[month - 1].toUpperCase()} $year';
     final small = image.width < 720 ? img.arial14 : img.arial24;
     final large = image.width < 720 ? img.arial24 : img.arial48;
     final factor = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
@@ -372,15 +379,33 @@ class WatermarkService {
     final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
     final maxText = (image.width * 0.82).round().clamp(1, image.width - inset * 2).toInt();
     final metadata = <String>[];
-    if (address != null && address.isNotEmpty) metadata.addAll(_wrapText(address, small, maxText - pad));
-    if (gps != null && gps.isNotEmpty) metadata.addAll(_wrapText(gps, small, maxText - pad));
-    for (final extra in extras) { metadata.addAll(_wrapText(extra, small, maxText - pad)); }
-    final codes = photoCode == null || photoCode.isEmpty ? <String>[] : _wrapText('Kode Foto: $photoCode', small, maxText - pad);
-    final lineHeight = small.lineHeight + gap;
-    final detailsHeight = lineHeight + metadata.length * lineHeight + (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
+    if (address != null && address.isNotEmpty) {
+      metadata.addAll(_wrapText('ALAMAT: $address', small, maxText - pad));
+    }
+    if (gps != null && gps.isNotEmpty) {
+      metadata.addAll(_wrapText('GPS: $gps', small, maxText - pad));
+    }
+    for (final extra in extras) {
+      metadata.addAll(_wrapText(extra, small, maxText - pad));
+    }
+    final codes = photoCode == null || photoCode.isEmpty
+        ? <String>[]
+        : _wrapText('AWB: $photoCode', small, maxText - pad);
+    // Jarak antarbari sedikit dilonggarkan supaya alamat dan koordinat tidak
+    // terlihat menempel, terutama setelah foto diperkecil.
+    final lineHeight = small.lineHeight + (8 * scale).round().clamp(4, 20).toInt();
+    final detailsHeight =
+        lineHeight + metadata.length * lineHeight +
+        (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
     final totalHeight = capsuleHeight + gap * 2 + detailsHeight;
     if (totalHeight >= image.height - inset) return false;
-    final textWidth = metadata.fold<int>(_textWidth(dateLine, small), (w, line) { final lineWidth = _textWidth(line, small); return w > lineWidth ? w : lineWidth; });
+    var textWidth = metadata.fold<int>(
+      _textWidth(dateLine, small),
+      (width, line) => math.max(width, _textWidth(line, small)),
+    );
+    for (final line in codes) {
+      textWidth = math.max(textWidth, _textWidth(line, small));
+    }
     final blockWidth = math.min(image.width - inset * 2, math.max(capsuleWidth, textWidth + pad));
     const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
     final pos = valid.contains(position) ? position : 'bottomLeft';
@@ -416,11 +441,22 @@ class WatermarkService {
       radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
     final timeX = left + pad;
     final timeY = top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2;
-    // Offset satu piksel menebalkan glyph bitmap tanpa mengubah font layout.
-    _drawScaledBitmapText(image, time, font: large, x: timeX,
-      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
-    _drawScaledBitmapText(image, time, font: large, x: timeX + 1,
-      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
+    // Extra-bold: tumpuk beberapa render ber-offset kecil untuk mempertebal
+    // batang angka secara nyata. Render tetap berada dalam kapsul waktu yang
+    // sama, sehingga ukuran panel dan ruang logo tidak berubah.
+    final timeColor = img.ColorRgb8(18, 55, 105);
+    for (final offset in const [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0)]) {
+      _drawScaledBitmapText(
+        image,
+        time,
+        font: large,
+        x: timeX + offset.$1,
+        y: timeY + offset.$2,
+        color: timeColor,
+        factor: factor,
+        shadowOffset: 0,
+      );
+    }
     if (logo != null) {
       final resized = img.copyResize(logo, width: logoWidth, height: logoHeight);
       final logoX = left + capsuleWidth - pad - logoWidth;
@@ -433,16 +469,26 @@ class WatermarkService {
     var y = top + capsuleHeight + gap * 2;
     final textX = left + pad;
     final shadow = math.max(1, (scale * 1.2).round());
-    _drawStringCrisp(image, dateLine, font: small, x: textX, y: y, color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow);
+    _drawStringCrisp(
+      image, dateLine, font: small, x: textX, y: y,
+      color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow, bold: true,
+    );
     y += lineHeight;
     for (final line in metadata) {
-      _drawStringCrisp(image, line, font: small, x: textX, y: y, color: img.ColorRgb8(250, 250, 250), shadowOffset: shadow);
+      _drawStringCrisp(
+        image, line, font: small, x: textX, y: y,
+        color: img.ColorRgb8(250, 250, 250), shadowOffset: shadow,
+        bold: line.startsWith('ALAMAT:') || line.startsWith('GPS:'),
+      );
       y += lineHeight;
     }
     if (codes.isNotEmpty) {
       y += gap;
       for (final line in codes) {
-        _drawStringCrisp(image, line, font: small, x: textX, y: y, color: img.ColorRgb8(215, 220, 225), shadowOffset: shadow);
+        _drawStringCrisp(
+          image, line, font: small, x: textX, y: y,
+          color: img.ColorRgb8(255, 218, 130), shadowOffset: shadow, bold: true,
+        );
         y += lineHeight;
       }
     }
