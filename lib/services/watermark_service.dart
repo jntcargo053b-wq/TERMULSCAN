@@ -32,7 +32,7 @@ class WatermarkService {
 
   /// Skala watermark mengikuti sisi terpendek foto setelah orientasi EXIF
   /// dibakar. Ini menjaga ukuran relatif serupa pada foto portrait/landscape.
-  static int _shortSide(int width, int height) => math.min(width, height);
+  static int _shortSide(int width, int height) => math.min(width, height).toInt();
 
   static double _photoScale(int width, int height) =>
       (_shortSide(width, height) / 1080).clamp(0.35, 3.75).toDouble();
