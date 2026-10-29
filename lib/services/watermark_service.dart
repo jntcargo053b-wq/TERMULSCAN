@@ -364,7 +364,7 @@ class WatermarkService {
     const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     const weekdays = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
     final dateLine =
-        '${weekdays[date.weekday - 1].toUpperCase()}, $day ${months[month - 1].toUpperCase()} $year';
+        '${weekdays[date.weekday - 1]}, $day ${months[month - 1]} $year';
     // Hari/tanggal memakai ukuran terpisah yang lebih besar daripada metadata.
     final small = image.width < 720 ? img.arial14 : img.arial24;
     final dateFont = image.width < 720 ? img.arial24 : img.arial48;
@@ -383,17 +383,17 @@ class WatermarkService {
     final dateLines = _wrapText(dateLine, dateFont, maxText - pad);
     final metadata = <String>[];
     if (address != null && address.isNotEmpty) {
-      metadata.addAll(_wrapText('ALAMAT: $address', small, maxText - pad));
+      metadata.addAll(_wrapText(address, small, maxText - pad));
     }
     if (gps != null && gps.isNotEmpty) {
-      metadata.addAll(_wrapText('GPS: $gps', small, maxText - pad));
+      metadata.addAll(_wrapText(gps, small, maxText - pad));
     }
     for (final extra in extras) {
       metadata.addAll(_wrapText(extra, small, maxText - pad));
     }
     final codes = photoCode == null || photoCode.isEmpty
         ? <String>[]
-        : _wrapText('AWB: $photoCode', small, maxText - pad);
+        : _wrapText('Kode Foto: $photoCode', small, maxText - pad);
     // Hari/tanggal memiliki line-height sendiri karena font lebih besar.
     // Metadata diberi jarak antarbari agar alamat, GPS, dan AWB terpisah jelas.
     final lineHeight = small.lineHeight + (8 * scale).round().clamp(4, 20).toInt();
@@ -493,7 +493,7 @@ class WatermarkService {
       _drawStringCrisp(
         image, line, font: small, x: textX, y: y,
         color: img.ColorRgb8(250, 250, 250), shadowOffset: shadow,
-        bold: line.startsWith('ALAMAT:') || line.startsWith('GPS:'),
+        bold: false,
       );
       y += lineHeight;
     }
@@ -502,7 +502,7 @@ class WatermarkService {
       for (final line in codes) {
         _drawStringCrisp(
           image, line, font: small, x: textX, y: y,
-          color: img.ColorRgb8(255, 218, 130), shadowOffset: shadow, bold: true,
+          color: img.ColorRgb8(190, 190, 190), shadowOffset: shadow, bold: true,
         );
         y += lineHeight;
       }
