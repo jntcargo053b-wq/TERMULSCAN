@@ -393,7 +393,7 @@ class WatermarkService {
     }
     final codes = photoCode == null || photoCode.isEmpty
         ? <String>[]
-        : _wrapText('Kode Foto: $photoCode', small, maxText - pad);
+        : _wrapText('AWB: $photoCode', small, maxText - pad);
     // Hari/tanggal memiliki line-height sendiri karena font lebih besar.
     // Metadata diberi jarak antarbari agar alamat, GPS, dan AWB terpisah jelas.
     final lineHeight = small.lineHeight + (8 * scale).round().clamp(4, 20).toInt();
