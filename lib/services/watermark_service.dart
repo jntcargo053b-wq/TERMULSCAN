@@ -365,7 +365,9 @@ class WatermarkService {
     const weekdays = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
     final dateLine =
         '${weekdays[date.weekday - 1].toUpperCase()}, $day ${months[month - 1].toUpperCase()} $year';
+    // Hari/tanggal memakai ukuran terpisah yang lebih besar daripada metadata.
     final small = image.width < 720 ? img.arial14 : img.arial24;
+    final dateFont = image.width < 720 ? img.arial24 : img.arial48;
     final large = image.width < 720 ? img.arial24 : img.arial48;
     final factor = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
     final pad = (12 * scale).round().clamp(6, 36).toInt();
@@ -378,6 +380,7 @@ class WatermarkService {
     final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight).toInt() + pad * 2;
     final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
     final maxText = (image.width * 0.82).round().clamp(1, image.width - inset * 2).toInt();
+    final dateLines = _wrapText(dateLine, dateFont, maxText - pad);
     final metadata = <String>[];
     if (address != null && address.isNotEmpty) {
       metadata.addAll(_wrapText('ALAMAT: $address', small, maxText - pad));
@@ -391,18 +394,23 @@ class WatermarkService {
     final codes = photoCode == null || photoCode.isEmpty
         ? <String>[]
         : _wrapText('AWB: $photoCode', small, maxText - pad);
-    // Jarak antarbari sedikit dilonggarkan supaya alamat dan koordinat tidak
-    // terlihat menempel, terutama setelah foto diperkecil.
+    // Hari/tanggal memiliki line-height sendiri karena font lebih besar.
+    // Metadata diberi jarak antarbari agar alamat, GPS, dan AWB terpisah jelas.
     final lineHeight = small.lineHeight + (8 * scale).round().clamp(4, 20).toInt();
+    final dateLineHeight = dateFont.lineHeight + gap;
     final detailsHeight =
-        lineHeight + metadata.length * lineHeight +
+        dateLines.length * dateLineHeight +
+        metadata.length * lineHeight +
         (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
     final totalHeight = capsuleHeight + gap * 2 + detailsHeight;
     if (totalHeight >= image.height - inset) return false;
-    var textWidth = metadata.fold<int>(
-      _textWidth(dateLine, small),
-      (width, line) => math.max(width, _textWidth(line, small)),
+    var textWidth = dateLines.fold<int>(
+      0,
+      (width, line) => math.max(width, _textWidth(line, dateFont)),
     );
+    for (final line in metadata) {
+      textWidth = math.max(textWidth, _textWidth(line, small));
+    }
     for (final line in codes) {
       textWidth = math.max(textWidth, _textWidth(line, small));
     }
@@ -440,7 +448,12 @@ class WatermarkService {
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: left + capsuleWidth, y2: top + capsuleHeight,
       radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
     final timeX = left + pad;
-    final timeY = top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2;
+    // _drawScaledBitmapText menambahkan padding transparan 1 px sebelum resize.
+    // Kurangi padding skala itu dari origin agar glyph aktual tepat di tengah
+    // vertikal kapsul putih, bukan terlihat turun beberapa piksel.
+    final scaledGlyphHeight = large.lineHeight * factor;
+    final timeY = top +
+        ((capsuleHeight - scaledGlyphHeight) / 2 - factor).round();
     // Extra-bold: tumpuk beberapa render ber-offset kecil untuk mempertebal
     // batang angka secara nyata. Render tetap berada dalam kapsul waktu yang
     // sama, sehingga ukuran panel dan ruang logo tidak berubah.
@@ -469,11 +482,13 @@ class WatermarkService {
     var y = top + capsuleHeight + gap * 2;
     final textX = left + pad;
     final shadow = math.max(1, (scale * 1.2).round());
-    _drawStringCrisp(
-      image, dateLine, font: small, x: textX, y: y,
-      color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow, bold: true,
-    );
-    y += lineHeight;
+    for (final line in dateLines) {
+      _drawStringCrisp(
+        image, line, font: dateFont, x: textX, y: y,
+        color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow, bold: true,
+      );
+      y += dateLineHeight;
+    }
     for (final line in metadata) {
       _drawStringCrisp(
         image, line, font: small, x: textX, y: y,
