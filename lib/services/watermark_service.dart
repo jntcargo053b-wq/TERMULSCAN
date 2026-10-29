@@ -1198,8 +1198,8 @@ class WatermarkService {
   ) {
     final u = _unit(W, H) * k;
     final timeEm = math.max(22.0, 78 * u);
-    final dateEm = math.max(12.0, 32 * u);
-    final bodyEm = math.max(10.0, 21 * u);
+    final dateEm = math.max(13.0, 35 * u);
+    final bodyEm = math.max(11.0, 24 * u);
     final pad = _ci(13 * u, 6, 36);
     final gap = _ci(8 * u, 3, 20);
     final inset = _ci(18 * u, 8, 48);
@@ -1226,7 +1226,7 @@ class WatermarkService {
     for (final r in _rows(p, includeCustom: false)) {
       if (r.label == 'AWB') continue;
       meta.addAll(cv.wrap(r.label == null ? r.value : '${r.label}: ${r.value}',
-          bodyEm, maxText - pad));
+          bodyEm, maxText - pad, bold: true));
     }
     final codes = p.awb == null || p.awb!.isEmpty
         ? <String>[]
@@ -1283,7 +1283,7 @@ class WatermarkService {
       x + blockW - 1,
       y0 + total - 1,
       _ci(12 * u, 4, 30),
-      img.ColorRgba8(8, 14, 24, 204),
+      img.ColorRgba8(8, 14, 24, 108),
     );
 
     cv.rrect(x, y0, x + capW - 1, y0 + capH - 1, _ci(12 * u, 4, 30),
@@ -1304,7 +1304,7 @@ class WatermarkService {
       y += dateLH;
     }
     for (final l in meta) {
-      cv.text(l, em: bodyEm, x: tx, y: y, color: img.ColorRgb8(248, 248, 248));
+      cv.text(l, em: bodyEm, x: tx, y: y, color: img.ColorRgb8(255, 255, 255), bold: true);
       y += bodyLH;
     }
     if (codes.isNotEmpty) {
