@@ -189,6 +189,8 @@ class PhotoTaskRecoveryService {
           if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
           if (_settings.operatorName.trim().isNotEmpty)
             'Operator: ${_settings.operatorName.trim()}',
+          if (_settings.watermarkStyle == 'timemark' && _settings.customText.trim().isNotEmpty)
+            'CUSTOM_TEXT: ${_settings.customText.trim()}',
         ];
         await WatermarkService.burn(
           sourcePath: rawPath,
@@ -253,6 +255,8 @@ class PhotoTaskRecoveryService {
       if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
       if (_settings.operatorName.trim().isNotEmpty)
         'Operator: ${_settings.operatorName.trim()}',
+      if (_settings.watermarkStyle == 'timemark' && _settings.customText.trim().isNotEmpty)
+        'CUSTOM_TEXT: ${_settings.customText.trim()}',
     ];
 
     await WatermarkService.burn(
