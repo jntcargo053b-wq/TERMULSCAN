@@ -30,6 +30,13 @@ class WatermarkBurnRequest {
 class WatermarkService {
   static const int _jpegQuality = 90;
 
+  /// Skala watermark mengikuti sisi terpendek foto setelah orientasi EXIF
+  /// dibakar. Ini menjaga ukuran relatif serupa pada foto portrait/landscape.
+  static int _shortSide(int width, int height) => math.min(width, height).toInt();
+
+  static double _photoScale(int width, int height) =>
+      (_shortSide(width, height) / 1080).clamp(0.35, 3.75).toDouble();
+
   static Future<void> burn({
     required String sourcePath,
     required String destPath,
@@ -64,7 +71,7 @@ class WatermarkService {
   }) async {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
-    final scale = (width / 1080).clamp(0.55, 3.75).toDouble();
+    final scale = _photoScale(width, height);
     final pad = (18 * scale).round().clamp(8, 48).toDouble();
     final fontSize = (22 * scale).clamp(12, 52).toDouble();
     final maxPanelWidth = (width * 0.86).clamp(1, width).toDouble();
@@ -89,7 +96,7 @@ class WatermarkService {
         codec.dispose();
       } catch (_) {}
     }
-    final logoWidth = logoImage == null ? 0.0 : (width * 0.075).clamp(16, 100).toDouble();
+    final logoWidth = logoImage == null ? 0.0 : (_shortSide(width, height) * 0.075).clamp(16, 100).toDouble();
     final logoHeight = logoImage == null ? 0.0 : logoWidth * logoImage.height / logoImage.width;
     final gap = (8 * scale).clamp(4, 24).toDouble();
     final textHeight = painters.fold<double>(0, (sum, painter) => sum + painter.height);
@@ -366,16 +373,17 @@ class WatermarkService {
     final dateLine =
         '${weekdays[date.weekday - 1]}, $day ${months[month - 1]} $year';
     // Hari/tanggal memakai ukuran terpisah yang lebih besar daripada metadata.
-    final small = image.width < 720 ? img.arial14 : img.arial24;
-    final dateFont = image.width < 720 ? img.arial24 : img.arial48;
-    final large = image.width < 720 ? img.arial24 : img.arial48;
-    final factor = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
+    final shortSide = _shortSide(image.width, image.height);
+    final small = shortSide < 480 ? img.arial14 : img.arial24;
+    final dateFont = shortSide < 720 ? img.arial24 : img.arial48;
+    final large = shortSide < 720 ? img.arial24 : img.arial48;
+    final factor = (shortSide / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
     final pad = (12 * scale).round().clamp(6, 36).toInt();
     final gap = (7 * scale).round().clamp(3, 18).toInt();
     final inset = (18 * scale).round().clamp(8, 48).toInt();
     final time = '$hour:$minute';
     final timeWidth = (_textWidth(time, large) * factor).round();
-    final logoWidth = logo == null ? 0 : (image.width * 0.105).round().clamp(20, 132).toInt();
+    final logoWidth = logo == null ? 0 : (shortSide * 0.105).round().clamp(20, 132).toInt();
     final logoHeight = logo == null ? 0 : (logo.height * logoWidth / logo.width).round();
     final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight).toInt() + pad * 2;
     final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
@@ -572,9 +580,10 @@ class WatermarkService {
     // Pada foto kecil, gunakan font dasar lebih kecil dan faktor skala yang
     // adaptif. Membesarkan font bitmap 48 px secara paksa pada foto 320 px
     // membuat waktu, tanggal, dan logo saling bertabrakan serta tampak kasar.
-    final small = image.width < 720 ? img.arial14 : img.arial24;
-    final large = image.width < 720 ? img.arial24 : img.arial48;
-    final timeScale = (image.width / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
+    final shortSide = _shortSide(image.width, image.height);
+    final small = shortSide < 480 ? img.arial14 : img.arial24;
+    final large = shortSide < 720 ? img.arial24 : img.arial48;
+    final timeScale = (shortSide / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
     final pad = (16 * scale).round().clamp(8, 48).toInt();
     final gap = (8 * scale).round().clamp(4, 20).toInt();
     final lineH = small.lineHeight + gap;
@@ -582,7 +591,7 @@ class WatermarkService {
     // Ukuran panel mengikuti konten, bukan pita dengan lebar tetap.
     // Sisakan ruang untuk logo di header agar tidak bertumpuk dengan tanggal.
     final panelRatio = style == 'compact' || style == 'badge' ? 0.72 : 0.86;
-    final logoMax = (image.width * 0.075).round().clamp(12, 96).toInt();
+    final logoMax = (shortSide * 0.075).round().clamp(12, 96).toInt();
     final logoWidth = logo == null
         ? 0
         : logoMax;
@@ -869,7 +878,7 @@ class WatermarkService {
             .contains(req.style) ? req.style : 'classic';
         final useClassicLayout = hasText &&
             _drawClassicTimestampLayout(image, lines: req.lines, logo: decodedLogo,
-              scale: (image.width / 1080).clamp(0.55, 3.75).toDouble(),
+              scale: _photoScale(image.width, image.height),
               style: supportedStyle, position: req.position);
 
       if (!hasText && decodedLogo == null) {
@@ -883,14 +892,15 @@ class WatermarkService {
 
       // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
       // padding tetap terlalu besar pada gambar kecil.
-      final scale = (image.width / 1080).clamp(0.55, 3.75);
+      final scale = _photoScale(image.width, image.height);
       final padding = (9 * scale).round().clamp(5, 18).toInt();
       final lineGap = (2 * scale).round().clamp(1, 6).toInt();
       // Naikkan ukuran font pada foto resolusi tinggi agar teks watermark
       // tetap proporsional setelah dimensi asli dipertahankan.
-      final font = image.width < 1280
+      final shortSide = _shortSide(image.width, image.height);
+      final font = shortSide < 720
           ? img.arial14
-          : image.width < 2560
+          : shortSide < 1600
               ? img.arial24
               : img.arial48;
       final lineHeight = font.lineHeight + (2 * scale).round();
@@ -925,7 +935,7 @@ class WatermarkService {
       final logo = decodedLogo;
       img.Image? resizedLogo;
       if (logo != null) {
-        final maxLogo = (image.width * 0.08).round().clamp(14, 160).toInt();
+        final maxLogo = (_shortSide(image.width, image.height) * 0.08).round().clamp(14, 160).toInt();
         final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
         resizedLogo = img.copyResize(
           logo,
