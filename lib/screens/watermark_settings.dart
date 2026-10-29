@@ -7,16 +7,19 @@ class WatermarkSettings extends ChangeNotifier {
   static const _keyLogoPath = 'wm_logo_path';
   static const _keyWatermarkStyle = 'wm_style';
   static const _keyWatermarkPosition = 'wm_position';
+  static const _keyCustomText = 'wm_custom_text';
 
   String _operatorName = '';
   String? _logoPath;
   String _watermarkStyle = 'timemark';
   String _watermarkPosition = 'bottomRight';
+  String _customText = '';
 
   String get operatorName => _operatorName;
   String? get logoPath => _logoPath;
   String get watermarkStyle => _watermarkStyle;
   String get watermarkPosition => _watermarkPosition;
+  String get customText => _customText;
 
   bool get hasLogo => _logoPath != null && File(_logoPath!).existsSync();
 
@@ -27,6 +30,7 @@ class WatermarkSettings extends ChangeNotifier {
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _operatorName = prefs.getString(_keyOperator) ?? '';
+    _customText = prefs.getString(_keyCustomText) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
     final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'timemark';
     _watermarkStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
@@ -44,6 +48,14 @@ class WatermarkSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyOperator, name);
     _operatorName = name;
+    notifyListeners();
+  }
+
+  Future<void> setCustomText(String text) async {
+    final normalized = text.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyCustomText, normalized);
+    _customText = normalized;
     notifyListeners();
   }
 
