@@ -20,6 +20,7 @@ class WatermarkSettingsSheet extends StatefulWidget {
 class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   final _settings = WatermarkSettings();
   final _operatorController = TextEditingController();
+  final _customTextController = TextEditingController();
   final _picker = ImagePicker();
   bool _isSaving = false;
   bool _isSavingSettings = false;
@@ -35,12 +36,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   void initState() {
     super.initState();
     _operatorController.text = _settings.operatorName;
+    _customTextController.text = _settings.customText;
     _selectedStyle = _settings.watermarkStyle;
     _selectedPosition = _settings.watermarkPosition;
     _settings.load().then((_) {
       if (!mounted) return;
       setState(() {
         _operatorController.text = _settings.operatorName;
+        _customTextController.text = _settings.customText;
         _selectedStyle = _settings.watermarkStyle;
         _selectedPosition = _settings.watermarkPosition;
       });
@@ -63,6 +66,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       }());
     }
     _operatorController.dispose();
+    _customTextController.dispose();
     super.dispose();
   }
 
@@ -298,6 +302,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
       }
 
       final operator = _operatorController.text.trim();
+      final customText = _customTextController.text.trim();
       final outputFile = File(
         '${tempDir.path}/termulscan_watermark_preview_${token}.jpg',
       );
@@ -311,6 +316,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           'ALAMAT: Jl. Contoh Gudang, Malang',
           'AWB: 8991234567890',
           if (operator.isNotEmpty) 'Operator: $operator',
+          if (customText.isNotEmpty) 'CUSTOM_TEXT: $customText',
         ],
         logoBytes: logoBytes,
         style: _selectedStyle,
@@ -364,12 +370,14 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     // Ambil snapshot sebelum operasi async agar satu kali tekan Simpan
     // selalu menyimpan satu set nilai yang konsisten.
     final name = _operatorController.text.trim();
+    final customText = _customTextController.text.trim();
     final style = _selectedStyle;
     final position = _selectedPosition;
 
     setState(() => _isSavingSettings = true);
     try {
       await _settings.setOperatorName(name);
+      await _settings.setCustomText(customText);
       await _settings.setWatermarkStyle(style);
       await _settings.setWatermarkPosition(position);
       if (!mounted) return;
@@ -463,6 +471,56 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
           const Text(
             'Tampil di setiap foto yang disimpan',
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+          ),
+          const Gap(16),
+          const Text(
+            'TEKS KUSTOM TIMEMARK',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const Gap(8),
+          TextField(
+            controller: _customTextController,
+            maxLength: 80,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Contoh: PT Contoh Logistik - Gudang Malang',
+              hintStyle: const TextStyle(color: AppTheme.textSecondary),
+              helperText: 'Kosongkan untuk menghilangkan teks di bagian atas foto.',
+              helperMaxLines: 2,
+              counterStyle: const TextStyle(color: AppTheme.textSecondary),
+              filled: true,
+              fillColor: const Color(0xFF2A2A2A),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Colors.amber, width: 1.5),
+              ),
+              prefixIcon: const Icon(Icons.text_fields, color: AppTheme.textSecondary),
+              suffixIcon: _customTextController.text.isNotEmpty
+                  ? IconButton(
+                      tooltip: 'Hapus teks kustom',
+                      icon: const Icon(Icons.clear, color: AppTheme.textSecondary, size: 16),
+                      onPressed: () {
+                        _customTextController.clear();
+                        setState(() {});
+                        _schedulePreviewRefresh();
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: (_) {
+              setState(() {});
+              _schedulePreviewRefresh();
+            },
           ),
           const Gap(20),
 
