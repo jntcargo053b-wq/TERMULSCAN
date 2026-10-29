@@ -1016,7 +1016,7 @@ class _WatermarkStyleOption extends StatelessWidget {
                               fontWeight: FontWeight.w900,
                               shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
                             )),
-                            Text('Foto dengan metadata', style: TextStyle(
+                            Text('TEKS KUSTOM', style: TextStyle(
                               color: Colors.white,
                               fontSize: 4,
                               shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
