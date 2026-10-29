@@ -321,7 +321,7 @@ class WatermarkService {
     required double scale,
     required String position,
   }) {
-    String? rawTime, address, gps, photoCode;
+    String? rawTime, address, gps, photoCode, customText;
     final extras = <String>[];
     for (final line in lines) {
       final split = line.indexOf(':');
@@ -338,6 +338,8 @@ class WatermarkService {
         gps = value;
       } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
         photoCode = value;
+      } else if (key == 'CUSTOM_TEXT' || key == 'TEKS KUSTOM') {
+        customText = value;
       } else {
         extras.add(line);
       }
@@ -387,44 +389,38 @@ class WatermarkService {
     final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (image.width - blockWidth) ~/ 2 : image.width - blockWidth - inset).clamp(0, image.width - blockWidth).toInt();
     final top = (vertical == 'top' ? inset : vertical == 'center' ? (image.height - totalHeight) ~/ 2 : image.height - totalHeight - inset).clamp(0, image.height - totalHeight).toInt();
 
-    // Identitas merek pada gaya Timemark, terpisah dari kapsul waktu dan
-    // metadata. Letakkan di kanan atas seperti referensi, kecuali watermark
-    // diposisikan di atas agar tidak saling menimpa.
-    if (vertical != 'top' && image.width >= 320) {
-      final brandFont = image.width < 720 ? img.arial14 : img.arial24;
-      final brandScale = (image.width / 1152 * 1.05).clamp(0.72, 1.35).toDouble();
-      const brand = 'TERMULSCAN';
-      const tagline = 'Foto dengan metadata';
-      final brandWidth = (_textWidth(brand, brandFont) * brandScale).round();
-      final taglineWidth = (_textWidth(tagline, small) * 0.9).round();
-      final brandRight = image.width - inset;
-      final brandY = inset;
-      _drawScaledBitmapText(
-        image,
-        brand,
-        font: brandFont,
-        x: (brandRight - brandWidth).clamp(0, image.width - brandWidth).toInt(),
-        y: brandY,
-        color: img.ColorRgb8(255, 190, 55),
-        factor: brandScale,
-        shadowOffset: 1,
-      );
-      _drawStringCrisp(
-        image,
-        tagline,
-        font: small,
-        x: (brandRight - taglineWidth).clamp(0, image.width - taglineWidth).toInt(),
-        y: brandY + (brandFont.lineHeight * brandScale).round(),
-        color: img.ColorRgb8(245, 245, 245),
-        shadowOffset: 1,
-      );
+    // Header lama "TERMULSCAN / Foto dengan metadata" diganti teks kustom.
+    // Jika teks kosong, header tidak digambar.
+    if (customText != null && customText.trim().isNotEmpty &&
+        vertical != 'top' && image.width >= 320) {
+      final maxCustomWidth = (image.width * 0.72).round()
+          .clamp(1, image.width - inset * 2).toInt();
+      final customLines = _wrapText(customText.trim(), small, maxCustomWidth);
+      var lineY = inset;
+      for (final line in customLines.take(3)) {
+        final lineWidth = _textWidth(line, small);
+        _drawStringCrisp(
+          image,
+          line,
+          font: small,
+          x: (image.width - inset - lineWidth).clamp(0, image.width - lineWidth).toInt(),
+          y: lineY,
+          color: img.ColorRgb8(255, 255, 255),
+          shadowOffset: 1,
+        );
+        lineY += small.lineHeight + gap ~/ 2;
+      }
     }
 
     _fillRoundedRectBlended(image, x1: left, y1: top, x2: left + capsuleWidth, y2: top + capsuleHeight,
       radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
-    _drawScaledBitmapText(image, time, font: large, x: left + pad,
-      y: top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2,
-      color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
+    final timeX = left + pad;
+    final timeY = top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2;
+    // Offset satu piksel menebalkan glyph bitmap tanpa mengubah font layout.
+    _drawScaledBitmapText(image, time, font: large, x: timeX,
+      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
+    _drawScaledBitmapText(image, time, font: large, x: timeX + 1,
+      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
     if (logo != null) {
       final resized = img.copyResize(logo, width: logoWidth, height: logoHeight);
       final logoX = left + capsuleWidth - pad - logoWidth;

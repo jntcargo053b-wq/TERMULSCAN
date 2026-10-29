@@ -30,6 +30,16 @@ void main() {
     expect(settings.watermarkStyle, 'modern');
   });
 
+  test('custom Timemark text persists after reload and can be cleared', () async {
+    await settings.setCustomText('PT Contoh Logistik - Gudang Malang');
+    await settings.load();
+    expect(settings.customText, 'PT Contoh Logistik - Gudang Malang');
+
+    await settings.setCustomText('');
+    await settings.load();
+    expect(settings.customText, isEmpty);
+  });
+
   test('all supported watermark styles can be restored', () async {
     const styles = ['classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'];
 
