@@ -18,6 +18,45 @@ void main() {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     });
 
+    test('Timemark custom text changes the header while preserving photo size', () async {
+      final source = File('${tempDir.path}/timemark-custom-source.png');
+      final original = img.Image(width: 480, height: 640);
+      img.fill(original, color: img.ColorRgb8(174, 192, 176));
+      await source.writeAsBytes(img.encodePng(original));
+
+      final withoutCustom = File('${tempDir.path}/timemark-without-custom.png');
+      final withCustom = File('${tempDir.path}/timemark-with-custom.png');
+      const lines = [
+        'WAKTU: 2026-10-28 08:30:00',
+        'ALAMAT: Gudang pengiriman, Malang',
+        'GPS: -7.966620, 112.632630',
+        'AWB: TERMULSCAN-123456789',
+      ];
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: withoutCustom.path,
+        style: 'timemark',
+        lines: lines,
+      );
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: withCustom.path,
+        style: 'timemark',
+        lines: const [...lines, 'CUSTOM_TEXT: PT Contoh Logistik'],
+      );
+
+      final imageWithoutCustom = img.decodeImage(await withoutCustom.readAsBytes());
+      final imageWithCustom = img.decodeImage(await withCustom.readAsBytes());
+      expect(imageWithoutCustom, isNotNull);
+      expect(imageWithCustom, isNotNull);
+      expect(imageWithCustom!.width, original.width);
+      expect(imageWithCustom.height, original.height);
+      expect(
+        (await withoutCustom.readAsBytes()).join(','),
+        isNot((await withCustom.readAsBytes()).join(',')),
+      );
+    });
+
     test('each selectable style produces a distinct visual render', () async {
       const styles = ['classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'];
       final source = File('${tempDir.path}/source.png');
