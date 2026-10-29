@@ -416,11 +416,22 @@ class WatermarkService {
       radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
     final timeX = left + pad;
     final timeY = top + (capsuleHeight - (large.lineHeight * factor).round()) ~/ 2;
-    // Offset satu piksel menebalkan glyph bitmap tanpa mengubah font layout.
-    _drawScaledBitmapText(image, time, font: large, x: timeX,
-      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
-    _drawScaledBitmapText(image, time, font: large, x: timeX + 1,
-      y: timeY, color: img.ColorRgb8(18, 55, 105), factor: factor, shadowOffset: 0);
+    // Extra-bold: tumpuk beberapa render ber-offset kecil untuk mempertebal
+    // batang angka secara nyata. Render tetap berada dalam kapsul waktu yang
+    // sama, sehingga ukuran panel dan ruang logo tidak berubah.
+    final timeColor = img.ColorRgb8(18, 55, 105);
+    for (final offset in const [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0)]) {
+      _drawScaledBitmapText(
+        image,
+        time,
+        font: large,
+        x: timeX + offset.$1,
+        y: timeY + offset.$2,
+        color: timeColor,
+        factor: factor,
+        shadowOffset: 0,
+      );
+    }
     if (logo != null) {
       final resized = img.copyResize(logo, width: logoWidth, height: logoHeight);
       final logoX = left + capsuleWidth - pad - logoWidth;
