@@ -1273,6 +1273,19 @@ class WatermarkService {
     }
 
     cv.region(x, y0, blockW, total);
+
+    // Panel gelap semi-transparan khusus tanggal dan metadata. Timemark
+    // tetap mempertahankan kapsul jam putih, tetapi alamat/GPS tidak lagi
+    // bergantung pada bayangan teks saat latar foto terang atau ramai.
+    cv.rrect(
+      x,
+      y0 + capH + gap,
+      x + blockW - 1,
+      y0 + total - 1,
+      _ci(12 * u, 4, 30),
+      img.ColorRgba8(8, 14, 24, 204),
+    );
+
     cv.rrect(x, y0, x + capW - 1, y0 + capH - 1, _ci(12 * u, 4, 30),
         img.ColorRgba8(255, 255, 255, 244));
     cv.timeText(t.time,
