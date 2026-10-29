@@ -266,9 +266,12 @@ class _UiCv extends _Cv {
 
   @override
   void region(int x, int y, int w, int h) {
-    const m = 12;
-    final x0 = math.max(0, x - m), y0 = math.max(0, y - m);
-    final x1 = math.min(W, x + w + m), y1 = math.min(H, y + h + m);
+    // Batasi overlay tepat pada kotak watermark. Margin ekstra membuat blur
+    // shadow teks bisa merembes ke piksel tepi foto, terutama pada foto sempit.
+    final x0 = x.clamp(0, W).toInt();
+    final y0 = y.clamp(0, H).toInt();
+    final x1 = (x + w).clamp(x0 + 1, W).toInt();
+    final y1 = (y + h).clamp(y0 + 1, H).toInt();
     regions.add(_Region(x0, y0, math.max(1, x1 - x0), math.max(1, y1 - y0)));
   }
 
