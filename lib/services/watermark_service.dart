@@ -5,6 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 
+/// Overlay PNG berukuran panel + posisinya pada foto.
+class WatermarkOverlay {
+  final Uint8List png;
+  final int x;
+  final int y;
+  const WatermarkOverlay(this.png, this.x, this.y);
+}
+
 /// Payload untuk isolate background.
 class WatermarkBurnRequest {
   final String sourcePath;
@@ -15,6 +23,13 @@ class WatermarkBurnRequest {
   final String position;
   final Uint8List? textOverlayBytes;
 
+  /// Overlay TTF (TextPainter) yang dirender di main isolate. Dipakai hanya
+  /// jika dimensi foto setelah bake EXIF cocok; jika tidak, isolate memakai
+  /// renderer bitmap sebagai cadangan.
+  final List<WatermarkOverlay> overlays;
+  final int expectedWidth;
+  final int expectedHeight;
+
   const WatermarkBurnRequest({
     required this.sourcePath,
     required this.destPath,
@@ -23,19 +38,423 @@ class WatermarkBurnRequest {
     this.style = 'classic',
     this.position = 'bottomRight',
     this.textOverlayBytes,
+    this.overlays = const [],
+    this.expectedWidth = 0,
+    this.expectedHeight = 0,
   });
 }
 
-/// Membakar watermark yang adaptif, terbaca, dan tidak menumpuk dengan logo.
+typedef _TimeInfo = ({String time, String dateText, String dayText});
+
+class _Parsed {
+  String? rawTime, address, gps, awb, custom;
+  final extras = <String>[];
+}
+
+class _Row {
+  final String kind; // clock | pin | gps | tag | dot
+  final String? label;
+  final String value;
+  const _Row(this.kind, this.label, this.value);
+}
+
+class _RowPlan {
+  final _Row row;
+  final int labelW;
+  final List<String> lines;
+  const _RowPlan(this.row, this.labelW, this.lines);
+}
+
+class _Theme {
+  final img.Color top, bottom, accent, icon, primary, muted, divider;
+  final bool light;
+  _Theme(this.top, this.bottom, this.accent, this.icon, this.primary,
+      this.muted, this.divider, this.light);
+}
+
+// ═════════════════════ Abstraksi kanvas (layout dipakai bersama) ═════════════════════
+
+abstract class _Cv {
+  int tw(String t, double em, {bool bold = false});
+  int lh(double em);
+
+  /// Tinggi visual angka (cap-height) untuk ukuran em tertentu.
+  int digitH(double em) => (em * 0.72).round();
+
+  /// Menggambar angka/jam yang pusat visualnya tepat di garis [cy]
+  /// (berdasarkan baseline & cap-height, bukan kotak baris).
+  void timeText(String t,
+      {required double em,
+      required int x,
+      required int cy,
+      required img.Color color,
+      bool shadow = true});
+  void region(int x, int y, int w, int h);
+  void rrect(int x1, int y1, int x2, int y2, int radius, img.Color color,
+      {img.Color? bottom, int? cx1, int? cy1, int? cx2, int? cy2});
+  void rect(int x1, int y1, int x2, int y2, img.Color color);
+  void text(String t,
+      {required double em,
+      required int x,
+      required int y,
+      required img.Color color,
+      bool bold = false,
+      bool shadow = true});
+  void icon(String kind, int cx, int cy, int size, img.Color color);
+  void logoTile(img.Image logo, int x, int y, int logoW, int logoH, int tp,
+      int radius, img.Color tile);
+
+  List<String> wrap(String text, double em, int maxPx, {bool bold = false}) =>
+      WatermarkService._wrapBy(text, maxPx, (s) => tw(s, em, bold: bold));
+}
+
+/// Renderer bitmap (pure Dart, aman di isolate). Cadangan jika TTF gagal.
+class _ImgCv extends _Cv {
+  final img.Image image;
+  _ImgCv(this.image);
+
+  @override
+  int tw(String t, double em, {bool bold = false}) =>
+      (WatermarkService._textWidth(t, WatermarkService._font) *
+              WatermarkService._s(em))
+          .round();
+
+  @override
+  int lh(double em) =>
+      (WatermarkService._font.lineHeight * WatermarkService._s(em)).round();
+
+  @override
+  void timeText(String t,
+      {required double em,
+      required int x,
+      required int cy,
+      required img.Color color,
+      bool shadow = true}) {
+    // Pada font bitmap arial48, pusat angka ≈ 55% tinggi baris dari atas.
+    WatermarkService._text(image, t,
+        em: em, x: x, y: cy - (lh(em) * 0.55).round(),
+        color: color, bold: true, shadow: shadow);
+  }
+
+  @override
+  void region(int x, int y, int w, int h) {}
+
+  @override
+  void rrect(int x1, int y1, int x2, int y2, int radius, img.Color color,
+      {img.Color? bottom, int? cx1, int? cy1, int? cx2, int? cy2}) {
+    WatermarkService._fillRoundedRectBlended(image,
+        x1: x1, y1: y1, x2: x2, y2: y2, radius: radius, color: color,
+        colorBottom: bottom,
+        clipX1: cx1, clipY1: cy1, clipX2: cx2, clipY2: cy2);
+  }
+
+  @override
+  void rect(int x1, int y1, int x2, int y2, img.Color color) =>
+      img.fillRect(image, x1: x1, y1: y1, x2: x2, y2: y2, color: color);
+
+  @override
+  void text(String t,
+          {required double em,
+          required int x,
+          required int y,
+          required img.Color color,
+          bool bold = false,
+          bool shadow = true}) =>
+      WatermarkService._text(image, t,
+          em: em, x: x, y: y, color: color, bold: bold, shadow: shadow);
+
+  @override
+  void icon(String kind, int cx, int cy, int size, img.Color color) =>
+      WatermarkService._icon(image, kind, cx, cy, size, color);
+
+  @override
+  void logoTile(img.Image logo, int x, int y, int logoW, int logoH, int tp,
+          int radius, img.Color tile) =>
+      WatermarkService._logoTile(image, logo, x, y, logoW, logoH, tp, radius, tile);
+}
+
+class _Region {
+  final int x, y, w, h;
+  final ops = <void Function(ui.Canvas)>[];
+  _Region(this.x, this.y, this.w, this.h);
+}
+
+/// Renderer TTF (TextPainter + Canvas): huruf vektor antialias penuh,
+/// ikon berbasis path, gradasi asli. Hanya di main isolate (dart:ui).
+class _UiCv extends _Cv {
+  final int W, H;
+  final ui.Image? logoUi;
+  final regions = <_Region>[];
+  final _cache = <String, TextPainter>{};
+  _UiCv(this.W, this.H, this.logoUi);
+
+  static ui.Color _c(img.Color c) =>
+      ui.Color.fromARGB(c.a.toInt(), c.r.toInt(), c.g.toInt(), c.b.toInt());
+
+  TextStyle _style(double em, bool bold,
+          {ui.Color color = const ui.Color(0xFFFFFFFF), List<ui.Shadow>? shadows}) =>
+      TextStyle(
+        fontSize: em,
+        height: 1.2,
+        fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+        // Angka lebar-sama (tabular) agar jam rapi dan stabil.
+        fontFeatures: const [ui.FontFeature.tabularFigures()],
+        letterSpacing: bold ? em * 0.01 : 0,
+        color: color,
+        shadows: shadows,
+      );
+
+  TextPainter _measure(String t, double em, bool bold) {
+    final key = '$t|$em|$bold';
+    return _cache.putIfAbsent(key, () {
+      return TextPainter(
+        text: TextSpan(text: t, style: _style(em, bold)),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+    });
+  }
+
+  @override
+  int tw(String t, double em, {bool bold = false}) =>
+      _measure(t, em, bold).width.ceil();
+
+  @override
+  int lh(double em) => _measure('Hg', em, false).height.round();
+
+  @override
+  int digitH(double em) => (em * 0.714).round(); // cap-height Roboto
+
+  @override
+  void timeText(String t,
+      {required double em,
+      required int x,
+      required int cy,
+      required img.Color color,
+      bool shadow = true}) {
+    final m = _measure(t, em, true);
+    final baseline = m.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+    // Baseline diletakkan agar angka (cap-height) simetris terhadap cy.
+    final top = cy + em * 0.357 - baseline;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: t,
+        style: _style(
+          em, true,
+          color: _c(color),
+          shadows: shadow
+              ? [
+                  ui.Shadow(
+                    color: const ui.Color(0xA8000000),
+                    blurRadius: em * 0.10,
+                    offset: ui.Offset(em * 0.025, em * 0.04),
+                  )
+                ]
+              : null,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    _add((c) => painter.paint(c, ui.Offset(x.toDouble(), top)));
+  }
+
+  void _add(void Function(ui.Canvas) op) {
+    if (regions.isEmpty) return;
+    regions.last.ops.add(op);
+  }
+
+  @override
+  void region(int x, int y, int w, int h) {
+    const m = 12;
+    final x0 = math.max(0, x - m), y0 = math.max(0, y - m);
+    final x1 = math.min(W, x + w + m), y1 = math.min(H, y + h + m);
+    regions.add(_Region(x0, y0, math.max(1, x1 - x0), math.max(1, y1 - y0)));
+  }
+
+  @override
+  void rrect(int x1, int y1, int x2, int y2, int radius, img.Color color,
+      {img.Color? bottom, int? cx1, int? cy1, int? cx2, int? cy2}) {
+    final rect = ui.Rect.fromLTRB(x1.toDouble(), y1.toDouble(), x2 + 1.0, y2 + 1.0);
+    final rr = ui.RRect.fromRectAndRadius(rect, ui.Radius.circular(radius.toDouble()));
+    final paint = ui.Paint()..isAntiAlias = true;
+    if (bottom == null) {
+      paint.color = _c(color);
+    } else {
+      paint.shader = ui.Gradient.linear(
+        ui.Offset(0, y1.toDouble()),
+        ui.Offset(0, y2 + 1.0),
+        [_c(color), _c(bottom)],
+      );
+    }
+    final clipped = cx1 != null || cy1 != null || cx2 != null || cy2 != null;
+    final clip = ui.Rect.fromLTRB(
+      (cx1 ?? x1).toDouble(), (cy1 ?? y1).toDouble(),
+      (cx2 ?? x2) + 1.0, (cy2 ?? y2) + 1.0,
+    );
+    _add((c) {
+      if (clipped) {
+        c.save();
+        c.clipRect(clip);
+      }
+      c.drawRRect(rr, paint);
+      if (clipped) c.restore();
+    });
+  }
+
+  @override
+  void rect(int x1, int y1, int x2, int y2, img.Color color) {
+    final r = ui.Rect.fromLTRB(x1.toDouble(), y1.toDouble(), x2 + 1.0, y2 + 1.0);
+    final p = ui.Paint()..color = _c(color);
+    _add((c) => c.drawRect(r, p));
+  }
+
+  @override
+  void text(String t,
+      {required double em,
+      required int x,
+      required int y,
+      required img.Color color,
+      bool bold = false,
+      bool shadow = true}) {
+    if (t.isEmpty) return;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: t,
+        style: _style(
+          em, bold,
+          color: _c(color),
+          shadows: shadow
+              ? [
+                  ui.Shadow(
+                    color: const ui.Color(0xA8000000),
+                    blurRadius: em * 0.14,
+                    offset: ui.Offset(em * 0.03, em * 0.05),
+                  )
+                ]
+              : null,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    _add((c) => painter.paint(c, ui.Offset(x.toDouble(), y.toDouble())));
+  }
+
+  @override
+  void icon(String kind, int cx, int cy, int size, img.Color color) {
+    final s = size.toDouble();
+    final ox = cx.toDouble(), oy = cy.toDouble();
+    final fill = ui.Paint()..color = _c(color)..isAntiAlias = true;
+    final stroke = ui.Paint()
+      ..color = _c(color)
+      ..isAntiAlias = true
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = s * 0.11
+      ..strokeCap = ui.StrokeCap.round;
+    _add((c) {
+      switch (kind) {
+        case 'clock':
+          c.drawCircle(ui.Offset(ox, oy), s * 0.40, stroke);
+          c.drawLine(ui.Offset(ox, oy), ui.Offset(ox, oy - s * 0.24), stroke);
+          c.drawLine(ui.Offset(ox, oy), ui.Offset(ox + s * 0.18, oy + s * 0.06), stroke);
+        case 'pin':
+          final head = ui.Path()
+            ..addOval(ui.Rect.fromCircle(center: ui.Offset(ox, oy - s * 0.12), radius: s * 0.30));
+          final tip = ui.Path()
+            ..moveTo(ox - s * 0.26, oy - s * 0.02)
+            ..lineTo(ox, oy + s * 0.46)
+            ..lineTo(ox + s * 0.26, oy - s * 0.02)
+            ..close();
+          final hole = ui.Path()
+            ..addOval(ui.Rect.fromCircle(center: ui.Offset(ox, oy - s * 0.12), radius: s * 0.11));
+          final outer = ui.Path.combine(ui.PathOperation.union, head, tip);
+          c.drawPath(ui.Path.combine(ui.PathOperation.difference, outer, hole), fill);
+        case 'gps':
+          c.drawCircle(ui.Offset(ox, oy), s * 0.32, stroke);
+          c.drawCircle(ui.Offset(ox, oy), s * 0.11, fill);
+          for (final d in const [ui.Offset(0, -1), ui.Offset(0, 1), ui.Offset(-1, 0), ui.Offset(1, 0)]) {
+            c.drawLine(ui.Offset(ox + d.dx * s * 0.38, oy + d.dy * s * 0.38),
+                ui.Offset(ox + d.dx * s * 0.50, oy + d.dy * s * 0.50), stroke);
+          }
+        case 'tag':
+          c.drawRRect(
+              ui.RRect.fromRectAndRadius(
+                  ui.Rect.fromCenter(center: ui.Offset(ox, oy), width: s * 0.84, height: s * 0.64),
+                  ui.Radius.circular(s * 0.07)),
+              stroke);
+          final bar = ui.Paint()
+            ..color = _c(color)
+            ..strokeWidth = s * 0.07
+            ..isAntiAlias = true;
+          for (final dx in const [-0.15, 0.0, 0.15]) {
+            c.drawLine(ui.Offset(ox + dx * s, oy - s * 0.12), ui.Offset(ox + dx * s, oy + s * 0.12), bar);
+          }
+        default:
+          c.drawCircle(ui.Offset(ox, oy), s * 0.26, fill);
+      }
+    });
+  }
+
+  @override
+  void logoTile(img.Image logo, int x, int y, int logoW, int logoH, int tp,
+      int radius, img.Color tile) {
+    final tileRect = ui.RRect.fromRectAndRadius(
+      ui.Rect.fromLTWH(x.toDouble(), y.toDouble(), logoW + tp * 2.0, logoH + tp * 2.0),
+      ui.Radius.circular(radius.toDouble()),
+    );
+    final tilePaint = ui.Paint()..color = _c(tile)..isAntiAlias = true;
+    final src = logoUi;
+    final dst = ui.Rect.fromLTWH(x + tp.toDouble(), y + tp.toDouble(),
+        logoW.toDouble(), logoH.toDouble());
+    _add((c) {
+      c.drawRRect(tileRect, tilePaint);
+      if (src != null) {
+        c.drawImageRect(
+          src,
+          ui.Rect.fromLTWH(0, 0, src.width.toDouble(), src.height.toDouble()),
+          dst,
+          ui.Paint()..filterQuality = ui.FilterQuality.high..isAntiAlias = true,
+        );
+      }
+    });
+  }
+
+  Future<List<WatermarkOverlay>> render() async {
+    final out = <WatermarkOverlay>[];
+    for (final r in regions) {
+      if (r.ops.isEmpty) continue;
+      final rec = ui.PictureRecorder();
+      final canvas = ui.Canvas(rec);
+      canvas.translate(-r.x.toDouble(), -r.y.toDouble());
+      for (final op in r.ops) {
+        op(canvas);
+      }
+      final pic = rec.endRecording();
+      final image = await pic.toImage(r.w, r.h);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      pic.dispose();
+      if (data == null) throw StateError('Gagal encode overlay watermark.');
+      out.add(WatermarkOverlay(
+        Uint8List.fromList(
+            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes)),
+        r.x,
+        r.y,
+      ));
+    }
+    for (final p in _cache.values) {
+      p.dispose();
+    }
+    return out;
+  }
+}
+
+/// Watermark foto standar aplikasi profesional (timestamp/GPS camera).
+/// Jalur utama: teks TTF antialias + ikon path + gradasi asli (dart:ui).
+/// Jalur cadangan: renderer bitmap supersampling di isolate.
 class WatermarkService {
-  static const int _jpegQuality = 90;
-
-  /// Skala watermark mengikuti sisi terpendek foto setelah orientasi EXIF
-  /// dibakar. Ini menjaga ukuran relatif serupa pada foto portrait/landscape.
-  static int _shortSide(int width, int height) => math.min(width, height).toInt();
-
-  static double _photoScale(int width, int height) =>
-      (_shortSide(width, height) / 1080).clamp(0.35, 3.75).toDouble();
+  static const int _jpegQuality = 92;
 
   static Future<void> burn({
     required String sourcePath,
@@ -49,119 +468,111 @@ class WatermarkService {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList(growable: false);
-    // Gunakan renderer watermark khusus di isolate. Renderer overlay Flutter
-    // yang generik sebelumnya menggambar kotak yang sama untuk semua style,
-    // sehingga layout Classic/Compact/Top/Modern/Minimal/Badge tidak terlihat.
-    // Biarkan textOverlayBytes null agar _burnIsolate memilih layout style-aware.
+
+    var overlays = const <WatermarkOverlay>[];
+    var ew = 0, eh = 0;
+    if (nonEmptyLines.isNotEmpty) {
+      try {
+        final r = await _renderTtfOverlays(
+            sourcePath, nonEmptyLines, logoBytes, style, position);
+        if (r != null) {
+          overlays = r.$1;
+          ew = r.$2;
+          eh = r.$3;
+        }
+      } catch (e, st) {
+        debugPrint('Watermark TTF gagal, memakai renderer cadangan: $e\n$st');
+      }
+    }
+
     await compute(
       _burnIsolate,
       WatermarkBurnRequest(
-        sourcePath: sourcePath, destPath: destPath, lines: nonEmptyLines,
-        logoBytes: logoBytes, style: style, position: position,
+        sourcePath: sourcePath,
+        destPath: destPath,
+        lines: nonEmptyLines,
+        logoBytes: logoBytes,
+        style: style,
+        position: position,
+        overlays: overlays,
+        expectedWidth: ew,
+        expectedHeight: eh,
       ),
     );
   }
 
-  /// Render teks antialias menggunakan TextPainter/font TTF Flutter pada
-  /// resolusi foto asli. Hasil PNG transparan digabung ke foto di isolate.
-  // ignore: unused_element
-  static Future<Uint8List> _renderTextOverlay({
-    required int width, required int height, required List<String> lines,
-    required Uint8List? logoBytes, required String style, required String position,
-  }) async {
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    final scale = _photoScale(width, height);
-    final pad = (18 * scale).round().clamp(8, 48).toDouble();
-    final fontSize = (22 * scale).clamp(12, 52).toDouble();
-    final maxPanelWidth = (width * 0.86).clamp(1, width).toDouble();
-    final textMaxWidth = maxPanelWidth - pad * 2;
-    final painters = <TextPainter>[];
-    for (final line in lines) {
-      final painter = TextPainter(
-        text: TextSpan(text: line, style: TextStyle(
-          fontFamily: 'Roboto', fontSize: fontSize, height: 1.18,
-          color: style == 'badge' ? const ui.Color(0xFF302618) : const ui.Color(0xFFFFFFFF),
-          fontWeight: FontWeight.w500,
-        )),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: textMaxWidth);
-      painters.add(painter);
+  static const _styles = {
+    'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'
+  };
+
+  /// Dimensi foto setelah orientasi EXIF (tanpa decode piksel penuh).
+  static Future<(int, int)?> _probeSize(Uint8List bytes) async {
+    final decoder = img.findDecoderForData(bytes);
+    final info = decoder?.startDecode(bytes);
+    if (info == null) return null;
+    var w = info.width, h = info.height;
+    var orientation = 1;
+    try {
+      orientation = img.decodeJpgExif(bytes)?.imageIfd.orientation ?? 1;
+    } catch (_) {}
+    if (orientation >= 5 && orientation <= 8) {
+      final t = w;
+      w = h;
+      h = t;
     }
-    ui.Image? logoImage;
-    if (logoBytes != null) {
-      try {
-        final codec = await ui.instantiateImageCodec(logoBytes);
-        logoImage = (await codec.getNextFrame()).image;
-        codec.dispose();
-      } catch (_) {}
-    }
-    final logoWidth = logoImage == null ? 0.0 : (_shortSide(width, height) * 0.075).clamp(16, 100).toDouble();
-    final logoHeight = logoImage == null ? 0.0 : logoWidth * logoImage.height / logoImage.width;
-    final gap = (8 * scale).clamp(4, 24).toDouble();
-    final textHeight = painters.fold<double>(0, (sum, painter) => sum + painter.height);
-    final panelHeight = pad * 2 + (logoImage == null ? 0 : logoHeight + gap) +
-        textHeight + gap * math.max(0, lines.length - 1);
-    if (panelHeight > height - 8) {
-      logoImage?.dispose();
-      for (final painter in painters) { painter.dispose(); }
-      throw StateError('Metadata watermark terlalu panjang untuk foto.');
-    }
-    var textWidth = 0.0;
-    for (final painter in painters) { textWidth = math.max(textWidth, painter.width); }
-    final panelWidth = math.min(maxPanelWidth, textWidth + pad * 2);
-    const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
-    final pos = valid.contains(position) ? position : 'bottomRight';
-    final horizontal = pos == 'center' || pos.endsWith('Center') ? 'center' : (pos.endsWith('Left') ? 'left' : 'right');
-    final vertical = pos.startsWith('top') ? 'top' : (pos.startsWith('center') ? 'center' : 'bottom');
-    final inset = (12 * scale).clamp(6, 36).toDouble();
-    final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (width-panelWidth)/2 : width-panelWidth-inset).clamp(0.0, width-panelWidth);
-    final top = (vertical == 'top' ? inset : vertical == 'center' ? (height-panelHeight)/2 : height-panelHeight-inset).clamp(0.0, height-panelHeight);
-    final palettes = <String,List<ui.Color>>{
-      'classic':[const ui.Color(0xB5223A5C),const ui.Color(0xC012243E),const ui.Color(0xFFFFBE37)],
-      'compact':[const ui.Color(0xB41A4C40),const ui.Color(0xC00C302A),const ui.Color(0xFF5CE6AE)],
-      'top':[const ui.Color(0xB65C2434),const ui.Color(0xC0381622),const ui.Color(0xFFFF8496)],
-      'modern':[const ui.Color(0xB00C2C44),const ui.Color(0xC006192A),const ui.Color(0xFF00D2E1)],
-      'minimal':[const ui.Color(0x942C3E3E),const ui.Color(0xA6122A2C),const ui.Color(0xFF70DCC0)],
-      'badge':[const ui.Color(0xC2F6BE4A),const ui.Color(0xD0DE9724),const ui.Color(0xFFFFECAE)],
-    };
-    final palette = palettes[style] ?? palettes['classic']!;
-    final rect = ui.Rect.fromLTWH(left,top,panelWidth,panelHeight);
-    final radius = (12*scale).clamp(4,32).toDouble();
-    final panelPaint = ui.Paint()..shader = ui.Gradient.linear(
-      ui.Offset(0,top),ui.Offset(0,top+panelHeight),[palette[0],palette[1]]);
-    canvas.drawRRect(ui.RRect.fromRectAndRadius(rect,ui.Radius.circular(radius)),panelPaint);
-    final accent = ui.Paint()..color=palette[2];
-    switch(style) {
-      case 'compact':
-        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left+panelWidth-(5*scale).clamp(3,10),top,(5*scale).clamp(3,10),panelHeight),ui.Radius.circular(radius)),accent);
-      case 'top':
-      case 'badge':
-        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left,top,panelWidth,(5*scale).clamp(3,10)),ui.Radius.circular(radius)),accent);
-      case 'minimal':
-        canvas.drawRect(ui.Rect.fromLTWH(left+pad/2,top+pad,(3*scale).clamp(2,5),panelHeight-pad*2),accent);
-      default:
-        canvas.drawRRect(ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(left,top,(5*scale).clamp(3,10),panelHeight),ui.Radius.circular(radius)),accent);
-    }
-    var y=top+pad;
-    if (logoImage != null) {
-      canvas.drawImageRect(logoImage,ui.Rect.fromLTWH(0,0,logoImage.width.toDouble(),logoImage.height.toDouble()),
-        ui.Rect.fromLTWH(left+pad,y,logoWidth,logoHeight),ui.Paint());
-      y+=logoHeight+gap;
-    }
-    for (final painter in painters) { painter.paint(canvas,ui.Offset(left+pad,y)); y+=painter.height+gap; }
-    final picture=recorder.endRecording();
-    final overlay=await picture.toImage(width,height);
-    final data=await overlay.toByteData(format:ui.ImageByteFormat.png);
-    final bytes=Uint8List.fromList(data!.buffer.asUint8List(data.offsetInBytes,data.lengthInBytes));
-    overlay.dispose(); picture.dispose(); logoImage?.dispose();
-    for (final painter in painters) { painter.dispose(); }
-    return bytes;
+    return (w, h);
   }
 
-  /// Rounded rectangle anti-aliased dengan alpha blending dan gradasi opsional.
-  /// clip* membatasi area gambar tanpa mengubah geometri sudut panel; ini juga
-  /// dipakai untuk aksen agar ujungnya selalu mengikuti lengkungan panel.
+  static Future<(List<WatermarkOverlay>, int, int)?> _renderTtfOverlays(
+    String sourcePath,
+    List<String> lines,
+    Uint8List? logoBytes,
+    String style,
+    String position,
+  ) async {
+    final bytes = await File(sourcePath).readAsBytes();
+    final size = await _probeSize(bytes);
+    if (size == null) return null;
+    final (w, h) = size;
+
+    img.Image? logoImg;
+    ui.Image? logoUi;
+    if (logoBytes != null) {
+      final decoded = img.decodeImage(logoBytes);
+      if (decoded != null) {
+        logoImg = _removeConnectedDarkLogoBackground(decoded);
+        final codec = await ui.instantiateImageCodec(
+            Uint8List.fromList(img.encodePng(logoImg)));
+        logoUi = (await codec.getNextFrame()).image;
+        codec.dispose();
+      }
+    }
+    try {
+      final cv = _UiCv(w, h, logoUi);
+      final ok = _drawCard(cv, w, h,
+          lines: lines,
+          logo: logoImg,
+          style: _styles.contains(style) ? style : 'classic',
+          position: position);
+      if (!ok) return null; // jalur cadangan melaporkan error yang jelas
+      return (await cv.render(), w, h);
+    } finally {
+      logoUi?.dispose();
+    }
+  }
+
+  static int markerRadiusForLineHeight(int lineHeight) =>
+      (lineHeight * 0.30).round().clamp(5, 16).toInt();
+
+  // ───────────────────────── Primitif bitmap (cadangan) ─────────────────────────
+
+  static int _ci(num v, int lo, int hi) => v.round().clamp(lo, hi).toInt();
+
+  /// Skala watermark mengikuti sisi terpendek foto (setelah EXIF dibakar),
+  /// sehingga ukuran relatif sama pada foto portrait maupun landscape.
+  static double _unit(int width, int height) =>
+      (math.min(width, height) / 1080).clamp(0.35, 3.75).toDouble();
+
   static void _fillRoundedRectBlended(
     img.Image image, {
     required int x1,
@@ -192,15 +603,11 @@ class WatermarkService {
       if (clipY1 != null && y < clipY1) continue;
       if (clipY2 != null && y > clipY2) continue;
       final t = (y - top) / span;
-      final red = color.r.toDouble() +
-          (end.r.toDouble() - color.r.toDouble()) * t;
-      final green = color.g.toDouble() +
-          (end.g.toDouble() - color.g.toDouble()) * t;
-      final blue = color.b.toDouble() +
-          (end.b.toDouble() - color.b.toDouble()) * t;
-      final baseAlpha = (color.a.toDouble() +
-              (end.a.toDouble() - color.a.toDouble()) * t) /
-          255.0;
+      final red = color.r.toDouble() + (end.r.toDouble() - color.r.toDouble()) * t;
+      final green = color.g.toDouble() + (end.g.toDouble() - color.g.toDouble()) * t;
+      final blue = color.b.toDouble() + (end.b.toDouble() - color.b.toDouble()) * t;
+      final baseAlpha =
+          (color.a.toDouble() + (end.a.toDouble() - color.a.toDouble()) * t) / 255.0;
 
       for (var x = left; x <= right; x++) {
         if (clipX1 != null && x < clipX1) continue;
@@ -208,10 +615,8 @@ class WatermarkService {
 
         var coverage = 1.0;
         if (r > 0) {
-          final cx =
-              x < left + r ? left + r : (x > right - r ? right - r : x);
-          final cy =
-              y < top + r ? top + r : (y > bottom - r ? bottom - r : y);
+          final cx = x < left + r ? left + r : (x > right - r ? right - r : x);
+          final cy = y < top + r ? top + r : (y > bottom - r ? bottom - r : y);
           final dx = x - cx;
           final dy = y - cy;
           if (dx != 0 || dy != 0) {
@@ -235,31 +640,144 @@ class WatermarkService {
     }
   }
 
-  static void _drawStringCrisp(
-    img.Image image,
+  static img.BitmapFont get _font => img.arial48;
+
+  static int _textWidth(String text, img.BitmapFont font) {
+    var width = 0;
+    for (final rune in text.runes) {
+      width += font.characterXAdvance(String.fromCharCode(rune));
+    }
+    return width;
+  }
+
+  static double _s(double em) => (em / 48.0).clamp(0.2, 4.0).toDouble();
+
+  /// Teks antialias bitmap: render 48px lalu perkecil (area-average).
+  static void _text(
+    img.Image dst,
     String text, {
-    required img.BitmapFont font,
+    required double em,
     required int x,
     required int y,
     required img.Color color,
-    int shadowOffset = 1,
     bool bold = false,
+    bool shadow = true,
   }) {
-    img.drawString(
-      image, text, font: font, x: x + shadowOffset, y: y + shadowOffset,
-      color: img.ColorRgb8(8, 12, 18),
-    );
-    img.drawString(image, text, font: font, x: x, y: y, color: color);
-    // Tambahan satu piksel hanya untuk teks prioritas agar tampak lebih tegas
-    // tanpa mengubah ukuran font atau tinggi baris.
+    if (text.isEmpty) return;
+    final s = _s(em);
+    const p = 6;
+    final w48 = _textWidth(text, _font);
+    final lw = w48 + p * 2 + 4;
+    final lh = _font.lineHeight + p * 2 + 4;
+    final layer = img.Image(width: lw, height: lh, numChannels: 4);
+    img.fill(layer,
+        color: img.ColorRgba8(color.r.toInt(), color.g.toInt(), color.b.toInt(), 0));
+    if (shadow) {
+      img.drawString(layer, text,
+          font: _font, x: p + 2, y: p + 2, color: img.ColorRgba8(0, 0, 0, 165));
+    }
+    img.drawString(layer, text, font: _font, x: p, y: p, color: color);
     if (bold) {
-      img.drawString(image, text, font: font, x: x + 1, y: y, color: color);
+      img.drawString(layer, text, font: _font, x: p + 2, y: p, color: color);
+      img.drawString(layer, text, font: _font, x: p + 1, y: p + 1, color: color);
+    }
+    final tw = (lw * s).round().clamp(1, dst.width).toInt();
+    final th = (lh * s).round().clamp(1, dst.height).toInt();
+    final scaled = img.copyResize(layer,
+        width: tw,
+        height: th,
+        interpolation: s < 1 ? img.Interpolation.average : img.Interpolation.cubic);
+    img.compositeImage(dst, scaled,
+        dstX: math.max(0, x - (p * s).round()),
+        dstY: math.max(0, y - (p * s).round()));
+  }
+
+  static double _seg(double px, double py, double ax, double ay, double bx, double by) {
+    final dx = bx - ax, dy = by - ay;
+    final l2 = dx * dx + dy * dy;
+    var t = l2 == 0 ? 0.0 : ((px - ax) * dx + (py - ay) * dy) / l2;
+    t = t.clamp(0.0, 1.0).toDouble();
+    final cx = ax + t * dx, cy = ay + t * dy;
+    return math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+  }
+
+  static bool _hit(String kind, double x, double y) {
+    final r = math.sqrt(x * x + y * y);
+    switch (kind) {
+      case 'clock':
+        return (r < 0.46 && r > 0.34) ||
+            _seg(x, y, 0, 0, 0, -0.24) < 0.045 ||
+            _seg(x, y, 0, 0, 0.18, 0.06) < 0.045;
+      case 'pin':
+        final c = math.sqrt(x * x + (y + 0.12) * (y + 0.12));
+        final head = c < 0.30;
+        final tip = y > -0.10 && y < 0.46 && x.abs() <= 0.27 * (0.46 - y) / 0.56;
+        return (head || tip) && c >= 0.11;
+      case 'gps':
+        return (r < 0.40 && r > 0.28) ||
+            r < 0.11 ||
+            (x.abs() < 0.035 && y.abs() > 0.34 && y.abs() < 0.5) ||
+            (y.abs() < 0.035 && x.abs() > 0.34 && x.abs() < 0.5);
+      case 'tag':
+        final ax = x.abs(), ay = y.abs();
+        final outer = ax < 0.42 && ay < 0.32;
+        final inner = ax < 0.32 && ay < 0.22;
+        final bars = ay < 0.14 &&
+            ((x + 0.15).abs() < 0.03 || x.abs() < 0.03 || (x - 0.15).abs() < 0.03);
+        return (outer && !inner) || bars;
+      default:
+        return r < 0.26;
     }
   }
 
-  /// Menghapus latar hitam yang menempel pada tepi logo, tanpa menghapus
-  /// piksel gelap di bagian dalam logo yang tidak terhubung ke tepi.
-  static img.Image _removeConnectedDarkLogoBackground(img.Image source) {
+  static void _icon(img.Image dst, String kind, int cx, int cy, int size, img.Color c) {
+    if (size < 4) return;
+    const ss = 4;
+    final n = size * ss;
+    final layer = img.Image(width: n, height: n, numChannels: 4);
+    final r = c.r.toInt(), g = c.g.toInt(), b = c.b.toInt();
+    img.fill(layer, color: img.ColorRgba8(r, g, b, 0));
+    for (var yy = 0; yy < n; yy++) {
+      for (var xx = 0; xx < n; xx++) {
+        if (_hit(kind, (xx + 0.5) / n - 0.5, (yy + 0.5) / n - 0.5)) {
+          layer.setPixelRgba(xx, yy, r, g, b, 255);
+        }
+      }
+    }
+    final scaled = img.copyResize(layer,
+        width: size, height: size, interpolation: img.Interpolation.average);
+    img.compositeImage(dst, scaled,
+        dstX: math.max(0, cx - size ~/ 2), dstY: math.max(0, cy - size ~/ 2));
+  }
+
+  static void _logoTile(
+    img.Image dst,
+    img.Image logo,
+    int x,
+    int y,
+    int logoW,
+    int logoH,
+    int tp,
+    int radius,
+    img.Color tileColor,
+  ) {
+    _fillRoundedRectBlended(dst,
+        x1: x,
+        y1: y,
+        x2: x + logoW + tp * 2 - 1,
+        y2: y + logoH + tp * 2 - 1,
+        radius: radius,
+        color: tileColor);
+    final resized = img.copyResize(logo,
+        width: math.max(1, logoW),
+        height: math.max(1, logoH),
+        interpolation: img.Interpolation.average);
+    img.compositeImage(dst, resized, dstX: x + tp, dstY: y + tp);
+  }
+
+  /// Menghapus latar hitam yang menempel pada tepi logo.
+  static img.Image _removeConnectedDarkLogoBackground(img.Image input) {
+    final source = input.numChannels == 4 ? input : input.convert(numChannels: 4);
     if (source.width < 2 || source.height < 2) return source;
     final total = source.width * source.height;
     final visited = List<bool>.filled(total, false);
@@ -268,6 +786,7 @@ class WatermarkService {
       final p = source.getPixel(x, y);
       return p.r < 42 && p.g < 42 && p.b < 42 && p.a > 0;
     }
+
     void add(int x, int y) {
       if (x < 0 || y < 0 || x >= source.width || y >= source.height) return;
       final index = y * source.width + x;
@@ -275,6 +794,7 @@ class WatermarkService {
       visited[index] = true;
       queue.add(index);
     }
+
     for (var x = 0; x < source.width; x++) {
       add(x, 0);
       add(x, source.height - 1);
@@ -297,547 +817,28 @@ class WatermarkService {
     return source;
   }
 
-  static int markerRadiusForLineHeight(int lineHeight) =>
-      (lineHeight * 0.30).round().clamp(5, 16).toInt();
-
-  static void _drawScaledBitmapText(
-    img.Image image,
-    String text, {
-    required img.BitmapFont font,
-    required int x,
-    required int y,
-    required img.Color color,
-    required double factor,
-    int shadowOffset = 1,
-  }) {
-    if (text.isEmpty) return;
-    final sourceWidth = _textWidth(text, font).clamp(1, image.width).toInt();
-    final sourceHeight = font.lineHeight.clamp(1, image.height).toInt();
-    // Gunakan kanal alfa agar area di luar glyph tetap transparan saat resize.
-    final layer = img.Image(width: sourceWidth + 2, height: sourceHeight + 2, numChannels: 4);
-    img.fill(layer, color: img.ColorRgba8(0, 0, 0, 0));
-    img.drawString(layer, text, font: font, x: 1, y: 1,
-      color: color,);
-    final targetWidth = ((sourceWidth + 2) * factor).round().clamp(1, image.width).toInt();
-    final targetHeight = ((sourceHeight + 2) * factor).round().clamp(1, image.height).toInt();
-    final scaled = img.copyResize(layer, width: targetWidth, height: targetHeight,
-      interpolation: img.Interpolation.cubic);
-    img.compositeImage(image, scaled, dstX: x, dstY: y);
-  }
-
-  /// Layout referensi: jam dalam kapsul putih, logo di kanan, tanggal tebal,
-  /// dan metadata putih dengan garis kuning tanpa panel gelap besar.
-  static bool _drawReferenceTimestampLayout(
-    img.Image image, {
-    required List<String> lines,
-    required img.Image? logo,
-    required double scale,
-    required String position,
-  }) {
-    String? rawTime, address, gps, photoCode, customText;
-    final extras = <String>[];
-    for (final line in lines) {
-      final split = line.indexOf(':');
-      final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
-      final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
-      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP' || key == 'TANGGAL') {
-        rawTime = value;
-      } else if (RegExp(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').hasMatch(line) ||
-          RegExp(r'^\d{2}[/-]\d{2}[/-]\d{4}[ T]\d{2}:\d{2}').hasMatch(line)) {
-        rawTime = line.trim();
-      } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
-        address = value;
-      } else if (key == 'GPS' || key == 'KOORDINAT') {
-        gps = value;
-      } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
-        photoCode = value;
-      } else if (key == 'CUSTOM_TEXT' || key == 'TEKS KUSTOM') {
-        customText = value;
-      } else {
-        extras.add(line);
-      }
-    }
-    if (rawTime == null) return false;
-    final iso = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
-    final local = RegExp(r'^(\d{2})[/-](\d{2})[/-](\d{4})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
-    if (iso == null && local == null) return false;
-    final m = iso ?? local!;
-    final year = int.parse(m.group(iso != null ? 1 : 3)!);
-    final month = int.parse(m.group(2)!);
-    final day = int.parse(m.group(iso != null ? 3 : 1)!);
-    final date = DateTime(year, month, day);
-    final hour = m.group(4)!;
-    final minute = m.group(5)!;
-    const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-    const weekdays = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
-    final dateLine =
-        '${weekdays[date.weekday - 1]}, $day ${months[month - 1]} $year';
-    // Hari/tanggal memakai ukuran terpisah yang lebih besar daripada metadata.
-    final shortSide = _shortSide(image.width, image.height);
-    final small = shortSide < 480 ? img.arial14 : img.arial24;
-    final dateFont = shortSide < 720 ? img.arial24 : img.arial48;
-    final large = shortSide < 720 ? img.arial24 : img.arial48;
-    final factor = (shortSide / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
-    final pad = (12 * scale).round().clamp(6, 36).toInt();
-    final gap = (7 * scale).round().clamp(3, 18).toInt();
-    final inset = (18 * scale).round().clamp(8, 48).toInt();
-    final time = '$hour:$minute';
-    final timeWidth = (_textWidth(time, large) * factor).round();
-    final logoWidth = logo == null ? 0 : (shortSide * 0.105).round().clamp(20, 132).toInt();
-    final logoHeight = logo == null ? 0 : (logo.height * logoWidth / logo.width).round();
-    final capsuleHeight = math.max((large.lineHeight * factor).round(), logoHeight).toInt() + pad * 2;
-    final capsuleWidth = timeWidth + pad * 2 + (logo == null ? 0 : logoWidth + gap * 2);
-    final maxText = (image.width * 0.82).round().clamp(1, image.width - inset * 2).toInt();
-    final dateLines = _wrapText(dateLine, dateFont, maxText - pad);
-    final metadata = <String>[];
-    if (address != null && address.isNotEmpty) {
-      metadata.addAll(_wrapText(address, small, maxText - pad));
-    }
-    if (gps != null && gps.isNotEmpty) {
-      metadata.addAll(_wrapText(gps, small, maxText - pad));
-    }
-    for (final extra in extras) {
-      metadata.addAll(_wrapText(extra, small, maxText - pad));
-    }
-    final codes = photoCode == null || photoCode.isEmpty
-        ? <String>[]
-        : _wrapText('AWB: $photoCode', small, maxText - pad);
-    // Hari/tanggal memiliki line-height sendiri karena font lebih besar.
-    // Metadata diberi jarak antarbari agar alamat, GPS, dan AWB terpisah jelas.
-    final lineHeight = small.lineHeight + (8 * scale).round().clamp(4, 20).toInt();
-    final dateLineHeight = dateFont.lineHeight + gap;
-    final detailsHeight =
-        dateLines.length * dateLineHeight +
-        metadata.length * lineHeight +
-        (codes.isEmpty ? 0 : gap + codes.length * lineHeight);
-    final totalHeight = capsuleHeight + gap * 2 + detailsHeight;
-    if (totalHeight >= image.height - inset) return false;
-    var textWidth = dateLines.fold<int>(
-      0,
-      (width, line) => math.max(width, _textWidth(line, dateFont)),
-    );
-    for (final line in metadata) {
-      textWidth = math.max(textWidth, _textWidth(line, small));
-    }
-    for (final line in codes) {
-      textWidth = math.max(textWidth, _textWidth(line, small));
-    }
-    final blockWidth = math.min(image.width - inset * 2, math.max(capsuleWidth, textWidth + pad));
-    const valid = {'topLeft','topCenter','topRight','centerLeft','center','centerRight','bottomLeft','bottomCenter','bottomRight'};
-    final pos = valid.contains(position) ? position : 'bottomLeft';
-    final horizontal = pos == 'center' || pos.endsWith('Center') ? 'center' : pos.endsWith('Left') ? 'left' : 'right';
-    final vertical = pos.startsWith('top') ? 'top' : pos.startsWith('center') ? 'center' : 'bottom';
-    final left = (horizontal == 'left' ? inset : horizontal == 'center' ? (image.width - blockWidth) ~/ 2 : image.width - blockWidth - inset).clamp(0, image.width - blockWidth).toInt();
-    final top = (vertical == 'top' ? inset : vertical == 'center' ? (image.height - totalHeight) ~/ 2 : image.height - totalHeight - inset).clamp(0, image.height - totalHeight).toInt();
-
-    // Header lama "TERMULSCAN / Foto dengan metadata" diganti teks kustom.
-    // Jika teks kosong, header tidak digambar.
-    if (customText != null && customText.trim().isNotEmpty &&
-        vertical != 'top' && image.width >= 320) {
-      final maxCustomWidth = (image.width * 0.72).round()
-          .clamp(1, image.width - inset * 2).toInt();
-      final customLines = _wrapText(customText.trim(), small, maxCustomWidth);
-      var lineY = inset;
-      for (final line in customLines.take(3)) {
-        final lineWidth = _textWidth(line, small);
-        _drawStringCrisp(
-          image,
-          line,
-          font: small,
-          x: (image.width - inset - lineWidth).clamp(0, image.width - lineWidth).toInt(),
-          y: lineY,
-          color: img.ColorRgb8(255, 255, 255),
-          shadowOffset: 1,
-        );
-        lineY += small.lineHeight + gap ~/ 2;
-      }
-    }
-
-    _fillRoundedRectBlended(image, x1: left, y1: top, x2: left + capsuleWidth, y2: top + capsuleHeight,
-      radius: (10 * scale).round().clamp(4, 28).toInt(), color: img.ColorRgba8(255, 255, 255, 244));
-    final timeX = left + pad;
-    // _drawScaledBitmapText menambahkan padding transparan 1 px sebelum resize.
-    // Kurangi padding skala itu dari origin agar glyph aktual tepat di tengah
-    // vertikal kapsul putih, bukan terlihat turun beberapa piksel.
-    final scaledGlyphHeight = large.lineHeight * factor;
-    final timeY = top +
-        ((capsuleHeight - scaledGlyphHeight) / 2 - factor).round();
-    // Extra-bold: tumpuk beberapa render ber-offset kecil untuk mempertebal
-    // batang angka secara nyata. Render tetap berada dalam kapsul waktu yang
-    // sama, sehingga ukuran panel dan ruang logo tidak berubah.
-    final timeColor = img.ColorRgb8(18, 55, 105);
-    for (final offset in const [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0)]) {
-      _drawScaledBitmapText(
-        image,
-        time,
-        font: large,
-        x: timeX + offset.$1,
-        y: timeY + offset.$2,
-        color: timeColor,
-        factor: factor,
-        shadowOffset: 0,
-      );
-    }
-    if (logo != null) {
-      final resized = img.copyResize(logo, width: logoWidth, height: logoHeight);
-      final logoX = left + capsuleWidth - pad - logoWidth;
-      final logoY = top + (capsuleHeight - logoHeight) ~/ 2;
-      _fillRoundedRectBlended(image, x1: logoX - gap, y1: top + pad ~/ 2,
-        x2: left + capsuleWidth - pad ~/ 2, y2: top + capsuleHeight - pad ~/ 2,
-        radius: (6 * scale).round().clamp(3, 18).toInt(), color: img.ColorRgba8(238, 238, 238, 255));
-      img.compositeImage(image, resized, dstX: logoX, dstY: logoY);
-    }
-    var y = top + capsuleHeight + gap * 2;
-    final textX = left + pad;
-    final shadow = math.max(1, (scale * 1.2).round());
-    for (final line in dateLines) {
-      _drawStringCrisp(
-        image, line, font: dateFont, x: textX, y: y,
-        color: img.ColorRgb8(255, 255, 255), shadowOffset: shadow, bold: true,
-      );
-      y += dateLineHeight;
-    }
-    for (final line in metadata) {
-      _drawStringCrisp(
-        image, line, font: small, x: textX, y: y,
-        color: img.ColorRgb8(250, 250, 250), shadowOffset: shadow,
-        bold: false,
-      );
-      y += lineHeight;
-    }
-    if (codes.isNotEmpty) {
-      y += gap;
-      for (final line in codes) {
-        _drawStringCrisp(
-          image, line, font: small, x: textX, y: y,
-          color: img.ColorRgb8(190, 190, 190), shadowOffset: shadow, bold: true,
-        );
-        y += lineHeight;
-      }
-    }
-    img.drawLine(image, x1: left, y1: top + capsuleHeight + gap,
-      x2: left, y2: math.min(image.height - 1, y - gap),
-      color: img.ColorRgb8(255, 190, 55), thickness: (3 * scale).round().clamp(2, 8).toInt());
-    return true;
-  }
-
-  /// Layout timestamp profesional dengan waktu dominan dan metadata bertingkat.
-  static bool _drawClassicTimestampLayout(
-    img.Image image, {
-    required List<String> lines,
-    required img.Image? logo,
-    required double scale,
-    String style = 'classic',
-    String position = 'bottomRight',
-  }) {
-    if (style == 'timemark') {
-      return _drawReferenceTimestampLayout(
-        image, lines: lines, logo: logo, scale: scale, position: position,
-      );
-    }
-    String? rawTime;
-    String? address;
-    String? gps;
-    String? awbValue;
-    final extras = <String>[];
-    for (final line in lines) {
-      final split = line.indexOf(':');
-      final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
-      final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
-      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP' || key == 'TANGGAL') {
-        rawTime = value;
-      } else if (RegExp(r'^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}').hasMatch(line) ||
-          RegExp(r'^\d{2}[/-]\d{2}[/-]\d{4}[ T]\d{2}:\d{2}').hasMatch(line)) {
-        rawTime = line.trim();
-      } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
-        address = value;
-      } else if (key == 'GPS' || key == 'KOORDINAT') {
-        gps = value;
-      } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
-        // Terima alias lama untuk kompatibilitas data, tetapi tampilkan label AWB.
-        awbValue = value;
-      } else {
-        extras.add(line);
-      }
-    }
-    if (rawTime == null) return false;
-    final isoMatch = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
-    final localMatch = RegExp(r'^(\d{2})[/-](\d{2})[/-](\d{4})[ T](\d{2}):(\d{2})').firstMatch(rawTime);
-    if (isoMatch == null && localMatch == null) return false;
-    final year = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 1 : 3)!);
-    final month = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 2 : 2)!);
-    final day = int.parse((isoMatch ?? localMatch)!.group(isoMatch != null ? 3 : 1)!);
-    final hour = (isoMatch ?? localMatch)!.group(4)!;
-    final minute = (isoMatch ?? localMatch)!.group(5)!;
-    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-    const weekdays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    final date = DateTime(year, month, day);
-    final dateText = '$day ${months[month - 1]} $year';
-    final dayText = weekdays[date.weekday - 1];
-    // Font bitmap image package tersedia dalam ukuran tetap; pilih ukuran lebih
-    // besar agar hasil kamera mendekati referensi, terutama pada foto 1080p.
-    // Pada foto kecil, gunakan font dasar lebih kecil dan faktor skala yang
-    // adaptif. Membesarkan font bitmap 48 px secara paksa pada foto 320 px
-    // membuat waktu, tanggal, dan logo saling bertabrakan serta tampak kasar.
-    final shortSide = _shortSide(image.width, image.height);
-    final small = shortSide < 480 ? img.arial14 : img.arial24;
-    final large = shortSide < 720 ? img.arial24 : img.arial48;
-    final timeScale = (shortSide / 1152 * 1.85).clamp(0.72, 2.35).toDouble();
-    final pad = (16 * scale).round().clamp(8, 48).toInt();
-    final gap = (8 * scale).round().clamp(4, 20).toInt();
-    final lineH = small.lineHeight + gap;
-    final timeH = (large.lineHeight * timeScale).round() + gap;
-    // Ukuran panel mengikuti konten, bukan pita dengan lebar tetap.
-    // Sisakan ruang untuk logo di header agar tidak bertumpuk dengan tanggal.
-    final panelRatio = style == 'compact' || style == 'badge' ? 0.72 : 0.86;
-    final logoMax = (shortSide * 0.075).round().clamp(12, 96).toInt();
-    final logoWidth = logo == null
-        ? 0
-        : logoMax;
-    final headerWidthEstimate = (_textWidth('$hour:$minute', large) * timeScale).round() +
-        gap + (3 * scale).round().clamp(2, 5).toInt() + gap +
-        math.max(_textWidth(dateText, small), _textWidth(dayText, small)) +
-        (logoWidth > 0 ? gap + logoWidth : 0);
-    final maxWidth = (image.width * panelRatio).round() - pad * 2;
-    final content = <String>[];
-    // Semua metadata dibungkus pada batas panel, bukan hanya alamat. Koordinat,
-    // nomor AWB, atau nama operator yang panjang tidak boleh terpotong di tepi.
-    if (address != null && address.isNotEmpty) {
-      content.addAll(_wrapText(address, small, maxWidth));
-    }
-    if (gps != null && gps.isNotEmpty) {
-      content.addAll(_wrapText('GPS: $gps', small, maxWidth));
-    }
-    for (final extra in extras) {
-      content.addAll(_wrapText(extra, small, maxWidth));
-    }
-    final awbText = awbValue == null || awbValue.isEmpty
-        ? <String>[]
-        : _wrapText('AWB: $awbValue', small, maxWidth);
-    var contentWidth = headerWidthEstimate;
-    for (final line in content) {
-      contentWidth = math.max(contentWidth, _textWidth(line, small));
-    }
-    for (final line in awbText) {
-      contentWidth = math.max(contentWidth, _textWidth(line, small));
-    }
-    final inset = (12 * scale).round().clamp(4, 36).toInt();
-    // Hitung lebar panel terlebih dahulu agar Compact dan Badge benar-benar
-    // menempel ke sisi kanan dengan margin aman, meskipun kontennya pendek.
-    final panelMaxWidth = math.min(
-      (image.width * panelRatio).round(),
-      image.width - inset * 2,
-    ).clamp(1, image.width).toInt();
-    final panelWidth = (contentWidth + pad * 2).clamp(1, panelMaxWidth).toInt();
-    const supportedPositions = {
-      'topLeft', 'topCenter', 'topRight',
-      'centerLeft', 'center', 'centerRight',
-      'bottomLeft', 'bottomCenter', 'bottomRight',
-    };
-    final resolvedPosition = supportedPositions.contains(position)
-        ? position
-        : 'bottomRight';
-    final horizontal = resolvedPosition == 'center' ||
-            resolvedPosition.endsWith('Center')
-        ? 'center'
-        : resolvedPosition.endsWith('Left')
-            ? 'left'
-            : 'right';
-    final left = (horizontal == 'left'
-        ? inset
-        : horizontal == 'center'
-            ? (image.width - panelWidth) ~/ 2
-            : image.width - panelWidth - inset)
-        .clamp(0, image.width - panelWidth).toInt();
-    // Pada foto sempit, pindahkan logo ke baris tersendiri agar tidak menimpa
-    // tanggal/hari. Ukuran baris dihitung dari rasio logo yang sebenarnya.
-    final logoHeight = logo == null
-        ? 0
-        : (logo.height * logoMax / logo.width).round().clamp(1, image.height).toInt();
-    final logoOnOwnRow = logo != null && headerWidthEstimate + pad * 2 > panelMaxWidth;
-    final logoRowHeight = logoOnOwnRow ? logoHeight + gap : 0;
-    final totalHeight = pad + logoRowHeight + timeH + lineH + gap + content.length * lineH +
-        (awbText.isEmpty ? 0 : awbText.length * lineH + gap) + pad;
-    final verticalInset = (12 * scale).round();
-    // Jangan gunakan layout Classic jika seluruh konten tidak muat pada foto.
-    // Renderer umum akan menolak metadata berlebih sebelum file tujuan diganti,
-    // sehingga foto lama tetap aman dan metadata tidak hilang diam-diam.
-    if (totalHeight > image.height - verticalInset) return false;
-    final vertical = resolvedPosition.startsWith('top')
-        ? 'top'
-        : resolvedPosition.startsWith('center')
-            ? 'center'
-            : 'bottom';
-    final top = (vertical == 'top'
-        ? verticalInset
-        : vertical == 'center'
-            ? (image.height - totalHeight) ~/ 2
-            : image.height - totalHeight - verticalInset)
-        .clamp(0, image.height - totalHeight).toInt();
-    final right = (left + panelWidth - 1).clamp(left, image.width - 1).toInt();
-    final bottom = (top + totalHeight).clamp(top, image.height - 1).toInt();
-    // Badge memakai panel terang, jadi teks harus gelap agar kontrasnya tetap baik.
-    final primaryTextColor = style == 'badge'
-        ? img.ColorRgb8(48, 38, 24)
-        : img.ColorRgb8(255, 255, 255);
-    final secondaryTextColor = style == 'badge'
-        ? img.ColorRgb8(68, 49, 25)
-        : img.ColorRgb8(220, 225, 225);
-    final (panelTop, panelBottom, accentColor) = switch (style) {
-      'compact' => (img.ColorRgba8(20, 76, 64, 164), img.ColorRgba8(12, 48, 42, 184), img.ColorRgb8(92, 230, 174)),
-      'top' => (img.ColorRgba8(92, 36, 52, 166), img.ColorRgba8(56, 22, 34, 184), img.ColorRgb8(255, 132, 150)),
-      'modern' => (img.ColorRgba8(12, 44, 68, 172), img.ColorRgba8(6, 25, 42, 190), img.ColorRgb8(0, 210, 225)),
-      'minimal' => (img.ColorRgba8(28, 62, 62, 148), img.ColorRgba8(18, 42, 44, 166), img.ColorRgb8(112, 220, 192)),
-      'badge' => (img.ColorRgba8(246, 190, 74, 194), img.ColorRgba8(222, 151, 36, 208), img.ColorRgb8(255, 236, 174)),
-      _ => (img.ColorRgba8(22, 27, 28, 145), img.ColorRgba8(18, 22, 23, 178), img.ColorRgb8(255, 190, 55)),
-    };
-    final panelRadius = (12 * scale).round().clamp(3, 32).toInt();
-    _fillRoundedRectBlended(image, x1: left, y1: top, x2: right, y2: bottom,
-      radius: panelRadius, color: panelTop, colorBottom: panelBottom);
-
-    // Setiap gaya memiliki detail bentuk tersendiri, bukan hanya palet warna.
-    // Aksen dipotong di dalam batas panel agar tidak meluber ke foto.
-    final accentThickness = (style == 'minimal' ? 3 : 5) * scale;
-    final accent = accentThickness.round().clamp(2, 12).toInt();
-    switch (style) {
-      case 'classic':
-        _fillRoundedRectBlended(
-          image,
-          x1: left, y1: top, x2: right, y2: bottom,
-          radius: panelRadius,
-          color: accentColor,
-          clipX1: left, clipX2: left + accent - 1,
-        );
-      case 'compact':
-        _fillRoundedRectBlended(
-          image,
-          x1: left, y1: top, x2: right, y2: bottom,
-          radius: panelRadius,
-          color: accentColor,
-          clipX1: right - accent + 1, clipX2: right,
-        );
-      case 'top':
-        _fillRoundedRectBlended(
-          image,
-          x1: left, y1: top, x2: right, y2: bottom,
-          radius: panelRadius,
-          color: accentColor,
-          clipY1: top, clipY2: top + accent - 1,
-        );
-      case 'modern':
-        _fillRoundedRectBlended(
-          image,
-          x1: left, y1: top, x2: right, y2: bottom,
-          radius: panelRadius,
-          color: accentColor,
-          clipX1: left, clipX2: left + accent - 1,
-        );
-        img.drawLine(image, x1: left + pad, y1: bottom - accent,
-          x2: right - pad, y2: bottom - accent, color: accentColor);
-      case 'minimal':
-        img.drawLine(image, x1: left + pad, y1: top + pad,
-          x2: left + pad, y2: bottom - pad, color: accentColor);
-      case 'badge':
-        _fillRoundedRectBlended(
-          image,
-          x1: left, y1: top, x2: right, y2: bottom,
-          radius: panelRadius,
-          color: accentColor,
-          clipY1: top, clipY2: top + accent - 1,
-        );
-      default:
-        break;
-    }
-
-    var y = top + pad;
-    if (logoOnOwnRow) {
-      final headerLogo = img.copyResize(logo, width: logoMax, height: logoHeight);
-      img.compositeImage(image, headerLogo,
-        dstX: (right - pad - headerLogo.width).clamp(left + pad, right).toInt(),
-        dstY: y);
-      y += logoRowHeight;
-    }
-    final timeText = '$hour:$minute';
-    _drawScaledBitmapText(image, timeText, font: large, x: left + pad, y: y,
-      color: primaryTextColor, factor: timeScale,
-      shadowOffset: math.max(1, (scale * 1.2).round()));
-    final timeWidth = (_textWidth(timeText, large) * timeScale).round();
-    final separatorX = (left + pad + timeWidth + gap).clamp(left + pad, right - pad).toInt();
-    img.fillRect(image, x1: separatorX, y1: y, x2: separatorX + (3 * scale).round().clamp(2, 5).toInt(),
-      y2: y + timeH - gap, color: accentColor);
-    final dateX = separatorX + (10 * scale).round();
-    _drawStringCrisp(image, dateText, font: small, x: dateX, y: y,
-      color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
-    _drawStringCrisp(image, dayText, font: small, x: dateX, y: y + lineH,
-      color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
-    if (logo != null && !logoOnOwnRow) {
-      final resized = img.copyResize(logo, width: logoMax,
-        height: logoHeight);
-      img.compositeImage(image, resized,
-        dstX: (right - pad - resized.width).clamp(left + pad, right).toInt(),
-        dstY: (top + pad).clamp(0, image.height - 1).toInt());
-    }
-    y += timeH + lineH + gap;
-    for (final line in content) {
-      if (y + small.lineHeight >= bottom - pad) break;
-      _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
-        color: primaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
-      y += lineH;
-    }
-    if (awbText.isNotEmpty && y + small.lineHeight < bottom) {
-      final dividerY = (y - gap ~/ 2).clamp(top, bottom).toInt();
-      img.fillRect(image, x1: left + pad, y1: dividerY, x2: right - pad, y2: dividerY,
-        color: img.ColorRgba8(255, 255, 255, 85));
-      y += gap;
-      for (final line in awbText) {
-        if (y + small.lineHeight >= bottom) break;
-        _drawStringCrisp(image, line, font: small, x: left + pad, y: y,
-          color: secondaryTextColor, shadowOffset: math.max(1, (scale * 1.2).round()));
-        y += lineH;
-      }
-    }
-    return true;
-  }
-
-  static int _textWidth(String text, img.BitmapFont font) {
-    var width = 0;
-    for (final rune in text.runes) {
-      width += font.characterXAdvance(String.fromCharCode(rune));
-    }
-    return width;
-  }
-
-  /// Membungkus teks panjang, termasuk barcode/alamat tanpa spasi.
-  static List<String> _wrapText(
-    String text,
-    img.BitmapFont font,
-    int maxWidth,
-  ) {
+  /// Pembungkus teks generik (memakai fungsi lebar dari kanvas aktif),
+  /// termasuk memecah kata panjang seperti barcode/alamat tanpa spasi.
+  static List<String> _wrapBy(String text, int maxWidth, int Function(String) width) {
     if (maxWidth <= 0) return [text];
     final result = <String>[];
     var current = '';
-
     for (final word in text.split(RegExp(r'\s+'))) {
       if (word.isEmpty) continue;
       final candidate = current.isEmpty ? word : '$current $word';
-      if (_textWidth(candidate, font) <= maxWidth) {
+      if (width(candidate) <= maxWidth) {
         current = candidate;
         continue;
       }
-
       if (current.isNotEmpty) {
         result.add(current);
         current = '';
       }
-
-      // Pecah kata yang lebih panjang daripada lebar foto agar tidak
-      // terpotong di tepi gambar.
       var fragment = '';
       for (final rune in word.runes) {
         final char = String.fromCharCode(rune);
         final next = '$fragment$char';
-        if (fragment.isNotEmpty && _textWidth(next, font) > maxWidth) {
+        if (fragment.isNotEmpty && width(next) > maxWidth) {
           result.add(fragment);
           fragment = char;
         } else {
@@ -846,10 +847,464 @@ class WatermarkService {
       }
       current = fragment;
     }
-
     if (current.isNotEmpty) result.add(current);
     return result;
   }
+
+  // ───────────────────────── Parsing metadata ─────────────────────────
+
+  static final _isoRe = RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})');
+  static final _localRe = RegExp(r'^(\d{2})[/-](\d{2})[/-](\d{4})[ T](\d{2}):(\d{2})');
+
+  static _Parsed _parse(List<String> lines) {
+    final p = _Parsed();
+    for (final line in lines) {
+      final split = line.indexOf(':');
+      final key = (split < 0 ? line : line.substring(0, split)).trim().toUpperCase();
+      final value = split < 0 ? line.trim() : line.substring(split + 1).trim();
+      if (key == 'WAKTU' || key == 'TIME' || key == 'TIMESTAMP' || key == 'TANGGAL') {
+        p.rawTime = value;
+      } else if (_isoRe.hasMatch(line) || _localRe.hasMatch(line)) {
+        p.rawTime = line.trim();
+      } else if (key == 'ALAMAT' || key == 'LOKASI' || key == 'ADDRESS') {
+        p.address = value;
+      } else if (key == 'GPS' || key == 'KOORDINAT') {
+        p.gps = value;
+      } else if (key == 'KODE FOTO' || key == 'PHOTO CODE' || key == 'AWB') {
+        p.awb = value;
+      } else if (key == 'CUSTOM_TEXT' || key == 'TEKS KUSTOM') {
+        p.custom = value;
+      } else {
+        p.extras.add(line);
+      }
+    }
+    return p;
+  }
+
+  static _TimeInfo? _parseTime(String? raw) {
+    if (raw == null) return null;
+    final iso = _isoRe.firstMatch(raw);
+    final loc = _localRe.firstMatch(raw);
+    if (iso == null && loc == null) return null;
+    final m = (iso ?? loc)!;
+    final year = int.parse(m.group(iso != null ? 1 : 3)!);
+    final month = int.parse(m.group(2)!);
+    final day = int.parse(m.group(iso != null ? 3 : 1)!);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const weekdays = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    final date = DateTime(year, month, day);
+    return (
+      time: '${m.group(4)}:${m.group(5)}',
+      dateText: '$day ${months[month - 1]} $year',
+      dayText: weekdays[date.weekday - 1],
+    );
+  }
+
+  static List<_Row> _rows(_Parsed p, {required bool includeCustom}) {
+    final rows = <_Row>[];
+    if (p.address != null && p.address!.isNotEmpty) rows.add(_Row('pin', null, p.address!));
+    if (p.gps != null && p.gps!.isNotEmpty) rows.add(_Row('gps', null, p.gps!));
+    for (final e in p.extras) {
+      final i = e.indexOf(':');
+      if (i > 0 && i < e.length - 1 && i <= 18) {
+        rows.add(_Row('dot', e.substring(0, i).trim().toUpperCase(),
+            e.substring(i + 1).trim()));
+      } else {
+        rows.add(_Row('dot', null, e));
+      }
+    }
+    if (includeCustom && p.custom != null && p.custom!.trim().isNotEmpty) {
+      rows.add(_Row('dot', null, p.custom!.trim()));
+    }
+    if (p.awb != null && p.awb!.isNotEmpty) rows.add(_Row('tag', 'AWB', p.awb!));
+    return rows;
+  }
+
+  // ───────────────────────── Tema & posisi ─────────────────────────
+
+  static _Theme _themeFor(String style) {
+    img.Color c(int r, int g, int b, [int a = 255]) => img.ColorRgba8(r, g, b, a);
+    final white = c(255, 255, 255);
+    final div = c(255, 255, 255, 70);
+    switch (style) {
+      case 'compact':
+        return _Theme(c(16, 64, 54, 186), c(8, 42, 36, 204), c(92, 230, 174),
+            c(112, 240, 190), white, c(170, 222, 205), div, false);
+      case 'top':
+        return _Theme(c(84, 30, 44, 186), c(52, 18, 28, 204), c(255, 132, 150),
+            c(255, 160, 175), white, c(232, 186, 194), div, false);
+      case 'modern':
+        return _Theme(c(10, 36, 58, 186), c(5, 22, 38, 204), c(0, 210, 225),
+            c(105, 235, 255), white, c(170, 215, 225), div, false);
+      case 'minimal':
+        return _Theme(c(30, 54, 56, 164), c(18, 38, 40, 182), c(112, 220, 192),
+            c(150, 240, 220), white, c(190, 225, 218), div, false);
+      case 'badge':
+        return _Theme(c(252, 214, 112, 228), c(238, 178, 56, 234), c(120, 74, 8),
+            c(96, 62, 10), c(44, 34, 18), c(96, 68, 24), c(96, 68, 24, 90), true);
+      default:
+        return _Theme(c(18, 34, 58, 186), c(10, 20, 38, 204), c(255, 190, 55),
+            c(255, 200, 80), white, c(186, 200, 222), div, false);
+    }
+  }
+
+  static (int, int) _anchor(String position, int w0, int h0, int w, int h,
+      int inset, String fallback) {
+    const valid = {
+      'topLeft', 'topCenter', 'topRight',
+      'centerLeft', 'center', 'centerRight',
+      'bottomLeft', 'bottomCenter', 'bottomRight',
+    };
+    final p = valid.contains(position) ? position : fallback;
+    final hz = p == 'center' || p.endsWith('Center')
+        ? 1
+        : p.endsWith('Left')
+            ? 0
+            : 2;
+    final vt = p.startsWith('top') ? 0 : (p.startsWith('center') ? 1 : 2);
+    final x = hz == 0 ? inset : (hz == 1 ? (w0 - w) ~/ 2 : w0 - w - inset);
+    final y = vt == 0 ? inset : (vt == 1 ? (h0 - h) ~/ 2 : h0 - h - inset);
+    return (
+      x.clamp(0, math.max(0, w0 - w)).toInt(),
+      y.clamp(0, math.max(0, h0 - h)).toInt(),
+    );
+  }
+
+  // ───────────────────────── Layout kartu (satu mesin, dua renderer) ─────────────────────────
+
+  static bool _drawCard(
+    _Cv cv,
+    int W,
+    int H, {
+    required List<String> lines,
+    required img.Image? logo,
+    required String style,
+    required String position,
+  }) {
+    final parsed = _parse(lines);
+    final t = _parseTime(parsed.rawTime);
+    if (style == 'timemark' && t != null) {
+      for (final k in const [1.0, 0.85, 0.7, 0.58]) {
+        if (_tryTimemark(cv, W, H, parsed, t, logo, position, k)) return true;
+      }
+      return false;
+    }
+    final st = style == 'timemark' ? 'classic' : style;
+    final theme = _themeFor(st);
+    for (final k in const [1.0, 0.85, 0.72, 0.6]) {
+      if (_tryCard(cv, W, H, parsed, t, logo, theme, st, position, k)) return true;
+    }    return false;
+  }
+
+  static bool _tryCard(
+    _Cv cv,
+    int W,
+    int H,
+    _Parsed parsed,
+    _TimeInfo? t,
+    img.Image? logo,
+    _Theme theme,
+    String style,
+    String position,
+    double k,
+  ) {
+    final u = _unit(W, H) * k;
+    final timeEm = math.max(22.0, 76 * u);
+    final dateEm = math.max(11.0, 26 * u);
+    final dayEm = math.max(10.0, 21 * u);
+    final bodyEm = math.max(11.0, 23 * u);
+    final labelEm = bodyEm * 0.82;
+    final pad = _ci(15 * u, 6, 44);
+    final gap = _ci(9 * u, 4, 26);
+    final radius = _ci(14 * u, 5, 36);
+    final inset = _ci(14 * u, 6, 40);
+    final tp = _ci(5 * u, 3, 12);
+    final compact = style == 'compact' || style == 'badge';
+    final maxPanelW = math.min((W * (compact ? 0.74 : 0.88)).round(), W - inset * 2);
+    if (maxPanelW < 60) return false;
+
+    var timeW = 0, dateW = 0, hh = 0;
+    final sepW = math.max(2, _ci(3 * u, 2, 6));
+    if (t != null) {
+      timeW = cv.tw(t.time, timeEm, bold: true);
+      dateW = math.max(cv.tw(t.dateText, dateEm, bold: true), cv.tw(t.dayText, dayEm));
+      // Tinggi header mengikuti tinggi angka sebenarnya + napas atas/bawah.
+      hh = math.max(cv.digitH(timeEm) + gap, cv.lh(dateEm) + cv.lh(dayEm));
+    }
+
+    var tileW = 0, tileH = 0, logoW = 0, logoH = 0;
+    var ownRow = false;
+    if (logo != null) {
+      final base = t != null ? hh : cv.lh(bodyEm) * 2;
+      logoH = math.max(6, base - 2 * tp);
+      logoW = (logo.width * logoH / logo.height).round();
+      final maxLogoW = math.max(16, (math.min(W, H) * 0.13).round());
+      if (logoW > maxLogoW) {
+        logoW = maxLogoW;
+        logoH = math.max(4, (logo.height * logoW / logo.width).round());
+      }
+      tileW = logoW + 2 * tp;
+      tileH = logoH + 2 * tp;
+    }
+    var headerW = t == null ? 0 : timeW + gap + sepW + gap + dateW;
+    if (logo != null) {
+      if (t != null && headerW + gap * 2 + tileW + 2 * pad <= maxPanelW) {
+        headerW += gap * 2 + tileW;
+      } else {
+        ownRow = true;
+      }
+    }
+
+    final bodyLH = cv.lh(bodyEm);
+    final iconSize = math.max(8, (bodyLH * 0.78).round());
+    final iconCol = iconSize + gap;
+    final lineGap = math.max(1, _ci(3 * u, 1, 8));
+    final plans = <_RowPlan>[];
+    var rowsW = 0;
+    for (final row in _rows(parsed, includeCustom: true)) {
+      final labelW = row.label == null ? 0 : cv.tw('${row.label}', labelEm, bold: true) + gap;
+      final avail = maxPanelW - 2 * pad - iconCol - labelW;
+      if (avail < 24) return false;
+      final wrapped = cv.wrap(row.value, bodyEm, avail);
+      var lw = 0;
+      for (final l in wrapped) {
+        lw = math.max(lw, cv.tw(l, bodyEm));
+      }
+      rowsW = math.max(rowsW, iconCol + labelW + lw);
+      plans.add(_RowPlan(row, labelW, wrapped));
+    }
+
+    int blockH(_RowPlan r) => math.max(
+        iconSize, r.lines.length * bodyLH + (r.lines.length - 1) * lineGap);
+
+    final divH = math.max(1, u.round());
+    var contentH = 0;
+    if (ownRow) contentH += tileH + gap;
+    if (t != null) contentH += hh;
+    if (t != null && plans.isNotEmpty) contentH += gap * 2 + divH;
+    for (var i = 0; i < plans.length; i++) {
+      contentH += blockH(plans[i]);
+      if (i < plans.length - 1) contentH += gap;
+    }
+    final total = contentH + pad * 2;
+    if (total > H - inset * 2) return false;
+
+    final contentW = math.max(math.max(headerW, rowsW), ownRow ? tileW : 0);
+    final panelW = math.min(maxPanelW, contentW + pad * 2);
+    final (px, py) = _anchor(position, W, H, panelW, total, inset, 'bottomRight');
+    final right = px + panelW - 1;
+    final bottom = py + total - 1;
+    cv.region(px, py, panelW, total);
+
+    cv.rrect(px, py, right, bottom, radius, theme.top, bottom: theme.bottom);
+    final ab = _ci(5 * u, 3, 10);
+    void accent({int? cx1, int? cy1, int? cx2, int? cy2}) => cv.rrect(
+        px, py, right, bottom, radius, theme.accent,
+        cx1: cx1, cy1: cy1, cx2: cx2, cy2: cy2);
+    switch (style) {
+      case 'compact':
+        accent(cx1: right - ab + 1);
+      case 'top':
+      case 'badge':
+        accent(cy2: py + ab - 1);
+      case 'minimal':
+        cv.rect(px + pad ~/ 2, py + pad, px + pad ~/ 2 + math.max(1, ab ~/ 2),
+            bottom - pad, theme.accent);
+      case 'modern':
+        accent(cx2: px + ab - 1);
+        cv.rect(px + pad, bottom - math.max(1, ab ~/ 2), right - pad, bottom - 1,
+            img.ColorRgba8(theme.accent.r.toInt(), theme.accent.g.toInt(),
+                theme.accent.b.toInt(), 200));
+      default:
+        accent(cx2: px + ab - 1);
+    }
+
+    final shadow = !theme.light;
+    final tileColor = img.ColorRgba8(255, 255, 255, 238);
+    var y = py + pad;
+    if (ownRow) {
+      cv.logoTile(logo!, right - pad - tileW + 1, y, logoW, logoH, tp,
+          math.max(3, radius ~/ 2), tileColor);
+      y += tileH + gap;
+    }
+    if (t != null) {
+      final x0 = px + pad;
+      cv.timeText(t.time,
+          em: timeEm, x: x0, cy: y + hh ~/ 2,
+          color: theme.primary, shadow: shadow);
+      final sepX = x0 + timeW + gap;
+      final sepH = math.min(hh, (cv.digitH(timeEm) * 1.15).round());
+      final sepY = y + (hh - sepH) ~/ 2;
+      cv.rect(sepX, sepY, sepX + sepW - 1, sepY + sepH, theme.accent);
+      final dateX = sepX + sepW + gap;
+      final dateBlock = cv.lh(dateEm) + cv.lh(dayEm);
+      final dy = y + (hh - dateBlock) ~/ 2;
+      cv.text(t.dateText,
+          em: dateEm, x: dateX, y: dy, color: theme.primary, bold: true, shadow: shadow);
+      cv.text(t.dayText,
+          em: dayEm, x: dateX, y: dy + cv.lh(dateEm), color: theme.muted, shadow: shadow);
+      if (logo != null && !ownRow) {
+        cv.logoTile(logo, right - pad - tileW + 1, y + (hh - tileH) ~/ 2,
+            logoW, logoH, tp, math.max(3, radius ~/ 2), tileColor);
+      }
+      y += hh;
+      if (plans.isNotEmpty) {
+        y += gap;
+        cv.rect(px + pad, y, right - pad, y + divH - 1, theme.divider);
+        y += divH + gap;
+      }
+    }
+
+    for (final r in plans) {
+      final n = r.lines.length;
+      final textH = n * bodyLH + (n - 1) * lineGap;
+      final bh = blockH(r);
+      final textTop = y + (bh - textH) ~/ 2;
+      cv.icon(r.row.kind, px + pad + iconSize ~/ 2, textTop + bodyLH ~/ 2,
+          iconSize, theme.icon);
+      final tx = px + pad + iconCol;
+      if (r.row.label != null) {
+        cv.text(r.row.label!,
+            em: labelEm, x: tx, y: textTop + (bodyLH - cv.lh(labelEm)) ~/ 2,
+            color: theme.muted, bold: true, shadow: shadow);
+      }
+      for (var j = 0; j < n; j++) {
+        cv.text(r.lines[j],
+            em: bodyEm, x: tx + r.labelW, y: textTop + j * (bodyLH + lineGap),
+            color: theme.primary, shadow: shadow);
+      }
+      y += bh + gap;
+    }
+    return true;
+  }
+
+  /// Gaya "timemark": kapsul jam putih, tanggal tebal, metadata tanpa panel.
+  static bool _tryTimemark(
+    _Cv cv,
+    int W,
+    int H,
+    _Parsed p,
+    _TimeInfo t,
+    img.Image? logo,
+    String position,
+    double k,
+  ) {
+    final u = _unit(W, H) * k;
+    final timeEm = math.max(22.0, 78 * u);
+    final dateEm = math.max(12.0, 32 * u);
+    final bodyEm = math.max(10.0, 21 * u);
+    final pad = _ci(13 * u, 6, 36);
+    final gap = _ci(8 * u, 3, 20);
+    final inset = _ci(18 * u, 8, 48);
+    final tp = _ci(4 * u, 2, 10);
+    final timeLH = cv.digitH(timeEm);
+    final timeW = cv.tw(t.time, timeEm, bold: true);
+
+    var logoW = 0, logoH = 0;
+    if (logo != null) {
+      logoH = timeLH;
+      logoW = (logo.width * logoH / logo.height).round();
+      final mx = math.max(16, (math.min(W, H) * 0.11).round());
+      if (logoW > mx) {
+        logoW = mx;
+        logoH = math.max(4, (logo.height * logoW / logo.width).round());
+      }
+    }
+    final capH = math.max(timeLH, logo == null ? 0 : logoH + 2 * tp) + pad * 2;
+    final capW = pad * 2 + timeW + (logo == null ? 0 : gap * 2 + logoW + 2 * tp);
+    final maxText = math.min(W - inset * 2, (W * 0.82).round());
+
+    final dateLines = cv.wrap('${t.dayText}, ${t.dateText}', dateEm, maxText - pad, bold: true);
+    final meta = <String>[];
+    for (final r in _rows(p, includeCustom: false)) {
+      if (r.label == 'AWB') continue;
+      meta.addAll(cv.wrap(r.label == null ? r.value : '${r.label}: ${r.value}',
+          bodyEm, maxText - pad));
+    }
+    final codes = p.awb == null || p.awb!.isEmpty
+        ? <String>[]
+        : cv.wrap('AWB: ${p.awb}', bodyEm, maxText - pad, bold: true);
+
+    final dateLH = cv.lh(dateEm) + gap;
+    final bodyLH = cv.lh(bodyEm) + _ci(7 * u, 3, 18);
+    final detailsH = dateLines.length * dateLH +
+        meta.length * bodyLH +
+        (codes.isEmpty ? 0 : gap + codes.length * bodyLH);
+    final total = capH + gap * 2 + detailsH;
+    if (total >= H - inset) return false;
+
+    var textW = 0;
+    for (final l in dateLines) {
+      textW = math.max(textW, cv.tw(l, dateEm, bold: true));
+    }
+    for (final l in [...meta, ...codes]) {
+      textW = math.max(textW, cv.tw(l, bodyEm, bold: true));
+    }
+    final blockW = math.min(W - inset * 2, math.max(capW, textW + pad));
+    final (x, y0) = _anchor(position, W, H, blockW, total, inset, 'bottomLeft');
+    final top = position.startsWith('top');
+
+    final custom = p.custom?.trim() ?? '';
+    if (custom.isNotEmpty && !top && W >= 320) {
+      final cl = cv
+          .wrap(custom, bodyEm, math.min(W - inset * 2, (W * 0.72).round()), bold: true)
+          .take(3)
+          .toList();
+      var cw = 0;
+      for (final l in cl) {
+        cw = math.max(cw, cv.tw(l, bodyEm, bold: true));
+      }
+      final lineH = cv.lh(bodyEm) + gap ~/ 2;
+      cv.region(W - inset - cw, inset, cw, lineH * cl.length);
+      var cy = inset;
+      for (final l in cl) {
+        cv.text(l,
+            em: bodyEm, x: math.max(0, W - inset - cv.tw(l, bodyEm, bold: true)), y: cy,
+            color: img.ColorRgb8(255, 255, 255), bold: true);
+        cy += lineH;
+      }
+    }
+
+    cv.region(x, y0, blockW, total);
+    cv.rrect(x, y0, x + capW - 1, y0 + capH - 1, _ci(12 * u, 4, 30),
+        img.ColorRgba8(255, 255, 255, 244));
+    cv.timeText(t.time,
+        em: timeEm, x: x + pad, cy: y0 + capH ~/ 2,
+        color: img.ColorRgb8(18, 55, 105), shadow: false);
+    if (logo != null) {
+      cv.logoTile(logo, x + capW - pad - logoW - 2 * tp,
+          y0 + (capH - logoH - 2 * tp) ~/ 2, logoW, logoH, tp,
+          _ci(6 * u, 3, 16), img.ColorRgba8(236, 238, 242, 255));
+    }
+
+    var y = y0 + capH + gap * 2;
+    final tx = x + pad;
+    for (final l in dateLines) {
+      cv.text(l, em: dateEm, x: tx, y: y, color: img.ColorRgb8(255, 255, 255), bold: true);
+      y += dateLH;
+    }
+    for (final l in meta) {
+      cv.text(l, em: bodyEm, x: tx, y: y, color: img.ColorRgb8(248, 248, 248));
+      y += bodyLH;
+    }
+    if (codes.isNotEmpty) {
+      y += gap;
+      for (final l in codes) {
+        cv.text(l, em: bodyEm, x: tx, y: y, color: img.ColorRgb8(205, 205, 205), bold: true);
+        y += bodyLH;
+      }
+    }
+    final lw = _ci(3 * u, 2, 8);
+    cv.rect(x, y0 + capH + gap, x + lw - 1, math.min(H - 1, y - gap),
+        img.ColorRgb8(255, 190, 55));
+    return true;
+  }
+
+  // ───────────────────────── Isolate ─────────────────────────
 
   static void _burnIsolate(WatermarkBurnRequest req) {
     try {
@@ -858,473 +1313,78 @@ class WatermarkService {
       if (image == null) {
         throw StateError('Gagal decode gambar: ${req.sourcePath}');
       }
-
-      // Bakar orientasi EXIF sebelum menghitung posisi watermark.
       image = img.bakeOrientation(image);
-      // Pertahankan dimensi foto asli. Mengecilkan gambar di sini dapat
-      // mengurangi detail bukti POD; ukuran watermark disesuaikan di bawah.
-      final hasText = req.lines.isNotEmpty;
-      final decodedLogo = req.logoBytes == null
-          ? null
-          : _removeConnectedDarkLogoBackground(img.decodeImage(req.logoBytes!)!);
-      if (req.textOverlayBytes != null) {
-        final overlay = img.decodePng(req.textOverlayBytes!);
-        if (overlay == null || overlay.width != image.width || overlay.height != image.height) {
-          throw StateError('Overlay watermark tidak cocok dengan ukuran foto.');
-        }
-        img.compositeImage(image, overlay);
-      } else {
-        final supportedStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}
-            .contains(req.style) ? req.style : 'classic';
-        final useClassicLayout = hasText &&
-            _drawClassicTimestampLayout(image, lines: req.lines, logo: decodedLogo,
-              scale: _photoScale(image.width, image.height),
-              style: supportedStyle, position: req.position);
 
-      if (!hasText && decodedLogo == null) {
+      final hasText = req.lines.isNotEmpty;
+      img.Image? logo;
+      if (req.logoBytes != null) {
+        final decoded = img.decodeImage(req.logoBytes!);
+        if (decoded != null) logo = _removeConnectedDarkLogoBackground(decoded);
+      }
+
+      if (!hasText && logo == null && req.textOverlayBytes == null) {
         if (req.sourcePath != req.destPath) {
           File(req.sourcePath).copySync(req.destPath);
         }
         return;
       }
-
       File(req.destPath).parent.createSync(recursive: true);
 
-      // Gunakan padding proporsional terhadap ukuran foto; jangan biarkan
-      // padding tetap terlalu besar pada gambar kecil.
-      final scale = _photoScale(image.width, image.height);
-      final padding = (9 * scale).round().clamp(5, 18).toInt();
-      final lineGap = (2 * scale).round().clamp(1, 6).toInt();
-      // Naikkan ukuran font pada foto resolusi tinggi agar teks watermark
-      // tetap proporsional setelah dimensi asli dipertahankan.
-      final shortSide = _shortSide(image.width, image.height);
-      final font = shortSide < 720
-          ? img.arial14
-          : shortSide < 1600
-              ? img.arial24
-              : img.arial48;
-      final lineHeight = font.lineHeight + (2 * scale).round();
-      final style = const {
-        'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge',
-      }.contains(req.style) ? req.style : 'classic';
-      // Batasi lebar teks agar panel tidak membentang menutupi foto.
-      final maxTextRatio = style == 'compact' || style == 'badge' || style == 'timemark'
-          ? 0.46
-          : style == 'minimal'
-              ? 0.50
-              : style == 'classic'
-                  ? 0.56
-                  : style == 'top'
-                      ? 0.60
-                      : 0.62;
-      // Alokasikan ruang untuk kolom ikon dan pemisah label/value sebelum wrapping.
-      final labelExtraGap = (4 * scale).round();
-      final iconGutter = (markerRadiusForLineHeight(lineHeight) * 2) +
-          (8 * scale).round();
-      final maxTextWidth = ((image.width * maxTextRatio).round() -
-              (2 * padding) - iconGutter - labelExtraGap)
-          .clamp(10, image.width).toInt();
-
-      final wrappedLines = <String>[];
-      if (hasText) {
-        for (final line in req.lines) {
-          wrappedLines.addAll(_wrapText(line, font, maxTextWidth));
-        }
-      }
-
-      final logo = decodedLogo;
-      img.Image? resizedLogo;
-      if (logo != null) {
-        final maxLogo = (_shortSide(image.width, image.height) * 0.08).round().clamp(14, 160).toInt();
-        final ratio = maxLogo / (logo.width > logo.height ? logo.width : logo.height);
-        resizedLogo = img.copyResize(
-          logo,
-          width: (logo.width * ratio).round().clamp(1, maxLogo).toInt(),
-          height: (logo.height * ratio).round().clamp(1, maxLogo).toInt(),
-        );
-      }
-
-      if (wrappedLines.isNotEmpty && !useClassicLayout) {
-        final textHeight = wrappedLines.length * lineHeight +
-            (wrappedLines.length - 1) * lineGap;
-        // Logo mendapat baris khusus di bagian atas panel. Teks dimulai
-        // setelahnya, sehingga alamat/AWB tidak pernah tertutup logo.
-        final logoHeaderHeight = resizedLogo == null
-            ? 0
-            : resizedLogo.height + (8 * scale).round();
-        final headerGap = resizedLogo == null ? 0 : (6 * scale).round();
-        final barHeight =
-            (2 * padding) + logoHeaderHeight + headerGap + textHeight;
-        // Jangan diam-diam membuang metadata yang tidak muat pada foto.
-        // Validasi sebelum panel digambar atau file tujuan diganti, sehingga
-        // foto hasil sebelumnya tetap aman jika metadata terlalu panjang.
-        if (barHeight > image.height) {
-          throw StateError(
-            'Metadata watermark terlalu panjang untuk tinggi foto '
-            '${image.width}x${image.height}; kurangi jumlah/panjang baris.',
-          );
-        }
-        final insetStyles = const {'classic', 'modern', 'minimal', 'badge'};
-        final inset = insetStyles.contains(style)
-            ? (10 * scale).round().clamp(5, 18).toInt()
-            : 0;
-        const supportedPositions = {
-          'topLeft', 'topCenter', 'topRight',
-          'centerLeft', 'center', 'centerRight',
-          'bottomLeft', 'bottomCenter', 'bottomRight',
-        };
-        final position = supportedPositions.contains(req.position)
-            ? req.position
-            : 'bottomRight';
-        final vertical = position.startsWith('top')
-            ? 'top'
-            : position.startsWith('center')
-                ? 'center'
-                : 'bottom';
-        final barY = vertical == 'top'
-            ? inset
-            : vertical == 'center'
-                ? ((image.height - barHeight) / 2).round()
-                    .clamp(0, image.height - barHeight).toInt()
-            : (image.height - barHeight - inset)
-                .clamp(0, image.height - barHeight).toInt();
-        var contentWidth = 0;
-        for (final line in wrappedLines) {
-          final width = _textWidth(line, font);
-          if (width > contentWidth) contentWidth = width;
-        }
-        if (resizedLogo != null && resizedLogo.width > contentWidth) {
-          contentWidth = resizedLogo.width;
-        }
-        final textInset = style == 'modern' || style == 'minimal'
-            ? (4 * scale).round()
-            : 0;
-        final maxPanelWidth = (image.width * maxTextRatio)
-            .round()
-            .clamp(1, image.width).toInt();
-        final panelWidth = (contentWidth + 2 * padding + textInset + iconGutter)
-            .clamp(1, maxPanelWidth).toInt();
-        final panelRightInset = (style == 'modern' ||
-                style == 'minimal' ||
-                style == 'badge' ||
-                style == 'compact')
-            ? inset
-            : 0;
-        final horizontal = position == 'center' || position.endsWith('Center')
-            ? 'center'
-            : position.endsWith('Left')
-                ? 'left'
-                : 'right';
-        var panelX = horizontal == 'left'
-            ? inset
-            : horizontal == 'center'
-                ? ((image.width - panelWidth) / 2).round()
-                    .clamp(0, image.width - panelWidth).toInt()
-            : image.width - panelWidth - inset;
-        // Classic/modern/minimal/header kini memakai panel selebar konten,
-        // bukan satu pita penuh yang menutupi objek foto.
-        var panelRight = (panelX + panelWidth - 1)
-            .clamp(panelX, image.width - 1 - panelRightInset).toInt();
-        if (panelRight < panelX) {
-          panelX = 0;
-          panelRight = (panelWidth - 1).clamp(0, image.width - 1).toInt();
-        }
-
-        // Panel memakai gradasi halus; semua aksen dipotong menggunakan
-        // geometri panel yang sama agar sudut tidak keluar dari lengkungan.
-        final panelRadius = (12 * scale).round().clamp(6, 30).toInt();
-        final panelBottomY =
-            (barY + barHeight - 1).clamp(0, image.height - 1).toInt();
-        final (panelTop, panelBottom) = switch (style) {
-          'classic' => (
-              img.ColorRgba8(32, 58, 92, 160),
-              img.ColorRgba8(18, 36, 62, 175),
-            ),
-          'compact' => (
-              img.ColorRgba8(26, 90, 78, 155),
-              img.ColorRgba8(14, 62, 54, 170),
-            ),
-          'top' => (
-              img.ColorRgba8(118, 42, 62, 155),
-              img.ColorRgba8(84, 26, 42, 170),
-            ),
-          'modern' => (
-              img.ColorRgba8(18, 48, 74, 168),
-              img.ColorRgba8(8, 28, 46, 182),
-            ),
-          'minimal' => (
-              img.ColorRgba8(46, 80, 84, 150),
-              img.ColorRgba8(30, 58, 62, 165),
-            ),
-          'badge' => (
-              img.ColorRgba8(250, 196, 84, 182),
-              img.ColorRgba8(236, 170, 52, 192),
-            ),
-          _ => (
-              img.ColorRgba8(32, 58, 92, 160),
-              img.ColorRgba8(18, 36, 62, 175),
-            ),
-        };
-
-        _fillRoundedRectBlended(
-          image,
-          x1: panelX,
-          y1: barY,
-          x2: panelRight,
-          y2: panelBottomY,
-          radius: panelRadius,
-          color: panelTop,
-          colorBottom: panelBottom,
-        );
-
-        void accent({
-          required img.Color color,
-          int? clipX1,
-          int? clipY1,
-          int? clipX2,
-          int? clipY2,
-        }) {
-          _fillRoundedRectBlended(
-            image!,
-            x1: panelX,
-            y1: barY,
-            x2: panelRight,
-            y2: panelBottomY,
-            radius: panelRadius,
-            color: color,
-            clipX1: clipX1,
-            clipY1: clipY1,
-            clipX2: clipX2,
-            clipY2: clipY2,
-          );
-        }
-
-        switch (style) {
-          case 'modern':
-            final w = (5 * scale).round().clamp(3, 8).toInt();
-            final h = (6 * scale).round().clamp(4, 10).toInt();
-            accent(
-              color: img.ColorRgb8(0, 145, 170),
-              clipY2: barY + h - 1,
-            );
-            accent(
-              color: img.ColorRgb8(0, 205, 220),
-              clipX2: panelX + w - 1,
-            );
-          case 'minimal':
-            final w = (3 * scale).round().clamp(2, 5).toInt();
-            accent(
-              color: img.ColorRgb8(100, 205, 180),
-              clipX2: panelX + w - 1,
-            );
-          case 'badge':
-            final h = (5 * scale).round().clamp(3, 8).toInt();
-            accent(
-              color: img.ColorRgb8(255, 224, 145),
-              clipY2: barY + h - 1,
-            );
-          case 'compact':
-            final w = (4 * scale).round().clamp(2, 6).toInt();
-            accent(
-              color: img.ColorRgb8(93, 220, 174),
-              clipX1: panelRight - w + 1,
-            );
-          case 'top':
-            final h = (5 * scale).round().clamp(3, 8).toInt();
-            accent(
-              color: img.ColorRgb8(218, 92, 111),
-              clipY2: barY + h - 1,
-            );
-          default:
-            final h = (4 * scale).round().clamp(2, 6).toInt();
-            accent(
-              color: img.ColorRgb8(91, 153, 220),
-              clipY1: panelBottomY - h + 1,
-            );
-        }
-
-        if (resizedLogo != null) {
-          img.compositeImage(
-            image,
-            resizedLogo,
-            dstX: (style == 'minimal' || style == 'modern' || style == 'top'
-                ? panelX + padding
-                : panelRight - resizedLogo.width - padding)
-                .clamp(panelX, (panelRight - resizedLogo.width).clamp(panelX, image.width - 1).toInt()).toInt(),
-            dstY: (barY + padding).clamp(0, image.height - 1).toInt(),
-          );
-        }
-
-        final textX = panelX + padding +
-            (markerRadiusForLineHeight(lineHeight) * 2) + (8 * scale).round();
-        var textY = barY + padding + logoHeaderHeight + headerGap;
-        final textColor = style == 'badge'
-            ? img.ColorRgb8(42, 35, 22)
-            : img.ColorRgb8(255, 255, 255);
-        final accentLight = switch (style) {
-          'badge' => img.ColorRgb8(92, 60, 12),
-          'classic' => img.ColorRgb8(130, 195, 255),
-          'compact' => img.ColorRgb8(112, 240, 190),
-          'top' => img.ColorRgb8(255, 160, 175),
-          'minimal' => img.ColorRgb8(150, 240, 220),
-          _ => img.ColorRgb8(105, 235, 255),
-        };
-        final labelColor = accentLight;
-        var rowIndex = 0;
-        for (final line in wrappedLines) {
-          if (textY + lineHeight > image.height) break;
-
-          // Penanda kecil berwarna memberi setiap baris identitas visual,
-          // seperti metadata terstruktur pada aplikasi timestamp/POD.
-          final markerColor = accentLight;
-          // Kolom ikon diperbesar dan dipisahkan secara konsisten dari teks.
-          final markerRadius = markerRadiusForLineHeight(lineHeight);
-          final markerX = (panelX + padding + markerRadius)
-              .clamp(panelX, panelRight).toInt();
-          final markerY = (textY + lineHeight / 2).round()
-              .clamp(barY, image.height - 1).toInt();
-          final markerLabel = line.toUpperCase();
-          if (markerLabel.startsWith('WAKTU') ||
-              markerLabel.startsWith('TIME') ||
-              markerLabel.startsWith('TANGGAL')) {
-            // Ikon jam: lingkaran dan dua jarum.
-            img.drawCircle(
-              image,
-              x: markerX,
-              y: markerY,
-              radius: markerRadius,
-              color: markerColor,
-            );
-            img.drawLine(
-              image,
-              x1: markerX,
-              y1: markerY,
-              x2: markerX,
-              y2: markerY - (markerRadius * 0.55).round(),
-              color: markerColor,
-            );
-            img.drawLine(
-              image,
-              x1: markerX,
-              y1: markerY,
-              x2: markerX + (markerRadius * 0.55).round(),
-              y2: markerY,
-              color: markerColor,
-            );
-          } else if (markerLabel.startsWith('GPS') ||
-              markerLabel.startsWith('KOORDINAT')) {
-            // Ikon target untuk koordinat GPS.
-            img.drawCircle(
-              image,
-              x: markerX,
-              y: markerY,
-              radius: markerRadius,
-              color: markerColor,
-            );
-            img.fillCircle(
-              image,
-              x: markerX,
-              y: markerY,
-              radius: (markerRadius / 2).round().clamp(1, markerRadius).toInt(),
-              color: markerColor,
-            );
-          } else if (markerLabel.startsWith('ALAMAT') ||
-              markerLabel.startsWith('LOKASI')) {
-            // Ikon pin lokasi yang tetap sederhana di ukuran foto kecil.
-            img.fillCircle(
-              image,
-              x: markerX,
-              y: markerY - 1,
-              radius: markerRadius,
-              color: markerColor,
-            );
-            img.fillCircle(
-              image,
-              x: markerX,
-              y: markerY - 1,
-              radius: (markerRadius / 2).round().clamp(1, markerRadius).toInt(),
-              color: panelBottom,
-            );
-            img.drawLine(
-              image,
-              x1: markerX - markerRadius + 1,
-              y1: markerY + markerRadius - 1,
-              x2: markerX,
-              y2: markerY + markerRadius + 1,
-              color: markerColor,
-            );
-            img.drawLine(
-              image,
-              x1: markerX,
-              y1: markerY + markerRadius + 1,
-              x2: markerX + markerRadius - 1,
-              y2: markerY + markerRadius - 1,
-              color: markerColor,
-            );
-          } else {
-            // Penanda netral untuk AWB, operator, dan metadata lainnya.
-            img.fillCircle(
-              image,
-              x: markerX,
-              y: markerY,
-              radius: markerRadius,
-              color: markerColor,
-            );
-          }
-
-          // Garis pemisah dan label berwarna membuat informasi lebih mudah
-          // dipindai, tidak lagi berupa satu blok teks putih yang seragam.
-          if (rowIndex > 0 && (style == 'modern' || style == 'classic' || style == 'badge')) {
-            final dividerY = (textY - (lineGap ~/ 2)).clamp(barY, image.height - 1).toInt();
-            img.fillRect(
-              image,
-              x1: textX,
-              y1: dividerY,
-              x2: (panelRight - padding).clamp(textX, image.width - 1).toInt(),
-              y2: dividerY,
-              color: style == 'badge'
-                  ? img.ColorRgb8(190, 143, 48)
-                  : img.ColorRgb8(90, 115, 135),
-            );
-          }
-
-          final separator = line.indexOf(':');
-          if (separator > 0 && separator < line.length - 1) {
-            final label = line.substring(0, separator + 1);
-            final value = line.substring(separator + 1).trimLeft();
-            final labelWidth = _textWidth(label, font);
-            _drawStringCrisp(
-              image, label, font: font, x: textX, y: textY,
-              color: labelColor, shadowOffset: math.max(1, (scale * 1.2).round()),
-            );
-            final valueX = textX + labelWidth + (4 * scale).round();
-            if (valueX < image.width - padding) {
-              _drawStringCrisp(
-                image, value, font: font, x: valueX, y: textY,
-                color: textColor, shadowOffset: scale >= 1.5 ? 2 : 1,
-              );
+      var done = false;
+      // 1) Overlay TTF dari main isolate (kualitas terbaik).
+      if (req.overlays.isNotEmpty) {
+        if (image.width == req.expectedWidth && image.height == req.expectedHeight) {
+          for (final o in req.overlays) {
+            final layer = img.decodePng(o.png);
+            if (layer == null) {
+              throw StateError('Overlay watermark rusak.');
             }
-          } else {
-            _drawStringCrisp(
-              image, line, font: font, x: textX, y: textY,
-              color: textColor, shadowOffset: scale >= 1.5 ? 2 : 1,
-            );
+            img.compositeImage(image, layer, dstX: o.x, dstY: o.y);
           }
-          textY += lineHeight + lineGap;
-          rowIndex++;
-        }      } else if (resizedLogo != null && !useClassicLayout) {
-        // Jika pengguna hanya memakai logo, pertahankan penempatan sudut
-        // kanan bawah dengan batas aman pada foto kecil.
-        final padding = (12 * scale).round().clamp(5, 20).toInt();
-        img.compositeImage(
-          image,
-          resizedLogo,
-          dstX: (image.width - resizedLogo.width - padding).clamp(0, image.width - 1).toInt(),
-          dstY: (image.height - resizedLogo.height - padding).clamp(0, image.height - 1).toInt(),
-        );
+          done = true;
+        } else {
+          debugPrint('Dimensi overlay ${req.expectedWidth}x${req.expectedHeight} '
+              '!= foto ${image.width}x${image.height}; memakai renderer cadangan.');
+        }
       }
 
+      // 2) Overlay penuh lama (kompatibilitas).
+      if (!done && req.textOverlayBytes != null) {
+        final overlay = img.decodePng(req.textOverlayBytes!);
+        if (overlay == null ||
+            overlay.width != image.width ||
+            overlay.height != image.height) {
+          throw StateError('Overlay watermark tidak cocok dengan ukuran foto.');
+        }
+        img.compositeImage(image, overlay);
+        done = true;
       }
+
+      // 3) Renderer bitmap cadangan.
+      if (!done) {
+        final style = _styles.contains(req.style) ? req.style : 'classic';
+        if (hasText) {
+          final ok = _drawCard(_ImgCv(image), image.width, image.height,
+              lines: req.lines, logo: logo, style: style, position: req.position);
+          if (!ok) {
+            throw StateError(
+              'Metadata watermark terlalu panjang untuk tinggi foto '
+              '${image.width}x${image.height}; kurangi jumlah/panjang baris.',
+            );
+          }
+        } else if (logo != null) {
+          final u = _unit(image.width, image.height);
+          final tp = _ci(6 * u, 3, 14);
+          final lw = _ci(math.min(image.width, image.height) * 0.12, 24, 220);
+          final lh = math.max(4, (logo.height * lw / logo.width).round());
+          final inset = _ci(14 * u, 6, 40);
+          final (x, y) = _anchor(req.position, image.width, image.height,
+              lw + 2 * tp, lh + 2 * tp, inset, 'bottomRight');
+          _logoTile(image, logo, x, y, lw, lh, tp, _ci(8 * u, 3, 20),
+              img.ColorRgba8(255, 255, 255, 238));
+        }
+      }
+
       final destLower = req.destPath.toLowerCase();
       final outBytes = destLower.endsWith('.png')
           ? img.encodePng(image)
@@ -1344,22 +1404,17 @@ class WatermarkService {
         final backupFile = File(backupPath);
         var movedExistingDestination = false;
         try {
-          // Simpan hasil lama sementara agar kegagalan rename tidak
-          // menghilangkan foto yang sebelumnya sudah tersimpan.
           if (destination.existsSync()) {
             destination.renameSync(backupPath);
             movedExistingDestination = true;
           }
           tempFile.renameSync(req.destPath);
           if (movedExistingDestination && backupFile.existsSync()) {
-            // Penghapusan cadangan bukan bagian dari keberhasilan tulis;
-            // kegagalannya tidak boleh melaporkan foto baru sebagai gagal.
             try {
               backupFile.deleteSync();
             } catch (_) {}
           }
         } catch (_) {
-          // Jika penggantian gagal, pulihkan hasil lama bila memungkinkan.
           if (movedExistingDestination &&
               backupFile.existsSync() &&
               !destination.existsSync()) {
