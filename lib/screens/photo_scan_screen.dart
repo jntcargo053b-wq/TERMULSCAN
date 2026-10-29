@@ -502,6 +502,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           if (barcode != null && barcode.isNotEmpty) 'AWB: $barcode',
           if (_wmSettings.operatorName.trim().isNotEmpty)
             'Operator: ${_wmSettings.operatorName.trim()}',
+          if (_wmSettings.watermarkStyle == 'timemark' && _wmSettings.customText.trim().isNotEmpty)
+            'CUSTOM_TEXT: ${_wmSettings.customText.trim()}',
         ];
 
         await WatermarkService.burn(
