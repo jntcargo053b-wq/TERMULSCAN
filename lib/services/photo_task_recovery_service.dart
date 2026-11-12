@@ -250,7 +250,8 @@ class PhotoTaskRecoveryService {
 
     final logoBytes = await _loadCompactLogo();
     final lines = <String>[
-      'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      '${isGalleryImport ? 'WAKTU IMPOR' : 'WAKTU'}: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      if (isGalleryImport) 'SUMBER: FOTO GALERI',
       if (lat != null && lng != null)
         'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
       if (locationText.trim().isNotEmpty) 'ALAMAT: ${locationText.trim()}',
