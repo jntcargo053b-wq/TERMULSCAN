@@ -232,13 +232,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     if (mounted) setState(() => _isSaving = true);
 
     try {
-      if (!_locationGranted) {
-        await _checkLocationPermission();
-        if (!_locationGranted) {
-          _showError('Izin lokasi diperlukan untuk menandai foto');
-          return;
-        }
-      }
+      // Foto galeri tidak menggunakan lokasi perangkat saat impor.
 
       final availableStorage = await _storage.getAvailableStorageBytes();
       if (availableStorage != null && availableStorage < 100 * 1024 * 1024) {
