@@ -72,7 +72,7 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WH Scanner',
+      title: 'TERMULSCAN',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       home: widget.home ?? const HomeScreen(),
