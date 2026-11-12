@@ -197,8 +197,10 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 1024,
-        imageQuality: 65,
+        // POD evidence must keep AWB/label text legible after watermarking.
+        // 2048 px + quality 85 balances detail and local storage usage.
+        maxWidth: 2048,
+        imageQuality: 85,
         preferredCameraDevice: CameraDevice.rear,
       );
       if (xfile == null) return;
@@ -262,8 +264,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
       final xfile = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        imageQuality: 65,
+        // Keep enough source detail for barcode/OCR and POD label inspection.
+        maxWidth: 2048,
+        imageQuality: 85,
       );
       if (xfile == null) return;
 
