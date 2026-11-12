@@ -116,7 +116,8 @@ class PhotoTaskRecoveryService {
     double? lat = taskLat is num ? taskLat.toDouble() : entry.latitude;
     double? lng = taskLng is num ? taskLng.toDouble() : entry.longitude;
 
-    if (allowFreshLocation && (lat == null || lng == null)) {
+    final isGalleryImport = task['allowFreshLocation'] == false;
+    if (allowFreshLocation && !isGalleryImport && (lat == null || lng == null)) {
       final coords = await _location.getCoordinatesOnly();
       lat = coords.lat;
       lng = coords.lng;
@@ -183,7 +184,8 @@ class PhotoTaskRecoveryService {
 
         final logoBytes = await _loadCompactLogo();
         final lines = <String>[
-          'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+          '${isGalleryImport ? 'WAKTU IMPOR' : 'WAKTU'}: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      if (isGalleryImport) 'SUMBER: FOTO GALERI',
           'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
           'ALAMAT: $resolvedAddress',
           if (current.scanResult?.isNotEmpty == true) 'AWB: ${current.scanResult}',
@@ -226,9 +228,9 @@ class PhotoTaskRecoveryService {
     // Hanya proses watermark yang mengonsumsi retry counter.
     await _storage.markPhotoTaskAttempt(entryId);
 
-    String locationText = lat == null || lng == null
-        ? 'Lokasi tidak tersedia'
-        : '';
+    String locationText = isGalleryImport
+        ? ''
+        : (lat == null || lng == null ? 'Lokasi tidak tersedia' : '');
     var resolvedNow = false;
     if (lat != null && lng != null) {
       try {
@@ -248,7 +250,8 @@ class PhotoTaskRecoveryService {
 
     final logoBytes = await _loadCompactLogo();
     final lines = <String>[
-      'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      '${isGalleryImport ? 'WAKTU IMPOR' : 'WAKTU'}: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(current.timestamp)}',
+      if (isGalleryImport) 'SUMBER: FOTO GALERI',
       if (lat != null && lng != null)
         'GPS: ${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}',
       if (locationText.trim().isNotEmpty) 'ALAMAT: ${locationText.trim()}',

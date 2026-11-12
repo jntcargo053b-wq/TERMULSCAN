@@ -213,7 +213,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         return;
       }
 
-      final entry = await _savePhotoWithCaptureLocation(xfile.path);
+      final entry = await _savePhotoWithCaptureLocation(xfile.path, isGallery: false);
       _finishSavingPhoto(entry);
     } catch (e) {
       if (mounted) _showError('Gagal ambil foto: $e');
@@ -232,13 +232,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     if (mounted) setState(() => _isSaving = true);
 
     try {
-      if (!_locationGranted) {
-        await _checkLocationPermission();
-        if (!_locationGranted) {
-          _showError('Izin lokasi diperlukan untuk menandai foto');
-          return;
-        }
-      }
+      // Foto galeri tidak menggunakan lokasi perangkat saat impor.
 
       final availableStorage = await _storage.getAvailableStorageBytes();
       if (availableStorage != null && availableStorage < 100 * 1024 * 1024) {
@@ -321,7 +315,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         return;
       }
 
-      final entry = await _savePhotoWithCaptureLocation(xfile.path);
+      final entry = await _savePhotoWithCaptureLocation(xfile.path, isGallery: true);
       _finishSavingPhoto(entry);
     } catch (e) {
       if (mounted) _showError('Gagal memilih foto: $e');
@@ -332,7 +326,10 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   /// Shared camera/gallery path. A valid latitude/longitude is captured as-is;
   /// accuracy is informational and never blocks saving a photo.
-  Future<ScanEntry> _savePhotoWithCaptureLocation(String sourcePath) async {
+  Future<ScanEntry> _savePhotoWithCaptureLocation(
+    String sourcePath, {
+    required bool isGallery,
+  }) async {
     final savedPath = await _storage.savePhoto(sourcePath);
     final capturedAt = DateTime.now();
 
@@ -340,7 +337,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
       // Raw copy is the immutable recovery source. If anything fails before
       // an entry is persisted, clean up both copies so no orphan files remain.
       await _storage.savePhotoRawCopy(sourcePath, savedPath);
-      final captureCoords = await _loc.getCoordinatesOnly();
+      final captureCoords = isGallery
+          ? null
+          : await _loc.getCoordinatesOnly();
 
       // Persist the history entry and recovery task BEFORE burning the
       // watermark. If Android kills the process during image processing, the
@@ -352,23 +351,26 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         value: savedPath,
         imagePath: savedPath,
         timestamp: capturedAt,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
+        latitude: captureCoords?.lat,
+        longitude: captureCoords?.lng,
         locationName: null,
         scanResult: _barcode,
       );
       await _storage.add(entry);
       await _storage.enqueuePhotoTask(
         entry.id,
-        latitude: captureCoords.lat,
-        longitude: captureCoords.lng,
+        latitude: captureCoords?.lat,
+        longitude: captureCoords?.lng,
+        allowFreshLocation: !isGallery,
       );
 
-      String locationText = captureCoords.lat == null || captureCoords.lng == null
-          ? 'Lokasi tidak tersedia'
-          : '';
+      String locationText = isGallery
+          ? ''
+          : (captureCoords!.lat == null || captureCoords.lng == null
+              ? 'Lokasi tidak tersedia'
+              : '');
       bool addressResolved = false;
-      if (captureCoords.lat != null && captureCoords.lng != null) {
+      if (!isGallery && captureCoords!.lat != null && captureCoords.lng != null) {
         try {
           final address = await _loc
               .reverseGeocode(
@@ -393,10 +395,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
           sourcePath: savedPath,
           destPath: savedPath,
           timestamp: capturedAt,
-          latitude: captureCoords.lat,
-          longitude: captureCoords.lng,
+          latitude: captureCoords?.lat,
+          longitude: captureCoords?.lng,
           locationText: locationText,
           barcode: _barcode,
+          isGallery: isGallery,
         );
       } catch (_) {
         // Keep the entry + recovery task. The raw file is intentionally kept
@@ -474,6 +477,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
     double? latitude,
     double? longitude,
     String? barcode,
+    bool isGallery = false,
   }) {
     final completer = Completer<void>();
     _burnQueue = _burnQueue.then((_) async {
@@ -498,7 +502,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         }
 
         final lines = <String>[
-          'WAKTU: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(timestamp)}',
+          '${isGallery ? 'WAKTU IMPOR' : 'WAKTU'}: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(timestamp)}',
+          if (isGallery) 'SUMBER: FOTO GALERI',
           if (latitude != null && longitude != null)
             'GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
           if (locationText.trim().isNotEmpty) 'ALAMAT: ${locationText.trim()}',

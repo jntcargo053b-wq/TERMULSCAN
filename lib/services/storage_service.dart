@@ -499,6 +499,7 @@ class StorageService {
     String entryId, {
     double? latitude,
     double? longitude,
+    bool allowFreshLocation = true,
   }) async {
     final previous = _pendingPhotoTasks[entryId];
     _pendingPhotoTasks[entryId] = {
@@ -509,6 +510,7 @@ class StorageService {
       'addressResolved': previous?['addressResolved'] == true,
       'addressAttempts': (previous?['addressAttempts'] as int?) ?? 0,
       'retryExhausted': previous?['retryExhausted'] == true,
+      'allowFreshLocation': allowFreshLocation && previous?['allowFreshLocation'] != false,
       // Capture-time coordinates are persisted with the task. Recovery must
       // never silently replace an old photo's location with the phone's
       // current location after the process has been killed.
