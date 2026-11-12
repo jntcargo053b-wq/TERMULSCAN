@@ -374,8 +374,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         try {
           final address = await _loc
               .reverseGeocode(
-                captureCoords.lat,
-                captureCoords.lng,
+                captureCoords.lat!,
+                captureCoords.lng!,
                 accuracy: captureCoords.accuracy,
               )
               // Alamat hanya pelengkap; jangan menahan proses watermark terlalu lama.
