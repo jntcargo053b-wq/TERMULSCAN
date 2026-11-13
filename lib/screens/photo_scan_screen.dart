@@ -28,8 +28,7 @@ class PhotoScanScreen extends StatefulWidget {
   State<PhotoScanScreen> createState() => _PhotoScanScreenState();
 }
 
-class _PhotoScanScreenState extends State<PhotoScanScreen>
-    with WidgetsBindingObserver {
+class _PhotoScanScreenState extends State<PhotoScanScreen> {
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
@@ -51,9 +50,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _barcode = widget.initialBarcode;
-    _checkLocationPermission();
+    // Request location only when taking a new camera photo. Gallery imports
+    // must not prompt for or depend on the device's current GPS location.
     _settingsReady = _wmSettings.load();
 
     // Jika ada barcode, langsung buka kamera setelah layout selesai.
@@ -66,15 +65,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkLocationPermission();
-    }
   }
 
   // ============================================================================
