@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/scan_entry.dart';
+import 'photo_file_recovery.dart';
 
 class StorageService {
   static final StorageService _instance = StorageService._internal();
@@ -249,22 +250,17 @@ class StorageService {
       } catch (_) {}
     }
 
+    // Repair interrupted watermark replacement before orphan cleanup.
+    // A crash can occur after the old destination was renamed to .wm_backup_
+    // but before the temporary output was renamed into place.
+    await PhotoFileRecovery.recoverWatermarkArtifacts(dir);
+
     try {
       await for (final entity in dir.list(followLinks: false)) {
         if (entity is! File) continue;
         final name = entity.uri.pathSegments.isNotEmpty
             ? entity.uri.pathSegments.last
             : '';
-        // WatermarkService writes through a temporary sibling file and then
-        // atomically renames it. A process kill can leave that temporary file
-        // behind; it is never a valid history/raw source and is safe to clean.
-        if (name.startsWith('photo_') && name.contains('.wm_tmp_')) {
-          try {
-            await entity.delete();
-          } catch (_) {}
-          continue;
-        }
-
         if (!name.startsWith('photo_')) continue;
         final absolute = entity.absolute.path;
         if (referenced.contains(absolute)) continue;
