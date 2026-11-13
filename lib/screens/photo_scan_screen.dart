@@ -13,6 +13,7 @@ import '../models/scan_entry.dart';
 import '../services/location_service.dart';
 import '../services/storage_service.dart';
 import '../services/watermark_service.dart';
+import '../services/receipt_ocr_service.dart';
 import '../theme/app_theme.dart';
 import 'watermark_settings.dart';
 import 'watermark_settings_sheet.dart';
@@ -28,8 +29,7 @@ class PhotoScanScreen extends StatefulWidget {
   State<PhotoScanScreen> createState() => _PhotoScanScreenState();
 }
 
-class _PhotoScanScreenState extends State<PhotoScanScreen>
-    with WidgetsBindingObserver {
+class _PhotoScanScreenState extends State<PhotoScanScreen> {
   final _picker = ImagePicker();
   final _storage = StorageService();
   final _loc = LocationService();
@@ -51,9 +51,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _barcode = widget.initialBarcode;
-    _checkLocationPermission();
+    // Request location only when taking a new camera photo. Gallery imports
+    // must not prompt for or depend on the device's current GPS location.
     _settingsReady = _wmSettings.load();
 
     // Jika ada barcode, langsung buka kamera setelah layout selesai.
@@ -66,15 +66,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkLocationPermission();
-    }
   }
 
   // ============================================================================
@@ -271,39 +263,70 @@ class _PhotoScanScreenState extends State<PhotoScanScreen>
         String? scannedBarcode;
         try {
           scannedBarcode = await _scanBarcodeFromImage(xfile.path);
-          if (scannedBarcode != null && scannedBarcode.isNotEmpty) {
-            if (mounted) setState(() => _barcode = scannedBarcode);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('✓ Barcode terdeteksi: $scannedBarcode'),
-                  duration: const Duration(seconds: 2),
-                  backgroundColor: Colors.green,
-                ),
-              );
+        } catch (e) {
+          debugPrint('Barcode scan gambar gagal: $e');
+        }
+
+        if (scannedBarcode != null && scannedBarcode.trim().isNotEmpty) {
+          final value = scannedBarcode.trim();
+          if (mounted) setState(() => _barcode = value);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✓ Barcode terdeteksi: $value'),
+                duration: const Duration(seconds: 2),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          // Barcode tidak ditemukan: OCR menjadi fallback, bukan pengganti
+          // scanner barcode. AWB hanya diisi bila ada label eksplisit dan
+          // hasilnya tidak ambigu.
+          try {
+            final recognizedText =
+                await ReceiptOcrService.recognizeText(xfile.path);
+            final ocrAwb =
+                ReceiptOcrService.extractAwbCandidate(recognizedText);
+            if (ocrAwb != null) {
+              if (mounted) setState(() => _barcode = ocrAwb);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✓ AWB terdeteksi melalui OCR: $ocrAwb'),
+                    duration: const Duration(seconds: 3),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } else {
+              if (mounted) setState(() => _barcode = null);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Barcode dan AWB berlabel tidak ditemukan. Periksa foto atau input AWB manual.',
+                    ),
+                    duration: Duration(seconds: 3),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
             }
-          } else {
-            // Jangan membawa barcode dari foto sebelumnya ke foto baru.
+          } catch (e) {
             if (mounted) setState(() => _barcode = null);
+            debugPrint('OCR foto galeri gagal: $e');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('⚠️ Tidak ada barcode/QR terdeteksi di gambar'),
-                  duration: Duration(seconds: 2),
+                  content: Text(
+                    'Barcode tidak ditemukan dan OCR gagal. AWB dapat diisi manual.',
+                  ),
+                  duration: Duration(seconds: 3),
                   backgroundColor: Colors.orange,
                 ),
               );
             }
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('⚠️ Gagal memindai gambar: $e'),
-                duration: const Duration(seconds: 2),
-                backgroundColor: Colors.orange,
-              ),
-            );
           }
         }
       }

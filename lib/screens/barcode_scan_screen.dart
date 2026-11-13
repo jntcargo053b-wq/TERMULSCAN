@@ -55,7 +55,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     if (_controller == null) return;
     switch (state) {
       case AppLifecycleState.resumed:
-        if (_detectedBarcode == null) _controller?.start();
+        if (_selectedBarcodeValue == null) _controller?.start();
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
@@ -76,9 +76,17 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     // Diam-diam abaikan deteksi baru selama panel konfirmasi masih
     // terbuka — mencegah barcode lain "menimpa" pilihan user di tengah
     // jalan.
-    if (_detectedBarcode != null || capture.barcodes.isEmpty) return;
-    final barcode = capture.barcodes.first;
-    if (barcode.rawValue == null || barcode.rawValue!.isEmpty) return;
+    // Manual AWB dan hasil scan sama-sama mengunci sesi sampai user memilih
+    // Scan Ulang. Jangan biarkan kamera menimpa input manual saat resume.
+    if (_selectedBarcodeValue != null || capture.barcodes.isEmpty) return;
+    Barcode? barcode;
+    for (final candidate in capture.barcodes) {
+      if (candidate.rawValue?.trim().isNotEmpty == true) {
+        barcode = candidate;
+        break;
+      }
+    }
+    if (barcode == null) return;
 
     _controller?.stop();
     setState(() => _detectedBarcode = barcode);
