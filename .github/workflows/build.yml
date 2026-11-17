@@ -74,8 +74,26 @@ jobs:
           echo "NDK $NDK_VERSION installation failed after 3 attempts." >&2
           exit 1
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build release APK with network retry
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            echo "Building release APK (attempt $attempt/3)"
+            if flutter build apk --release; then
+              echo "Release APK build succeeded."
+              exit 0
+            fi
+            build_status=$?
+            echo "Release APK build attempt $attempt failed (exit $build_status)."
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 60))
+              echo "Waiting ${delay}s before retrying Gradle dependency resolution..."
+              sleep "$delay"
+            fi
+          done
+          echo "Release APK build failed after 3 attempts." >&2
+          exit 1
 
       - name: Publish APK to GitHub Release
         if: github.event_name != 'pull_request'
