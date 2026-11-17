@@ -46,8 +46,9 @@ jobs:
       - name: Test
         run: flutter test
 
+      # Validate the Android toolchain and actual APK compilation on PRs too.
+      # Publishing remains restricted to push/manual runs, never pull requests.
       - name: Install Android NDK with retry
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +79,6 @@ jobs:
           exit 1
 
       - name: Build release APK
-        if: github.event_name != 'pull_request'
         run: flutter build apk --release
 
       - name: Publish APK to GitHub Release
