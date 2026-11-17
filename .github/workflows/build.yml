@@ -46,20 +46,16 @@ jobs:
       - name: Test
         run: flutter test
 
-      # Validate the Android toolchain and actual APK compilation on PRs too.
-      # Publishing remains restricted to push/manual runs, never pull requests.
       - name: Install Android NDK with retry
         shell: bash
         run: |
           set -euo pipefail
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          NDK_VERSION="27.0.12077973"
+          NDK_VERSION="28.2.13676358"
           NDK_DIR="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           test -x "$SDKMANAGER"
           for attempt in 1 2 3; do
             echo "Installing NDK $NDK_VERSION (attempt $attempt/3)"
-            # sdkmanager may close stdin after accepting input; do not let
-            # the 'yes' process's expected SIGPIPE mask sdkmanager's result.
             set +o pipefail
             if yes | "$SDKMANAGER" --install "ndk;$NDK_VERSION"; then
               install_status=0
