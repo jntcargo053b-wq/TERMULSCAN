@@ -25,7 +25,8 @@ if (flutterVersionName == null) {
 android {
     namespace "com.termulscan.app"
     compileSdk 36
-    ndkVersion "27.0.12077973"
+    // Match the highest NDK required by the current Flutter plugins.
+    ndkVersion "28.2.13676358"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -86,4 +87,11 @@ flutter {
     source '../..'
 }
 
-dependencies {}
+dependencies {
+    // google_mlkit_text_recognition references all script option classes.
+    // Bundle the matching ML Kit artifacts so R8 can resolve them reliably.
+    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-devanagari:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
+    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
+}
