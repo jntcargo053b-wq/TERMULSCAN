@@ -60,7 +60,7 @@ android {
             keyPassword "termulscan-debug"
         }
 
-        // Production signing is injected only by TERMULSCAN-BUILD.
+        // Production signing is injected by the TERMULSCAN repository workflow.
         // Local/testing builds keep using the fixed testing identity.
         if (System.getenv("TERMULSCAN_KEYSTORE_PATH")) {
             release {
