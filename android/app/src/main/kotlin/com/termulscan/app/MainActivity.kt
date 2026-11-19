@@ -84,7 +84,7 @@ class MainActivity : FlutterActivity() {
             return mapOf(
                 "lat" to loc.latitude,
                 "lng" to loc.longitude,
-                "accuracy" to if (loc.hasAccuracy()) loc.accuracy else null,
+                "accuracy" to if (loc.accuracy > 0f) loc.accuracy else null,
                 "ageMillis" to ageMillis(loc),
                 "provider" to loc.provider,
                 "isFallback" to isFallback
@@ -108,8 +108,8 @@ class MainActivity : FlutterActivity() {
             if (kotlin.math.abs(ageDifference) > 3_000L) {
                 ageDifference.compareTo(0L)
             } else {
-                val aAccuracy = if (a.hasAccuracy()) a.accuracy else Float.MAX_VALUE
-                val bAccuracy = if (b.hasAccuracy()) b.accuracy else Float.MAX_VALUE
+                val aAccuracy = if (a.accuracy > 0f) a.accuracy else Float.MAX_VALUE
+                val bAccuracy = if (b.accuracy > 0f) b.accuracy else Float.MAX_VALUE
                 aAccuracy.compareTo(bAccuracy)
             }
         }
@@ -130,14 +130,14 @@ class MainActivity : FlutterActivity() {
         var refinementRunnable: Runnable? = null
         var timeoutRunnable: Runnable? = null
 
-        lateinit var locationListener: LocationListener
+        var locationListener: LocationListener? = null
 
         fun finish(location: Location?, isFallback: Boolean) {
             if (resultSent) return
             resultSent = true
             refinementRunnable?.let(handler::removeCallbacks)
             timeoutRunnable?.let(handler::removeCallbacks)
-            try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+            try { locationListener?.let { locationManager.removeUpdates(it) } } catch (_: Exception) {}
             if (location != null) {
                 result.success(locationMap(location, isFallback))
             } else {
@@ -167,8 +167,8 @@ class MainActivity : FlutterActivity() {
                     }.also { handler.postDelayed(it, 450L) }
                 } else {
                     val ageDifference = ageMillis(location) - ageMillis(currentBest)
-                    val locationAccuracy = if (location.hasAccuracy()) location.accuracy else Float.MAX_VALUE
-                    val currentAccuracy = if (currentBest.hasAccuracy()) currentBest.accuracy else Float.MAX_VALUE
+                    val locationAccuracy = if (location.accuracy > 0f) location.accuracy else Float.MAX_VALUE
+                    val currentAccuracy = if (currentBest.accuracy > 0f) currentBest.accuracy else Float.MAX_VALUE
                     if (kotlin.math.abs(ageDifference) > 1_000L) {
                         if (ageDifference < 0L) bestFresh = location
                     } else if (locationAccuracy < currentAccuracy) {
@@ -190,7 +190,7 @@ class MainActivity : FlutterActivity() {
             try {
                 if (locationManager.isProviderEnabled(provider)) {
                     locationManager.requestSingleUpdate(
-                        provider, locationListener, Looper.getMainLooper()
+                        provider, locationListener!!, Looper.getMainLooper()
                     )
                     requested = true
                 }
