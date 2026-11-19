@@ -1335,7 +1335,9 @@ class WatermarkService {
 
     final contentW = math.max(math.max(headerW, rowsW), ownRow ? tileW : 0);
     final panelW = math.min(maxPanelW, contentW + pad * 2);
-    final (px, py) = _anchor(position, W, H, panelW, total, inset, 'bottomRight');
+    // Keep a one-pixel safety gutter for antialiased template edges on narrow photos.
+    final safeInset = inset + 1;
+    final (px, py) = _anchor(position, W, H, panelW, total, safeInset, 'bottomRight');
     final right = px + panelW - 1;
     final bottom = py + total - 1;
     cv.region(px, py, panelW, total);
