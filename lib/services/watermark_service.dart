@@ -1110,9 +1110,9 @@ class WatermarkService {
     if (style == 'geo') contentW += _ci(54 * u, 24, 72);
     final minPanelW = math.min(maxW, math.max(140, (W * .38).round()));
     final preferredPanelW = math.min(maxW, contentW + pad * 2);
-    final panelW = style == 'split'
+    final panelW = (style == 'split'
         ? math.max(preferredPanelW, math.min(maxW, (W * .64).round()))
-        : preferredPanelW.clamp(minPanelW, maxW).toInt();
+        : preferredPanelW.clamp(minPanelW, maxW)).toInt();
     final requiredPanelH = math.max(
       100,
       pad * 2 + titleH + timeBlockH + awbBlockH + detailsH + gap,
