@@ -42,8 +42,16 @@ class PhotoFileRecovery {
       );
       try {
         if (await original.exists()) {
-          // Output baru sudah berhasil dipasang; backup lama tidak diperlukan.
-          await backup.delete();
+          // File tujuan yang ada tetapi kosong bukan hasil render yang sah.
+          // Jangan menghapus backup pemulihan dalam kondisi tersebut.
+          final outputLength = await original.length();
+          if (outputLength > 0) {
+            // Output baru sudah dipasang; backup lama tidak diperlukan.
+            await backup.delete();
+          } else {
+            await original.delete();
+            await backup.rename(original.path);
+          }
         } else {
           // Output baru belum terpasang. Pulihkan foto lama agar riwayat tidak
           // menunjuk ke file yang hilang.
