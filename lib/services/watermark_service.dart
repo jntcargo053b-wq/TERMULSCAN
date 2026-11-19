@@ -1059,7 +1059,9 @@ class WatermarkService {
       if (r.label == 'AWB') continue;
       details.add(r.label == null ? r.value : '${r.label}: ${r.value}');
     }
-    final maxW = math.min((W*.88).round(),W-pad*2);
+    // Panel watermark jangan memenuhi hampir seluruh foto. Batas 72% memberi
+    // ruang visual pada subjek foto dan mencegah semua template tampak melebar.
+    final maxW = math.min((W * .72).round(), W - pad * 2);
     if (maxW < 90) return false;
     final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,maxW-pad*2,bold:true);
     final detailLines = <String>[];
