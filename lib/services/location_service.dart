@@ -23,16 +23,19 @@ class LocationService {
   final List<String> _addressCacheOrder = [];
   final Map<String, Future<String?>> _inFlightGeocodes = {};
 
-  Future<({double? lat, double? lng, double? accuracy})> getCoordinatesOnly() async {
+  Future<({double? lat, double? lng, double? accuracy, int? ageMillis, String? provider, bool isFallback})> getCoordinatesOnly() async {
     try {
       final result = await _channel.invokeMethod<Map>('getLocation');
-      if (result == null) return (lat: null, lng: null, accuracy: null);
+      if (result == null) return (lat: null, lng: null, accuracy: null, ageMillis: null, provider: null, isFallback: false);
       final lat = (result['lat'] as num?)?.toDouble();
       final lng = (result['lng'] as num?)?.toDouble();
       final accuracy = (result['accuracy'] as num?)?.toDouble();
-      return (lat: lat, lng: lng, accuracy: accuracy);
+      final ageMillis = (result['ageMillis'] as num?)?.toInt();
+      final provider = result['provider']?.toString();
+      final isFallback = result['isFallback'] == true;
+      return (lat: lat, lng: lng, accuracy: accuracy, ageMillis: ageMillis, provider: provider, isFallback: isFallback);
     } catch (e) {
-      return (lat: null, lng: null, accuracy: null);
+      return (lat: null, lng: null, accuracy: null, ageMillis: null, provider: null, isFallback: false);
     }
   }
 
