@@ -11,6 +11,11 @@ class ScanEntry {
   final DateTime timestamp;
   final double? latitude;
   final double? longitude;
+  /// GPS quality metadata; optional for backwards compatibility with old history.
+  final double? locationAccuracyMeters;
+  final int? locationAgeMillis;
+  final String? locationProvider;
+  final bool locationIsFallback;
   final String? locationName;
   final String? imagePath;
   final String? scanResult;
@@ -25,6 +30,10 @@ class ScanEntry {
     required this.timestamp,
     this.latitude,
     this.longitude,
+    this.locationAccuracyMeters,
+    this.locationAgeMillis,
+    this.locationProvider,
+    this.locationIsFallback = false,
     String? locationName,
     String? address,
     this.imagePath,
@@ -83,6 +92,10 @@ class ScanEntry {
       'timestamp': timestamp.toIso8601String(),
       'latitude': latitude,
       'longitude': longitude,
+      'locationAccuracyMeters': locationAccuracyMeters,
+      'locationAgeMillis': locationAgeMillis,
+      'locationProvider': locationProvider,
+      'locationIsFallback': locationIsFallback,
       'locationName': locationName,
       'imagePath': imagePath,
       'scanResult': scanResult,
@@ -108,6 +121,10 @@ class ScanEntry {
       timestamp: DateTime.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now(),
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
+      locationAccuracyMeters: (map['locationAccuracyMeters'] as num?)?.toDouble(),
+      locationAgeMillis: (map['locationAgeMillis'] as num?)?.toInt(),
+      locationProvider: map['locationProvider']?.toString(),
+      locationIsFallback: map['locationIsFallback'] == true,
       locationName: map['locationName']?.toString(),
       imagePath: map['imagePath']?.toString(),
       scanResult: map['scanResult']?.toString(),
@@ -126,6 +143,10 @@ class ScanEntry {
     DateTime? timestamp,
     double? latitude,
     double? longitude,
+    double? locationAccuracyMeters,
+    int? locationAgeMillis,
+    String? locationProvider,
+    bool? locationIsFallback,
     String? locationName,
     String? imagePath,
     String? scanResult,
@@ -138,6 +159,10 @@ class ScanEntry {
       timestamp: timestamp ?? this.timestamp,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      locationAccuracyMeters: locationAccuracyMeters ?? this.locationAccuracyMeters,
+      locationAgeMillis: locationAgeMillis ?? this.locationAgeMillis,
+      locationProvider: locationProvider ?? this.locationProvider,
+      locationIsFallback: locationIsFallback ?? this.locationIsFallback,
       locationName: locationName ?? this.locationName,
       imagePath: imagePath ?? this.imagePath,
       scanResult: scanResult ?? this.scanResult,
