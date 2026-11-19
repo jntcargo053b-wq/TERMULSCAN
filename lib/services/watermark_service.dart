@@ -1021,13 +1021,46 @@ class WatermarkService {
     final dayEm = math.max(10.0, 21 * u);
     final bodyEm = math.max(11.0, 23 * u);
     final labelEm = bodyEm * 0.82;
-    final pad = _ci(15 * u, 6, 44);
-    final gap = _ci(9 * u, 4, 26);
-    final radius = _ci(14 * u, 5, 36);
-    final inset = _ci(14 * u, 6, 40);
+    // Tiap template memiliki proporsi dan ritme ruang sendiri, bukan hanya
+    // mengganti warna panel. Nilai tetap diskalakan terhadap ukuran foto.
+    final padScale = switch (style) {
+      'compact' => 11.0,
+      'top' => 13.0,
+      'modern' => 17.0,
+      'minimal' => 9.0,
+      'badge' => 10.0,
+      _ => 15.0,
+    };
+    final gapScale = switch (style) {
+      'compact' => 6.0,
+      'top' => 8.0,
+      'modern' => 11.0,
+      'minimal' => 6.0,
+      'badge' => 6.0,
+      _ => 9.0,
+    };
+    final radiusScale = switch (style) {
+      'compact' => 9.0,
+      'top' => 7.0,
+      'modern' => 19.0,
+      'minimal' => 4.0,
+      'badge' => 8.0,
+      _ => 14.0,
+    };
+    final panelWidthFactor = switch (style) {
+      'compact' => 0.68,
+      'top' => 0.92,
+      'modern' => 0.84,
+      'minimal' => 0.76,
+      'badge' => 0.64,
+      _ => 0.88,
+    };
+    final pad = _ci(padScale * u, 5, 44);
+    final gap = _ci(gapScale * u, 3, 26);
+    final radius = _ci(radiusScale * u, 3, 36);
+    final inset = _ci((style == 'top' ? 10 : 14) * u, 5, 40);
     final tp = _ci(5 * u, 3, 12);
-    final compact = style == 'compact' || style == 'badge';
-    final maxPanelW = math.min((W * (compact ? 0.74 : 0.88)).round(), W - inset * 2);
+    final maxPanelW = math.min((W * panelWidthFactor).round(), W - inset * 2);
     if (maxPanelW < 60) return false;
 
     var timeW = 0, dateW = 0, hh = 0;
