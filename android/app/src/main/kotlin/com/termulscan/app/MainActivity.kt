@@ -55,9 +55,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getCurrentLocation(result: Result) {
-        // Use Activity.checkSelfPermission directly. This avoids routing a
-        // core Android permission check through the AndroidX ContextCompat
-        // overload when returning from an external camera activity.
         val hasFineLocation = checkSelfPermission(
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -77,8 +74,8 @@ class MainActivity : FlutterActivity() {
         }
 
         fun isUsable(loc: Location?): Boolean {
-            if (loc == null) return false
-            return ageMillis(loc) <= 10_000L &&
+            return loc != null &&
+                ageMillis(loc) <= 10_000L &&
                 loc.latitude.isFinite() && loc.longitude.isFinite()
         }
 
@@ -86,7 +83,7 @@ class MainActivity : FlutterActivity() {
             return mapOf(
                 "lat" to loc.latitude,
                 "lng" to loc.longitude,
-                "accuracy" to if (loc.accuracy > 0f) loc.accuracy else null,
+                "accuracy" to if (loc.hasAccuracy() && loc.accuracy > 0f) loc.accuracy else null,
                 "ageMillis" to ageMillis(loc),
                 "provider" to loc.provider,
                 "isFallback" to isFallback
@@ -95,43 +92,33 @@ class MainActivity : FlutterActivity() {
 
         val gpsLast = try {
             locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-        } catch (_: SecurityException) {
-            null
-        }
+        } catch (_: SecurityException) { null }
         val netLast = try {
             locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-        } catch (_: SecurityException) {
-            null
-        }
+        } catch (_: SecurityException) { null }
 
         val cachedCandidates = listOfNotNull(gpsLast, netLast).filter(::isUsable)
-        val cachedBest = cachedCandidates.minWithOrNull { a, b ->
-            val ageDifference = ageMillis(a) - ageMillis(b)
-            if (kotlin.math.abs(ageDifference) > 3_000L) {
-                ageDifference.compareTo(0L)
-            } else {
-                val aAccuracy = if (a.accuracy > 0f) a.accuracy else Float.MAX_VALUE
-                val bAccuracy = if (b.accuracy > 0f) b.accuracy else Float.MAX_VALUE
-                aAccuracy.compareTo(bAccuracy)
-            }
-        }
+        val cachedBest = cachedCandidates.minWithOrNull(
+            compareBy<Location> { if (it.hasAccuracy() && it.accuracy > 0f) it.accuracy else Float.MAX_VALUE }
+                .thenBy { ageMillis(it) }
+        )
 
-        // A very recent cached fix is fast enough to use immediately.
-        if (cachedBest != null && ageMillis(cachedBest) <= 3_000L) {
+        // Cache hanya boleh dipakai langsung bila sangat baru DAN akurasinya
+        // diketahui. Cache kasar tidak pernah disamarkan sebagai fix presisi.
+        if (cachedBest != null &&
+            ageMillis(cachedBest) <= 3_000L &&
+            cachedBest.hasAccuracy() &&
+            cachedBest.accuracy in 0.1f..50f
+        ) {
             result.success(locationMap(cachedBest, false))
             return
         }
 
-        // A 3–10 second cache is only a fallback. Try to obtain a fresh fix
-        // first so a moving courier is not stamped with an old position.
-        val cachedFallback = cachedBest
         val handler = Handler(Looper.getMainLooper())
         var resultSent = false
         var bestFresh: Location? = null
-        var requested = false
         var refinementRunnable: Runnable? = null
         var timeoutRunnable: Runnable? = null
-
         var locationListener: LocationListener? = null
 
         fun finish(location: Location?, isFallback: Boolean) {
@@ -139,19 +126,30 @@ class MainActivity : FlutterActivity() {
             resultSent = true
             refinementRunnable?.let(handler::removeCallbacks)
             timeoutRunnable?.let(handler::removeCallbacks)
-            try { locationListener?.let { locationManager.removeUpdates(it) } } catch (_: Exception) {}
+            try {
+                locationListener?.let { locationManager.removeUpdates(it) }
+            } catch (_: Exception) {}
             if (location != null) {
                 result.success(locationMap(location, isFallback))
             } else {
                 result.success(mapOf(
-                    "lat" to null,
-                    "lng" to null,
-                    "accuracy" to null,
-                    "ageMillis" to null,
-                    "provider" to null,
-                    "isFallback" to false
+                    "lat" to null, "lng" to null, "accuracy" to null,
+                    "ageMillis" to null, "provider" to null, "isFallback" to false
                 ))
             }
+        }
+
+        fun isBetter(candidate: Location, current: Location): Boolean {
+            val candidateAge = ageMillis(candidate)
+            val currentAge = ageMillis(current)
+            if (kotlin.math.abs(candidateAge - currentAge) > 1_000L) {
+                return candidateAge < currentAge
+            }
+            val candidateAccuracy = if (candidate.hasAccuracy() && candidate.accuracy > 0f)
+                candidate.accuracy else Float.MAX_VALUE
+            val currentAccuracy = if (current.hasAccuracy() && current.accuracy > 0f)
+                current.accuracy else Float.MAX_VALUE
+            return candidateAccuracy < currentAccuracy
         }
 
         locationListener = object : LocationListener {
@@ -159,23 +157,26 @@ class MainActivity : FlutterActivity() {
                 if (resultSent || !location.latitude.isFinite() || !location.longitude.isFinite()) return
                 if (ageMillis(location) > 5_000L) return
 
-                val currentBest = bestFresh
-                if (currentBest == null) {
+                val current = bestFresh
+                if (current == null || isBetter(location, current)) {
                     bestFresh = location
-                    // Give the other provider a short opportunity to return a
-                    // better/fresher fix without adding a long camera delay.
+                }
+
+                val best = bestFresh ?: return
+                val accuracy = if (best.hasAccuracy() && best.accuracy > 0f)
+                    best.accuracy else Float.MAX_VALUE
+
+                // Fix sangat baik: selesaikan segera. Fix cukup baik: beri
+                // waktu singkat untuk provider lain memperbaiki hasilnya.
+                if (accuracy <= 25f) {
+                    finish(best, false)
+                } else if (accuracy <= 60f && refinementRunnable == null) {
                     refinementRunnable = Runnable {
                         finish(bestFresh, false)
-                    }.also { handler.postDelayed(it, 450L) }
-                } else {
-                    val ageDifference = ageMillis(location) - ageMillis(currentBest)
-                    val locationAccuracy = if (location.accuracy > 0f) location.accuracy else Float.MAX_VALUE
-                    val currentAccuracy = if (currentBest.accuracy > 0f) currentBest.accuracy else Float.MAX_VALUE
-                    if (kotlin.math.abs(ageDifference) > 1_000L) {
-                        if (ageDifference < 0L) bestFresh = location
-                    } else if (locationAccuracy < currentAccuracy) {
-                        bestFresh = location
-                    }
+                    }.also { handler.postDelayed(it, 1_200L) }
+                } else if (refinementRunnable == null) {
+                    // Fix pertama belum cukup akurat; tetap dengarkan update
+                    // berikutnya sampai batas waktu global.
                 }
             }
 
@@ -184,15 +185,15 @@ class MainActivity : FlutterActivity() {
             override fun onProviderDisabled(provider: String) {}
         }
 
-        val providers = listOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER
-        )
+        var requested = false
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
         for (provider in providers) {
             try {
                 if (locationManager.isProviderEnabled(provider)) {
-                    locationManager.requestSingleUpdate(
-                        provider, locationListener!!, Looper.getMainLooper()
+                    // Continuous updates diperlukan agar fix awal yang kasar
+                    // dapat diperbaiki oleh sampel berikutnya.
+                    locationManager.requestLocationUpdates(
+                        provider, 750L, 0f, locationListener!!, Looper.getMainLooper()
                     )
                     requested = true
                 }
@@ -202,23 +203,20 @@ class MainActivity : FlutterActivity() {
         }
 
         if (!requested) {
-            if (cachedFallback != null) {
-                finish(cachedFallback, true)
-            } else {
-                result.error("NO_PROVIDER", "No location provider enabled", null)
-            }
+            if (cachedBest != null) finish(cachedBest, true)
+            else result.error("NO_PROVIDER", "No location provider enabled", null)
             return
         }
 
-        val timeoutMillis = if (cachedFallback != null) 2_500L else 3_500L
         timeoutRunnable = Runnable {
-            if (bestFresh != null) {
-                finish(bestFresh, false)
-            } else if (cachedFallback != null) {
-                finish(cachedFallback, true)
+            val fresh = bestFresh
+            if (fresh != null) {
+                finish(fresh, false)
+            } else if (cachedBest != null) {
+                finish(cachedBest, true)
             } else {
                 finish(null, false)
             }
-        }.also { handler.postDelayed(it, timeoutMillis) }
+        }.also { handler.postDelayed(it, 7_000L) }
     }
 }
