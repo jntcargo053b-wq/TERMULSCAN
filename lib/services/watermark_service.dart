@@ -1055,7 +1055,7 @@ class WatermarkService {
     final awbH = awbLines.length*cv.lh(big*.58);
     final detailsH = detailLines.length*cv.lh(small);
     final requiredPanelH =
-        math.max(100, pad*2+headerH+(awbLines.isEmpty?0:awbH+gap)+detailsH+gap*3);
+        math.max(100, pad*2+headerH+(awbLines.isEmpty?0:awbH+gap)+detailsH+gap*3).toInt();
     // Jangan merender template dengan memotong metadata. Renderer akan mencoba
     // skala berikutnya; jika tetap tidak muat, burn harus gagal dengan aman.
     if (requiredPanelH > H-pad*2) return false;
@@ -1118,6 +1118,7 @@ class WatermarkService {
       cy+=cv.lh(small);
     }
     return true;
+  }
 
   static bool _tryCard(
     _Cv cv,
