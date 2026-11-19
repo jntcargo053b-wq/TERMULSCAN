@@ -58,7 +58,7 @@ void main() {
     });
 
     test('each selectable style produces a distinct visual render', () async {
-      const styles = ['classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'];
+      const styles = ['classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge', 'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'];
       final source = File('${tempDir.path}/source.png');
       final original = img.Image(width: 480, height: 640);
       img.fill(original, color: img.ColorRgb8(174, 192, 176));
