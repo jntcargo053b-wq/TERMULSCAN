@@ -110,5 +110,57 @@ void main() {
       expect(signatures.length, styles.length,
           reason: 'Setiap gaya harus memiliki hasil visual berbeda, bukan sekadar nama pilihan berbeda.');
     });
+    test('new templates preserve portrait, landscape and square photo proportions', () async {
+      const styles = ['pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'];
+      const dimensions = [
+        (720, 1280),   // portrait 9:16
+        (1920, 1080),  // landscape 16:9
+        (1080, 1080),  // square 1:1
+      ];
+      final logo = img.Image(width: 96, height: 48);
+      img.fill(logo, color: img.ColorRgba8(24, 120, 210, 255));
+      final logoBytes = Uint8List.fromList(img.encodePng(logo));
+
+      for (final (width, height) in dimensions) {
+        final source = File('${tempDir.path}/aspect-${width}x$height.png');
+        final original = img.Image(width: width, height: height);
+        img.fill(original, color: img.ColorRgb8(180, 180, 180));
+        await source.writeAsBytes(img.encodePng(original));
+
+        for (final style in styles) {
+          final destination = File(
+            '${tempDir.path}/aspect-${width}x$height-$style.png',
+          );
+          await WatermarkService.burn(
+            sourcePath: source.path,
+            destPath: destination.path,
+            style: style,
+            position: 'bottomRight',
+            logoBytes: logoBytes,
+            lines: const [
+              'WAKTU: 2026-11-19 19:30:00',
+              'AWB: TERMULSCAN-12345678901234567890',
+              'GPS: -7.966620, 112.632630, akurasi 3 meter',
+              'ALAMAT: Jalan utama kawasan gudang, Kecamatan Lowokwaru, Malang',
+              'Operator: Kurir Pengiriman',
+            ],
+          );
+
+          final output = img.decodeImage(await destination.readAsBytes());
+          expect(output, isNotNull, reason: '$style pada $width x $height');
+          expect(output!.width, width, reason: 'Lebar foto berubah: $style');
+          expect(output.height, height, reason: 'Tinggi foto berubah: $style');
+
+          // Panel harus tetap berada di dalam foto; piksel tepi kanan tidak
+          // boleh tertimpa meskipun panel ditempatkan di kanan bawah.
+          for (var y = 0; y < height; y += 17) {
+            final pixel = output.getPixel(width - 1, y);
+            expect(pixel.r, 180, reason: '$style right edge x=$width y=$y');
+            expect(pixel.g, 180, reason: '$style right edge x=$width y=$y');
+            expect(pixel.b, 180, reason: '$style right edge x=$width y=$y');
+          }
+        }
+      }
+    });
   });
 }
