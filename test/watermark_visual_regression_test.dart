@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:math' as math;\nimport 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -111,6 +111,62 @@ void main() {
       expect(signatures.length, styles.length,
           reason: 'Setiap gaya harus memiliki hasil visual berbeda, bukan sekadar nama pilihan berbeda.');
     });
+    test('all watermark styles stay within a proportional content width', () async {
+      const styles = [
+        'classic', 'timemark', 'compact', 'top', 'modern', 'minimal',
+        'badge', 'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
+      ];
+      final source = File('${tempDir.path}/proportional-source.png');
+      final original = img.Image(width: 640, height: 960);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      for (final style in styles) {
+        final destination = File('${tempDir.path}/proportional-$style.png');
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination.path,
+          style: style,
+          position: 'bottomRight',
+          lines: const [
+            'WAKTU: 2026-11-19 19:30:00',
+            'AWB: TRM-123456',
+            'GPS: -7.9666, 112.6326',
+            'ALAMAT: Gudang Malang',
+          ],
+        );
+        final output = img.decodeImage(await destination.readAsBytes());
+        expect(output, isNotNull, reason: 'Style $style harus dirender');
+        expect(output!.width, original.width);
+        expect(output.height, original.height);
+
+        var minX = output.width;
+        var maxX = -1;
+        for (var y = 0; y < output.height; y++) {
+          for (var x = 0; x < output.width; x++) {
+            final pixel = output.getPixel(x, y);
+            if (pixel.r.toInt() != 180 ||
+                pixel.g.toInt() != 180 ||
+                pixel.b.toInt() != 180) {
+              minX = math.min(minX, x);
+              maxX = math.max(maxX, x);
+            }
+          }
+        }
+        expect(maxX, greaterThanOrEqualTo(minX),
+            reason: 'Style $style harus menghasilkan watermark');
+        final changedWidth = maxX - minX + 1;
+        final maxRatio = const {
+          'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
+        }.contains(style) ? .74 : .95;
+        expect(
+          changedWidth / output.width,
+          lessThanOrEqualTo(maxRatio),
+          reason: 'Watermark $style terlalu melebar: $changedWidth px',
+        );
+      }
+    });
+
     test('new templates preserve portrait, landscape and square photo proportions', () async {
       const styles = ['pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'];
       const dimensions = [
