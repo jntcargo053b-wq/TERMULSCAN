@@ -10,7 +10,6 @@ import android.os.SystemClock
 import android.os.StatFs
 import android.os.Handler
 import android.os.Looper
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -56,11 +55,14 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getCurrentLocation(result: Result) {
-        val hasFineLocation = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
+        // Use Activity.checkSelfPermission directly. This avoids routing a
+        // core Android permission check through the AndroidX ContextCompat
+        // overload when returning from an external camera activity.
+        val hasFineLocation = checkSelfPermission(
+            Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        val hasCoarseLocation = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_COARSE_LOCATION
+        val hasCoarseLocation = checkSelfPermission(
+            Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
         if (!hasFineLocation && !hasCoarseLocation) {
