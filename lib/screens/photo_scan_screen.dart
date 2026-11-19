@@ -156,6 +156,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
     await _settingsReady;
     if (mounted) setState(() => _isSaving = true);
 
+    var captureStage = 'memeriksa izin lokasi';
     try {
       if (!_locationGranted) {
         await _checkLocationPermission();
@@ -187,6 +188,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         );
       }
 
+      captureStage = 'membuka kamera';
       final xfile = await _picker.pickImage(
         source: ImageSource.camera,
         // POD evidence must keep AWB/label text legible after watermarking.
@@ -198,6 +200,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       if (xfile == null) return;
 
       HapticFeedback.mediumImpact();
+      captureStage = 'menampilkan pratinjau foto';
       final confirmed = await _showPreviewAndConfirm(xfile.path);
       if (!mounted) return;
       if (!confirmed) {
@@ -205,10 +208,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         return;
       }
 
+      captureStage = 'menyalin foto, menyimpan riwayat, GPS, dan watermark';
       final entry = await _savePhotoWithCaptureLocation(xfile.path, isGallery: false);
       _finishSavingPhoto(entry);
-    } catch (e) {
-      if (mounted) _showError('Gagal ambil foto: $e');
+    } catch (e, st) {
+      debugPrint('Capture gagal pada tahap "$captureStage": $e\\n$st');
+      if (mounted) _showError('Gagal ambil foto saat $captureStage: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
