@@ -1126,7 +1126,7 @@ class WatermarkService {
     final right=x+panelW-1, bottom=y+panelH-1;
     final white=img.ColorRgb8(255,255,255), muted=img.ColorRgb8(205,216,226);
     final accent=_themeFor(style).accent;
-    cv.region(x,y,maxW,panelH);
+    cv.region(x,y,panelW,panelH);
     if (style == 'pod') {
       cv.rrect(x,y,right,bottom,_ci(10*u,4,22),img.ColorRgba8(8,20,38,240));
       cv.rect(x,y,right,y+_ci(7*u,4,14),accent);
