@@ -1380,7 +1380,7 @@ class WatermarkService {
               cy: py + pad + cv.lh(labelEm) + cv.digitH(timeEm * 0.78) ~/ 2,
               color: fg, shadow: false);
           cv.text('${t.dateText}  /  ${t.dayText.toUpperCase()}',
-              em: labelEm, x: px + pad + timeW * 0.72 + gap,
+              em: labelEm, x: px + pad + (timeW * 0.72).round() + gap,
               y: py + pad + cv.lh(labelEm) + cv.lh(timeEm * 0.78) ~/ 2,
               color: muted, shadow: false);
         }
@@ -1418,7 +1418,7 @@ class WatermarkService {
         y += gap;
         for (final p in plans) {
           drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.9);
-          y += blockH(p) * 0.9 + gap;
+          y += (blockH(p) * 0.9).round() + gap;
         }
         if (logo != null) {
           cv.logoTile(logo, right - pad - logoW, py + pad, logoW, logoH,
@@ -1459,7 +1459,7 @@ class WatermarkService {
           cv.timeText(t.time, em: timeEm * 0.82, x: px + pad,
               cy: py + bannerH ~/ 2, color: img.ColorRgb8(32, 25, 20),
               shadow: false);
-          cv.text(t.dateText, em: labelEm, x: px + pad + timeW * 0.82 + gap,
+          cv.text(t.dateText, em: labelEm, x: px + pad + (timeW * 0.82).round() + gap,
               y: py + (bannerH - cv.lh(labelEm)) ~/ 2,
               color: img.ColorRgb8(48, 38, 30), bold: true, shadow: false);
         }
