@@ -1054,8 +1054,12 @@ class WatermarkService {
     final headerH = t == null ? 0 : cv.lh(small)*2;
     final awbH = awbLines.length*cv.lh(big*.58);
     final detailsH = detailLines.length*cv.lh(small);
-    final panelH = math.min(H-pad*2, math.max(100,
-        pad*2+headerH+(awbLines.isEmpty?0:awbH+gap)+detailsH+gap*3));
+    final requiredPanelH =
+        math.max(100, pad*2+headerH+(awbLines.isEmpty?0:awbH+gap)+detailsH+gap*3);
+    // Jangan merender template dengan memotong metadata. Renderer akan mencoba
+    // skala berikutnya; jika tetap tidak muat, burn harus gagal dengan aman.
+    if (requiredPanelH > H-pad*2) return false;
+    final panelH = requiredPanelH;
     final (x,y) = _anchor(position,W,H,maxW,panelH,_ci(14*u,5,30),'bottomLeft');
     final right=x+maxW-1, bottom=y+panelH-1;
     final white=img.ColorRgb8(255,255,255), muted=img.ColorRgb8(205,216,226);
@@ -1108,9 +1112,12 @@ class WatermarkService {
       final lh=_ci(26*u,12,48), lw=math.min((logo.width*lh/logo.height).round(),_ci(100*u,40,150));
       cv.logoTile(logo,right-pad-lw,y+pad,lw,lh,_ci(3*u,2,7),_ci(4*u,2,9),img.ColorRgba8(255,255,255,240));
     }
-    for(final line in detailLines){if(cy+cv.lh(small)>bottom-pad)break;cv.text(line,em:small,x:x+pad,y:cy,color:muted,shadow:style!='editorial');cy+=cv.lh(small);}
+    for(final line in detailLines){
+      if(cy+cv.lh(small)>bottom-pad) return false;
+      cv.text(line,em:small,x:x+pad,y:cy,color:muted,shadow:style!='editorial');
+      cy+=cv.lh(small);
+    }
     return true;
-  }
 
   static bool _tryCard(
     _Cv cv,
