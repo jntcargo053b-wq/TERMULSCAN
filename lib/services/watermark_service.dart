@@ -1208,9 +1208,11 @@ class WatermarkService {
           iconSize, theme.icon);
       final tx = px + pad + iconCol;
       if (r.row.label != null) {
+        final isAwb = r.row.label == 'AWB';
         cv.text(r.row.label!,
             em: labelEm, x: tx, y: textTop + (bodyLH - cv.lh(labelEm)) ~/ 2,
-            color: theme.muted, bold: true, shadow: shadow);
+            color: isAwb ? theme.accent : theme.muted,
+            bold: true, shadow: shadow);
       }
       for (var j = 0; j < n; j++) {
         cv.text(r.lines[j],
