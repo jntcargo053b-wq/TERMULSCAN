@@ -410,6 +410,36 @@ void main() {
       }
     });
 
+    test('cleans stale render temp files but preserves recovery backups', () async {
+      final source = File('${tempDir.path}/stale-temp-source.png');
+      final destination = File('${tempDir.path}/stale-temp-output.png');
+      final original = img.Image(width: 320, height: 240);
+      img.fill(original, color: img.ColorRgb8(170, 180, 190));
+      await source.writeAsBytes(img.encodePng(original));
+
+      final staleTemp = File('${destination.path}.wm_tmp_123');
+      final recoveryBackup = File('${destination.path}.wm_backup_123');
+      await staleTemp.writeAsString('incomplete render');
+      await recoveryBackup.writeAsString('recovery copy');
+      final oldTime = DateTime.now().subtract(const Duration(days: 2));
+      await staleTemp.setLastModified(oldTime);
+      await recoveryBackup.setLastModified(oldTime);
+
+      await WatermarkService.burn(
+        sourcePath: source.path,
+        destPath: destination.path,
+        lines: const ['AWB: CLEANUP-TEST'],
+        style: 'compact',
+      );
+
+      expect(await destination.exists(), isTrue);
+      expect(await staleTemp.exists(), isFalse,
+          reason: 'File render sementara yang sudah yatim harus dibersihkan');
+      expect(await recoveryBackup.exists(), isTrue,
+          reason: 'Backup lama tidak boleh dihapus otomatis karena mungkin diperlukan untuk pemulihan');
+      expect(await recoveryBackup.readAsString(), 'recovery copy');
+    });
+
     test('keeps an existing output intact when source image is invalid', () async {
       final source = File('${tempDir.path}/invalid-source.jpg');
       final destination = File('${tempDir.path}/safe-existing-output.png');
