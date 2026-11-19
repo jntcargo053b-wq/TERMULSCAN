@@ -1065,9 +1065,14 @@ class WatermarkService {
     // Lebar panel dihitung dari konten agar template tidak selalu menjadi pita.
     final maxW = math.min((W * .72).round(), W - pad * 2);
     if (maxW < 90) return false;
-    final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,maxW-pad*2,bold:true);
+    // Split memiliki dua kolom: metadata harus dibungkus mengikuti lebar
+    // kolom kanan, bukan lebar seluruh panel. Ini mencegah alamat masuk ke
+    // kolom jam seperti yang terjadi pada foto portrait pengguna.
+    final splitTextMaxW = math.max(40, (maxW * .48).round() - pad * 2);
+    final textMaxW = style == 'split' ? splitTextMaxW : maxW - pad * 2;
+    final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,textMaxW,bold:true);
     final detailLines = <String>[];
-    for (final d in details) { detailLines.addAll(cv.wrap(d,small,maxW-pad*2)); }
+    for (final d in details) { detailLines.addAll(cv.wrap(d,small,textMaxW)); }
     final time = t?.time ?? '', date = t == null ? '' : '${t.dayText}, ${t.dateText}';
     // Tinggi panel dihitung dari urutan gambar yang benar-benar dipakai di
     // bawah: judul template, blok waktu/tanggal, AWB, lalu detail. Versi lama
@@ -1176,11 +1181,14 @@ class WatermarkService {
     } else if(date.isNotEmpty && style=='split') {
       cv.text(date,em:small,x:x+(panelW*.48).round(),y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
     }
+    final metadataX = style == 'split'
+        ? x + (panelW * .48).round()
+        : x + pad;
     if(awbLines.isNotEmpty){
       final awbEm=big*.58;
       cv.text(style=='pod'?'AWB / RESI':style=='technical'?'ID:':style=='geo'?'SHIPMENT':'AWB',
-        em:small,x:x+pad,y:cy,color:accent,bold:true); cy+=cv.lh(small);
-      for(final line in awbLines){cv.text(line,em:awbEm,x:x+pad,y:cy,color:white,bold:true);cy+=cv.lh(awbEm);}
+        em:small,x:metadataX,y:cy,color:accent,bold:true); cy+=cv.lh(small);
+      for(final line in awbLines){cv.text(line,em:awbEm,x:metadataX,y:cy,color:white,bold:true);cy+=cv.lh(awbEm);}
       cy+=gap;
     }
     if(logo!=null && style=='pod'){
@@ -1190,7 +1198,7 @@ class WatermarkService {
     for(final line in detailLines){
       final lineHeight = cv.lh(small);
       if(cy + lineHeight > bottom - pad) return false;
-      cv.text(line,em:small,x:x+pad,y:cy,color:muted,shadow:style!='editorial');
+      cv.text(line,em:small,x:metadataX,y:cy,color:muted,shadow:style!='editorial');
       cy += lineHeight + detailGap;
     }
     return true;
