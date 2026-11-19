@@ -437,6 +437,48 @@ void main() {
       expect(leftovers, isEmpty);
     });
 
+    test('distinct templates keep long POD metadata inside narrow photos with logo', () async {
+      final source = File('${tempDir.path}/distinct-narrow-source.png');
+      final original = img.Image(width: 320, height: 320);
+      img.fill(original, color: img.ColorRgb8(180, 180, 180));
+      await source.writeAsBytes(img.encodePng(original));
+
+      final logo = img.Image(width: 64, height: 32);
+      img.fill(logo, color: img.ColorRgba8(20, 120, 220, 255));
+      final logoBytes = Uint8List.fromList(img.encodePng(logo));
+
+      const styles = ['pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'];
+      for (final style in styles) {
+        final destination = File('${tempDir.path}/distinct-narrow-$style.png');
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination.path,
+          style: style,
+          position: 'bottomRight',
+          logoBytes: logoBytes,
+          lines: const [
+            'WAKTU: 2026-11-19 17:45:30',
+            'GPS: -7.966620123, 112.632630987, akurasi 3 meter',
+            'ALAMAT: Jalan utama kawasan gudang, Kecamatan Lowokwaru, Malang',
+            'AWB: TERMULSCAN-LONG-CODE-12345678901234567890',
+          ],
+        );
+
+        final output = img.decodeImage(await destination.readAsBytes());
+        expect(output, isNotNull, reason: 'style=$style harus dapat dirender');
+        expect(output!.width, 320, reason: 'lebar foto berubah pada $style');
+        expect(output.height, 320, reason: 'tinggi foto berubah pada $style');
+
+        // Margin paling kanan harus tetap menjadi bagian foto asli.
+        for (var y = 0; y < output.height; y++) {
+          final pixel = output.getPixel(output.width - 1, y);
+          expect(pixel.r, 180, reason: '$style right edge red at y=$y');
+          expect(pixel.g, 180, reason: '$style right edge green at y=$y');
+          expect(pixel.b, 180, reason: '$style right edge blue at y=$y');
+        }
+      }
+    });
+
     test('does not silently truncate metadata that cannot fit the photo', () async {
       final source = File('${tempDir.path}/oversized-metadata-source.jpg');
       final destination = File('${tempDir.path}/existing-safe-output.jpg');
