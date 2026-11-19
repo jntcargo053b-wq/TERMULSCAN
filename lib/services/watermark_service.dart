@@ -1108,6 +1108,19 @@ class WatermarkService {
     }
     // Sisakan ruang ikon pin pada Geo dan dua kolom pada Split.
     if (style == 'geo') contentW += _ci(54 * u, 24, 72);
+    // Header POD menempatkan logo di sisi kanan. Sisihkan ruang horizontal
+    // agar judul tidak bertabrakan dengan tile logo pada foto sempit.
+    if (style == 'pod' && logo != null) {
+      final logoH = _ci(26 * u, 12, 48);
+      final logoW = math.min(
+        (logo.width * logoH / logo.height).round(),
+        _ci(100 * u, 40, 150),
+      );
+      contentW = math.max(
+        contentW,
+        cv.tw(titleText, small, bold: true) + logoW + _ci(8 * u, 3, 14),
+      );
+    }
     final minPanelW = math.min(maxW, math.max(140, (W * .38).round()));
     final preferredPanelW = math.min(maxW, contentW + pad * 2);
     final panelW = (style == 'split'
