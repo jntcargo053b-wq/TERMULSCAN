@@ -33,7 +33,7 @@ class WatermarkSettings extends ChangeNotifier {
     _customText = prefs.getString(_keyCustomText) ?? '';
     _logoPath = prefs.getString(_keyLogoPath);
     final savedStyle = prefs.getString(_keyWatermarkStyle) ?? 'timemark';
-    _watermarkStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'}.contains(savedStyle)
+    _watermarkStyle = const {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge', 'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'}.contains(savedStyle)
         ? savedStyle
         : 'classic';
     final savedPosition = prefs.getString(_keyWatermarkPosition) ?? 'bottomRight';
@@ -84,7 +84,7 @@ class WatermarkSettings extends ChangeNotifier {
   }
 
   Future<void> setWatermarkStyle(String style) async {
-    const supported = {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'};
+    const supported = {'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge', 'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'};
     final normalized = supported.contains(style) ? style : 'classic';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyWatermarkStyle, normalized);
