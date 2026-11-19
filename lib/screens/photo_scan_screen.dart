@@ -209,7 +209,11 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       }
 
       captureStage = 'menyalin foto, menyimpan riwayat, GPS, dan watermark';
-      final entry = await _savePhotoWithCaptureLocation(xfile.path, isGallery: false);
+      final entry = await _savePhotoWithCaptureLocation(
+        xfile.path,
+        isGallery: false,
+        onStageChanged: (stage) => captureStage = stage,
+      );
       _finishSavingPhoto(entry);
     } catch (e, st) {
       debugPrint('Capture gagal pada tahap "$captureStage": $e\\n$st');
@@ -357,14 +361,19 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   Future<ScanEntry> _savePhotoWithCaptureLocation(
     String sourcePath, {
     required bool isGallery,
+    void Function(String stage)? onStageChanged,
   }) async {
+    onStageChanged?.call('menyalin foto ke penyimpanan aplikasi');
     final savedPath = await _storage.savePhoto(sourcePath);
     final capturedAt = DateTime.now();
 
     try {
       // Raw copy is the immutable recovery source. If anything fails before
       // an entry is persisted, clean up both copies so no orphan files remain.
+      onStageChanged?.call('membuat salinan foto asli untuk pemulihan');
       await _storage.savePhotoRawCopy(sourcePath, savedPath);
+
+      onStageChanged?.call('mengambil koordinat GPS');
       final captureCoords = isGallery
           ? null
           : await _loc.getCoordinatesOnly();
@@ -388,7 +397,10 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         locationName: null,
         scanResult: _barcode,
       );
+      onStageChanged?.call('menyimpan data riwayat foto');
       await _storage.add(entry);
+
+      onStageChanged?.call('menyiapkan antrean pemulihan foto');
       await _storage.enqueuePhotoTask(
         entry.id,
         latitude: captureCoords?.lat,
@@ -402,6 +414,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
               ? 'Lokasi tidak tersedia'
               : '');
       bool addressResolved = false;
+      onStageChanged?.call('mencari alamat GPS');
       if (!isGallery && captureCoords!.lat != null && captureCoords.lng != null) {
         try {
           final address = await _loc
@@ -423,6 +436,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       }
 
       try {
+        onStageChanged?.call('membuat watermark foto');
         await _burnWatermark(
           sourcePath: savedPath,
           destPath: savedPath,
@@ -442,6 +456,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       // Watermark sudah berhasil. Task hanya boleh dihapus bila alamat juga
       // sudah berhasil; jika geocoding gagal, recovery akan retry alamat
       // menggunakan koordinat capture yang tersimpan tanpa menggeser lokasi.
+      onStageChanged?.call('menyelesaikan status penyimpanan foto');
       await _storage.markPhotoTaskWatermarkCompleted(entry.id);
       if (addressResolved) {
         await _storage.markPhotoTaskAddressResolved(entry.id);
