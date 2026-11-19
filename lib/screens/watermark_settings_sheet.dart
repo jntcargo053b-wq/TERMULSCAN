@@ -1219,13 +1219,13 @@ class _WatermarkStyleOption extends StatelessWidget {
                       ),
                     if (style != 'classic' && style != 'timemark')
                     Positioned(
-                      left: style == 'modern' || style == 'minimal' ? 4 : null,
-                      right: style == 'classic' || style == 'top' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
-                      top: style == 'top' ? 0 : (style == 'modern' ? 4 : null),
-                      bottom: style == 'top' || style == 'modern' ? null : 0,
+                      left: style == 'modern' || style == 'minimal' || style == 'editorial' || style == 'technical' || style == 'split' || style == 'ribbon' ? 4 : null,
+                      right: style == 'classic' || style == 'top' || style == 'pod' || style == 'geo' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
+                      top: style == 'top' || style == 'pod' || style == 'geo' || style == 'ribbon' ? 0 : (style == 'modern' ? 4 : null),
+                      bottom: style == 'top' || style == 'modern' || style == 'pod' || style == 'geo' || style == 'ribbon' ? null : 0,
                       child: Container(
-                        width: style == 'compact' ? 43 : (style == 'badge' ? 39 : (style == 'minimal' ? 48 : null)),
-                        height: style == 'compact' ? 24 : (style == 'badge' ? 29 : (style == 'minimal' ? 17 : (style == 'modern' ? 25 : 14))),
+                        width: style == 'compact' ? 43 : (style == 'badge' ? 39 : (style == 'minimal' ? 48 : (style == 'pod' ? 86 : (style == 'editorial' ? 74 : (style == 'technical' ? 68 : (style == 'geo' ? 78 : (style == 'split' ? 70 : (style == 'ribbon' ? 82 : null))))))),
+                        height: style == 'compact' ? 24 : (style == 'badge' ? 29 : (style == 'minimal' ? 17 : (style == 'modern' ? 25 : (style == 'pod' || style == 'geo' || style == 'ribbon' ? 22 : (style == 'technical' ? 26 : (style == 'editorial' ? 20 : (style == 'split' ? 24 : 14)))))),
                         padding: EdgeInsets.fromLTRB(
                           style == 'minimal' ? 5 : 3,
                           style == 'badge' ? 5 : 3,
@@ -1233,7 +1233,17 @@ class _WatermarkStyleOption extends StatelessWidget {
                           3,
                         ),
                         decoration: BoxDecoration(
-                          color: style == 'modern'
+                          color: style == 'editorial'
+                              ? const Color(0xEDEAE5DA)
+                              : style == 'technical'
+                                  ? const Color(0xEE111B2B)
+                                  : style == 'geo'
+                                      ? const Color(0xEE0B3938)
+                                      : style == 'split'
+                                          ? const Color(0xEE282044)
+                                          : style == 'ribbon'
+                                              ? const Color(0xEE49231E)
+                                              : style == 'modern'
                               ? const Color(0xDD09192A)
                               : style == 'minimal'
                                   ? Colors.black.withValues(alpha: 0.48)
@@ -1243,7 +1253,17 @@ class _WatermarkStyleOption extends StatelessWidget {
                           borderRadius: BorderRadius.circular(
                             style == 'badge' ? 5 : (style == 'modern' ? 3 : 0),
                           ),
-                          border: style == 'modern'
+                          border: style == 'pod' || style == 'ribbon'
+                              ? const Border(top: BorderSide(color: Color(0xFFFFB828), width: 2))
+                              : style == 'editorial'
+                                  ? const Border(left: BorderSide(color: Color(0xFF205C52), width: 2))
+                                  : style == 'technical'
+                                      ? const Border(left: BorderSide(color: Color(0xFF50BEFF), width: 2), top: BorderSide(color: Color(0xFF50BEFF), width: 1))
+                                      : style == 'geo'
+                                          ? const Border(top: BorderSide(color: Color(0xFF48DCB8), width: 2))
+                                          : style == 'split'
+                                              ? const Border(left: BorderSide(color: Color(0xFFBE96FF), width: 2), right: BorderSide(color: Color(0xFFBE96FF), width: 2))
+                                              : style == 'modern'
                               ? const Border(left: BorderSide(color: Colors.cyanAccent, width: 2))
                               : style == 'badge'
                                   ? const Border(top: BorderSide(color: Colors.amber, width: 2))
@@ -1256,7 +1276,7 @@ class _WatermarkStyleOption extends StatelessWidget {
                             Container(
                               height: 2,
                               width: style == 'compact' || style == 'badge' || style == 'minimal' ? 23 : 38,
-                              color: style == 'badge' ? Colors.amber : (style == 'modern' ? Colors.cyanAccent : Colors.white),
+                              color: style == 'badge' || style == 'pod' || style == 'ribbon' ? Colors.amber : style == 'editorial' ? const Color(0xFF205C52) : style == 'technical' ? const Color(0xFF50BEFF) : style == 'geo' ? const Color(0xFF48DCB8) : style == 'split' ? const Color(0xFFBE96FF) : (style == 'modern' ? Colors.cyanAccent : Colors.white),
                             ),
                             const SizedBox(height: 3),
                             if (style != 'minimal')
