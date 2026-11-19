@@ -1263,6 +1263,220 @@ class WatermarkService {
     final bottom = py + total - 1;
     cv.region(px, py, panelW, total);
 
+    // Enam template tambahan memakai komposisi tersendiri. Tidak melewati
+    // kartu generik di bawah agar siluet dan hierarki informasinya benar-benar beda.
+    if (const {'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'}
+        .contains(style)) {
+      final shadow = !theme.light;
+      final fg = theme.primary;
+      final muted = theme.muted;
+      final accentColor = theme.accent;
+      final tileColor = img.ColorRgba8(255, 255, 255, 238);
+      final awbIndex = plans.indexWhere((p) => p.row.label == 'AWB');
+      final awbPlan = awbIndex >= 0 ? plans[awbIndex] : null;
+      final otherPlans = plans.where((p) => p.row.label != 'AWB').toList();
+      void drawPlan(_RowPlan r, int x, int top, int availableWidth,
+          {double scale = 1, bool showIcon = true}) {
+        final em = bodyEm * scale;
+        final lh = cv.lh(em);
+        final icon = math.max(7, (iconSize * scale).round());
+        final labelW = r.row.label == null ? 0 : cv.tw(r.row.label!, labelEm * scale, bold: true) + gap;
+        final maxText = math.max(20, availableWidth - (showIcon ? icon + gap : 0) - labelW);
+        final wrapped = cv.wrap(r.row.value, em, maxText,
+            bold: r.row.label == 'AWB');
+        if (showIcon) {
+          cv.icon(r.row.kind, x + icon ~/ 2, top + lh ~/ 2, icon, accentColor);
+        }
+        final tx = x + (showIcon ? icon + gap : 0);
+        if (r.row.label != null) {
+          cv.text(r.row.label!, em: labelEm * scale, x: tx, y: top,
+              color: r.row.label == 'AWB' ? accentColor : muted,
+              bold: true, shadow: shadow);
+        }
+        final valueX = tx + labelW;
+        for (var j = 0; j < wrapped.length; j++) {
+          cv.text(wrapped[j], em: em, x: valueX,
+              y: top + j * (lh + lineGap), color: fg,
+              bold: r.row.label == 'AWB', shadow: shadow);
+        }
+      }
+
+      if (style == 'pod') {
+        // POD: header solid, AWB sebagai nomor bukti besar, detail di bawah.
+        cv.rect(px, py, right, py + hh + pad, img.ColorRgba8(8, 23, 43, 255));
+        cv.rect(px, py + hh + pad, right, py + hh + pad + _ci(3 * u, 2, 6), accentColor);
+        if (t != null) {
+          cv.timeText(t.time, em: timeEm * 0.88, x: px + pad,
+              cy: py + pad + hh ~/ 2, color: fg);
+          cv.text(t.dateText, em: dateEm, x: px + pad + timeW + gap,
+              y: py + pad + (hh - cv.lh(dateEm)) ~/ 2,
+              color: muted, bold: true);
+        }
+        var y = py + pad + hh + gap;
+        if (awbPlan != null) {
+          cv.text('NO. RESI / AWB', em: labelEm * 0.9, x: px + pad,
+              y: y, color: accentColor, bold: true, shadow: false);
+          y += cv.lh(labelEm) + gap ~/ 2;
+          final awbEm = math.max(bodyEm * 1.45, 18.0 * u);
+          for (final line in cv.wrap(awbPlan.row.value, awbEm,
+              panelW - pad * 2, bold: true)) {
+            cv.text(line, em: awbEm, x: px + pad, y: y,
+                color: fg, bold: true);
+            y += cv.lh(awbEm);
+          }
+          y += gap;
+        }
+        cv.rect(px + pad, y, right - pad, y + divH, theme.divider);
+        y += divH + gap;
+        for (final p in otherPlans) {
+          drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.88);
+          y += blockH(p) * 0.88 + gap;
+        }
+        if (logo != null) {
+          final lw = math.min(tileW, panelW ~/ 4);
+          cv.logoTile(logo, right - pad - lw, py + pad, logoW, logoH,
+              tp, radius ~/ 2, tileColor);
+        }
+      } else if (style == 'editorial') {
+        // Editorial: tanpa kartu solid; komposisi tipografi dengan garis kolom.
+        cv.rect(px, py, px + _ci(3 * u, 2, 5), bottom, accentColor);
+        if (t != null) {
+          cv.text(t.time, em: timeEm * 0.92, x: px + pad,
+              y: py + pad, color: fg, bold: true, shadow: false);
+          cv.text(t.dayText.toUpperCase(), em: labelEm, x: px + pad,
+              y: py + pad + cv.lh(timeEm * 0.92), color: accentColor,
+              bold: true, shadow: false);
+          cv.text(t.dateText, em: dateEm, x: px + pad,
+              y: py + pad + cv.lh(timeEm * 0.92) + cv.lh(labelEm),
+              color: muted, shadow: false);
+        }
+        var y = py + pad + (t == null ? 0 : hh + gap);
+        cv.rect(px + pad, y, right - pad, y + 1, theme.divider);
+        y += gap;
+        for (final p in plans) {
+          drawPlan(p, px + pad, y, panelW - pad * 2, showIcon: false, scale: 0.9);
+          y += blockH(p) * 0.9 + gap;
+          cv.rect(px + pad, y - gap ~/ 2, right - pad, y - gap ~/ 2 + 1, theme.divider);
+        }
+        if (logo != null) {
+          cv.logoTile(logo, right - pad - logoW, py + pad, logoW, logoH,
+              tp, 2, tileColor);
+        }
+      } else if (style == 'technical') {
+        // Technical: bingkai sudut dan metadata dalam sel/grid.
+        cv.rect(px, py, right, py + _ci(2 * u, 2, 4), accentColor);
+        cv.rect(px, py, px + _ci(2 * u, 2, 4), bottom, accentColor);
+        cv.rect(right - _ci(2 * u, 2, 4), py, right, bottom, accentColor);
+        if (t != null) {
+          cv.text('CAPTURE TIME', em: labelEm * 0.82, x: px + pad,
+              y: py + pad, color: accentColor, bold: true, shadow: false);
+          cv.timeText(t.time, em: timeEm * 0.78, x: px + pad,
+              cy: py + pad + cv.lh(labelEm) + cv.digitH(timeEm * 0.78) ~/ 2,
+              color: fg, shadow: false);
+          cv.text('${t.dateText}  /  ${t.dayText.toUpperCase()}',
+              em: labelEm, x: px + pad + timeW * 0.72 + gap,
+              y: py + pad + cv.lh(labelEm) + cv.lh(timeEm * 0.78) ~/ 2,
+              color: muted, shadow: false);
+        }
+        var y = py + pad + hh + gap;
+        final cellGap = gap;
+        final cellW = (panelW - pad * 2 - cellGap) ~/ 2;
+        for (var i = 0; i < plans.length; i++) {
+          final col = i % 2;
+          final row = i ~/ 2;
+          final x = px + pad + col * (cellW + cellGap);
+          final cy = y + row * (bodyLH * 2 + gap);
+          cv.rect(x, cy, x + cellW, cy + 1, theme.divider);
+          drawPlan(plans[i], x, cy + gap ~/ 2, cellW, scale: 0.78);
+        }
+        if (logo != null) {
+          cv.logoTile(logo, right - pad - logoW, bottom - pad - logoH,
+              logoW, logoH, tp, 2, tileColor);
+        }
+      } else if (style == 'geo') {
+        // Geo: pin besar dan blok lokasi, bukan baris kartu standar.
+        cv.rrect(px, py, right, bottom, math.max(8, radius * 2),
+            theme.top, bottom: theme.bottom);
+        final pinSize = math.max(iconSize * 2, 24.0 * u).round();
+        cv.icon('pin', px + pad + pinSize ~/ 2, py + pad + pinSize ~/ 2,
+            pinSize, accentColor);
+        if (t != null) {
+          cv.timeText(t.time, em: timeEm * 0.68,
+              x: px + pad + pinSize + gap, cy: py + pad + pinSize ~/ 2,
+              color: fg);
+          cv.text(t.dateText, em: labelEm, x: px + pad + pinSize + gap,
+              y: py + pad + pinSize, color: muted);
+        }
+        var y = py + pad + pinSize + gap;
+        cv.rect(px + pad, y, right - pad, y + 2, accentColor);
+        y += gap;
+        for (final p in plans) {
+          drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.9);
+          y += blockH(p) * 0.9 + gap;
+        }
+        if (logo != null) {
+          cv.logoTile(logo, right - pad - logoW, py + pad, logoW, logoH,
+              tp, radius ~/ 2, tileColor);
+        }
+      } else if (style == 'split') {
+        // Split: kolom waktu sempit dan kolom bukti/data yang lebih lebar.
+        final splitX = px + math.max((panelW * 0.34).round(), pad * 3);
+        cv.rect(splitX, py + pad, splitX + 1, bottom - pad, theme.divider);
+        if (t != null) {
+          cv.timeText(t.time, em: timeEm * 0.72, x: px + pad,
+              cy: py + pad + hh ~/ 2, color: fg);
+          cv.text(t.dateText, em: labelEm * 0.85, x: px + pad,
+              y: py + pad + hh, color: muted);
+        }
+        var y = py + pad;
+        final rx = splitX + gap;
+        if (awbPlan != null) {
+          cv.text('AWB / RESI', em: labelEm * 0.82, x: rx,
+              y: y, color: accentColor, bold: true);
+          y += cv.lh(labelEm) + gap ~/ 2;
+          for (final line in cv.wrap(awbPlan.row.value, bodyEm * 1.08,
+              panelW - (rx - px) - pad, bold: true)) {
+            cv.text(line, em: bodyEm * 1.08, x: rx, y: y, color: fg, bold: true);
+            y += cv.lh(bodyEm * 1.08);
+          }
+          y += gap;
+        }
+        for (final p in otherPlans) {
+          drawPlan(p, rx, y, right - rx - pad, scale: 0.78);
+          y += blockH(p) * 0.78 + gap;
+        }
+      } else {
+        // Ribbon: banner jam di atas, informasi turun seperti label pengiriman.
+        final bannerH = math.max(hh, cv.lh(timeEm * 0.82) + pad);
+        cv.rect(px, py, right, py + bannerH, accentColor);
+        if (t != null) {
+          cv.timeText(t.time, em: timeEm * 0.82, x: px + pad,
+              cy: py + bannerH ~/ 2, color: img.ColorRgb8(32, 25, 20),
+              shadow: false);
+          cv.text(t.dateText, em: labelEm, x: px + pad + timeW * 0.82 + gap,
+              y: py + (bannerH - cv.lh(labelEm)) ~/ 2,
+              color: img.ColorRgb8(48, 38, 30), bold: true, shadow: false);
+        }
+        var y = py + bannerH + gap;
+        if (awbPlan != null) {
+          cv.text(awbPlan.row.value, em: bodyEm * 1.15, x: px + pad,
+              y: y, color: fg, bold: true);
+          y += cv.lh(bodyEm * 1.15) + gap;
+        }
+        cv.rect(px + pad, y, right - pad, y + 1, theme.divider);
+        y += gap;
+        for (final p in otherPlans) {
+          drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.82);
+          y += blockH(p) * 0.82 + gap;
+        }
+        if (logo != null) {
+          cv.logoTile(logo, right - pad - logoW, bottom - pad - logoH,
+              logoW, logoH, tp, 3, tileColor);
+        }
+      }
+      return true;
+    }
+
     cv.rrect(px, py, right, bottom, radius, theme.top, bottom: theme.bottom);
     final ab = _ci(5 * u, 3, 10);
     void accent({int? cx1, int? cy1, int? cx2, int? cy2}) => cv.rrect(
