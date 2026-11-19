@@ -908,7 +908,12 @@ class WatermarkService {
   }
 
   static List<_Row> _rows(_Parsed p, {required bool includeCustom}) {
+    // AWB adalah identitas utama bukti pengiriman: selalu tampil paling awal
+    // pada layout kartu. Renderer timemark tetap mengatur AWB secara khusus.
     final rows = <_Row>[];
+    if (p.awb != null && p.awb!.isNotEmpty) {
+      rows.add(_Row('tag', 'AWB', p.awb!));
+    }
     if (p.address != null && p.address!.isNotEmpty) rows.add(_Row('pin', null, p.address!));
     if (p.gps != null && p.gps!.isNotEmpty) rows.add(_Row('gps', null, p.gps!));
     for (final e in p.extras) {
@@ -923,7 +928,6 @@ class WatermarkService {
     if (includeCustom && p.custom != null && p.custom!.trim().isNotEmpty) {
       rows.add(_Row('dot', null, p.custom!.trim()));
     }
-    if (p.awb != null && p.awb!.isNotEmpty) rows.add(_Row('tag', 'AWB', p.awb!));
     return rows;
   }
 
@@ -1211,7 +1215,7 @@ class WatermarkService {
       for (var j = 0; j < n; j++) {
         cv.text(r.lines[j],
             em: bodyEm, x: tx + r.labelW, y: textTop + j * (bodyLH + lineGap),
-            color: theme.primary, shadow: shadow);
+            color: theme.primary, bold: r.row.label == 'AWB', shadow: shadow);
       }
       y += bh + gap;
     }
