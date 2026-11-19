@@ -243,6 +243,7 @@ void main() {
 
       const styles = [
         'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge',
+        'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
       ];
       const positions = [
         'topLeft', 'topCenter', 'topRight',
@@ -287,6 +288,7 @@ void main() {
       final logoBytes = Uint8List.fromList(img.encodePng(logo));
       const styles = [
         'classic', 'compact', 'top', 'modern', 'minimal', 'badge',
+        'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
       ];
       const positions = [
         'topLeft', 'topCenter', 'topRight',
@@ -336,6 +338,7 @@ void main() {
         'modern',
         'minimal',
         'badge',
+        'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
       ];
 
       // Selain memastikan file valid, setiap gaya harus benar-benar
@@ -382,6 +385,7 @@ void main() {
         'modern',
         'minimal',
         'badge',
+        'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon',
       ];
 
       for (final style in styles) {
