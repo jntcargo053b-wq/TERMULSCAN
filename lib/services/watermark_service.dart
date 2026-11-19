@@ -1279,9 +1279,9 @@ class WatermarkService {
           {double scale = 1, bool showIcon = true}) {
         final em = bodyEm * scale;
         final lh = cv.lh(em);
-        final icon = math.max(7, (iconSize * scale).round());
+        final icon = math.max(7, (iconSize * scale).round()).toInt();
         final labelW = r.row.label == null ? 0 : cv.tw(r.row.label!, labelEm * scale, bold: true) + gap;
-        final maxText = math.max(20, availableWidth - (showIcon ? icon + gap : 0) - labelW);
+        final maxText = math.max(20, availableWidth - (showIcon ? icon + gap : 0) - labelW).toInt();
         final wrapped = cv.wrap(r.row.value, em, maxText,
             bold: r.row.label == 'AWB');
         if (showIcon) {
@@ -1317,7 +1317,7 @@ class WatermarkService {
           cv.text('NO. RESI / AWB', em: labelEm * 0.9, x: px + pad,
               y: y, color: accentColor, bold: true, shadow: false);
           y += cv.lh(labelEm) + gap ~/ 2;
-          final awbEm = math.max(bodyEm * 1.45, 18.0 * u);
+          final awbEm = math.max(bodyEm * 1.45, 18.0 * u).toDouble();
           for (final line in cv.wrap(awbPlan.row.value, awbEm,
               panelW - pad * 2, bold: true)) {
             cv.text(line, em: awbEm, x: px + pad, y: y,
@@ -1330,10 +1330,10 @@ class WatermarkService {
         y += divH + gap;
         for (final p in otherPlans) {
           drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.88);
-          y += blockH(p) * 0.88 + gap;
+          y += (blockH(p) * 0.88).round() + gap;
         }
         if (logo != null) {
-          final lw = math.min(tileW, panelW ~/ 4);
+          final lw = math.min(tileW, panelW ~/ 4).toInt();
           cv.logoTile(logo, right - pad - lw, py + pad, logoW, logoH,
               tp, radius ~/ 2, tileColor);
         }
@@ -1355,7 +1355,7 @@ class WatermarkService {
         y += gap;
         for (final p in plans) {
           drawPlan(p, px + pad, y, panelW - pad * 2, showIcon: false, scale: 0.9);
-          y += blockH(p) * 0.9 + gap;
+          y += (blockH(p) * 0.9).round() + gap;
           cv.rect(px + pad, y - gap ~/ 2, right - pad, y - gap ~/ 2 + 1, theme.divider);
         }
         if (logo != null) {
@@ -1420,7 +1420,7 @@ class WatermarkService {
         }
       } else if (style == 'split') {
         // Split: kolom waktu sempit dan kolom bukti/data yang lebih lebar.
-        final splitX = px + math.max((panelW * 0.34).round(), pad * 3);
+        final splitX = px + math.max((panelW * 0.34).round(), pad * 3).toInt();
         cv.rect(splitX, py + pad, splitX + 1, bottom - pad, theme.divider);
         if (t != null) {
           cv.timeText(t.time, em: timeEm * 0.72, x: px + pad,
@@ -1443,11 +1443,11 @@ class WatermarkService {
         }
         for (final p in otherPlans) {
           drawPlan(p, rx, y, right - rx - pad, scale: 0.78);
-          y += blockH(p) * 0.78 + gap;
+          y += (blockH(p) * 0.78).round() + gap;
         }
       } else {
         // Ribbon: banner jam di atas, informasi turun seperti label pengiriman.
-        final bannerH = math.max(hh, cv.lh(timeEm * 0.82) + pad);
+        final bannerH = math.max(hh, cv.lh(timeEm * 0.82) + pad).toInt();
         cv.rect(px, py, right, py + bannerH, accentColor);
         if (t != null) {
           cv.timeText(t.time, em: timeEm * 0.82, x: px + pad,
@@ -1467,7 +1467,7 @@ class WatermarkService {
         y += gap;
         for (final p in otherPlans) {
           drawPlan(p, px + pad, y, panelW - pad * 2, scale: 0.82);
-          y += blockH(p) * 0.82 + gap;
+          y += (blockH(p) * 0.82).round() + gap;
         }
         if (logo != null) {
           cv.logoTile(logo, right - pad - logoW, bottom - pad - logoH,
