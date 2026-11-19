@@ -1019,7 +1019,13 @@ class WatermarkService {
       }
       return false;
     }
-    if (const {'pod','editorial','technical','geo','split','ribbon'}.contains(style)) {\n      for (final k in const [1.0, 0.85, 0.7, 0.58]) {\n        if (_tryDistinctTemplate(cv, W, H, parsed, t, logo, style, position, k)) return true;\n      }\n      return false;\n    }\n    final st = style == 'timemark' ? 'classic' : style;
+    if (const {'pod','editorial','technical','geo','split','ribbon'}.contains(style)) {
+      for (final k in const [1.0, 0.85, 0.7, 0.58]) {
+        if (_tryDistinctTemplate(cv, W, H, parsed, t, logo, style, position, k)) return true;
+      }
+      return false;
+    }
+    final st = style == 'timemark' ? 'classic' : style;
     final theme = _themeFor(st);
     for (final k in const [1.0, 0.85, 0.72, 0.6]) {
       if (_tryCard(cv, W, H, parsed, t, logo, theme, st, position, k)) return true;
@@ -1089,7 +1095,7 @@ class WatermarkService {
       cv.text(time,em:big*.62,x:x+pad,y:cy,color:white,bold:true); cy+=cv.lh(big*.62);
       cv.text(date,em:small,x:x+pad,y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
     } else if(date.isNotEmpty && style=='split') {
-      cv.text(date,em:small,x:x+maxW*.48,y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
+      cv.text(date,em:small,x:x+(maxW*.48).round(),y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
     }
     if(awbLines.isNotEmpty){
       final awbEm=big*.58;
