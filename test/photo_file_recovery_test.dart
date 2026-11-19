@@ -32,6 +32,20 @@ void main() {
       expect(await backup.exists(), isFalse);
     });
 
+    test('restores backup when destination exists but is empty', () async {
+      final destination = File('${directory.path}/photo_empty.jpg');
+      final backup = File(
+        '${directory.path}/photo_empty.jpg.wm_backup_300',
+      );
+      await destination.writeAsBytes([]);
+      await backup.writeAsBytes([7, 8, 9]);
+
+      await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
+
+      expect(await destination.readAsBytes(), [7, 8, 9]);
+      expect(await backup.exists(), isFalse);
+    });
+
     test('deletes backup when the new destination already exists', () async {
       final destination = File('${directory.path}/photo_100_1.jpg');
       final backup = File(
