@@ -1821,6 +1821,25 @@ class WatermarkService {
       }
       File(req.destPath).parent.createSync(recursive: true);
 
+      // Simpan perimeter asli agar antialias/shadow renderer tidak pernah
+      // mengubah piksel paling luar foto pada template apa pun.
+      final edgeTop = List<img.Color>.generate(image.width, (x) {
+        final p = image.getPixel(x, 0);
+        return img.ColorRgba8(p.r.toInt(), p.g.toInt(), p.b.toInt(), p.a.toInt());
+      });
+      final edgeBottom = List<img.Color>.generate(image.width, (x) {
+        final p = image.getPixel(x, image.height - 1);
+        return img.ColorRgba8(p.r.toInt(), p.g.toInt(), p.b.toInt(), p.a.toInt());
+      });
+      final edgeLeft = List<img.Color>.generate(image.height, (y) {
+        final p = image.getPixel(0, y);
+        return img.ColorRgba8(p.r.toInt(), p.g.toInt(), p.b.toInt(), p.a.toInt());
+      });
+      final edgeRight = List<img.Color>.generate(image.height, (y) {
+        final p = image.getPixel(image.width - 1, y);
+        return img.ColorRgba8(p.r.toInt(), p.g.toInt(), p.b.toInt(), p.a.toInt());
+      });
+
       var done = false;
       // 1) Overlay TTF dari main isolate (kualitas terbaik).
       if (req.overlays.isNotEmpty) {
@@ -1874,6 +1893,16 @@ class WatermarkService {
           _logoTile(image, logo, x, y, lw, lh, tp, _ci(8 * u, 3, 20),
               img.ColorRgba8(255, 255, 255, 238));
         }
+      }
+
+      // Kembalikan border sumber setelah semua lapisan selesai digambar.
+      for (var x = 0; x < image.width; x++) {
+        image.setPixel(x, 0, edgeTop[x]);
+        image.setPixel(x, image.height - 1, edgeBottom[x]);
+      }
+      for (var y = 0; y < image.height; y++) {
+        image.setPixel(0, y, edgeLeft[y]);
+        image.setPixel(image.width - 1, y, edgeRight[y]);
       }
 
       final destLower = req.destPath.toLowerCase();
