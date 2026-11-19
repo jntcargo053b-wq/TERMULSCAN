@@ -25,6 +25,10 @@ dependencies:
   gal: ^2.3.2
   google_mlkit_text_recognition: ^0.16.0
 
+dependency_overrides:
+  # Avoid Android JNI/ClassNotFoundException regression in release builds.
+  path_provider_android: 2.2.19
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
