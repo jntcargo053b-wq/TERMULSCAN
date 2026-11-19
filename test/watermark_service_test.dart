@@ -509,6 +509,42 @@ void main() {
       }
     });
 
+    test('split layout handles long metadata on landscape and square photos', () async {
+      final logo = img.Image(width: 64, height: 32);
+      img.fill(logo, color: img.ColorRgba8(20, 120, 220, 255));
+      final logoBytes = Uint8List.fromList(img.encodePng(logo));
+
+      for (final size in [(1536, 1157), (1080, 1080)]) {
+        final width = size.$1;
+        final height = size.$2;
+        final source = File('${tempDir.path}/split-source-$width-$height.png');
+        final destination =
+            File('${tempDir.path}/split-output-$width-$height.png');
+        final original = img.Image(width: width, height: height);
+        img.fill(original, color: img.ColorRgb8(180, 180, 180));
+        await source.writeAsBytes(img.encodePng(original));
+
+        await WatermarkService.burn(
+          sourcePath: source.path,
+          destPath: destination.path,
+          style: 'split',
+          position: 'bottomLeft',
+          logoBytes: logoBytes,
+          lines: const [
+            'WAKTU: 2026-11-19 21:16:30',
+            'AWB: TERMULSCAN-LONG-CODE-12345678901234567890',
+            'ALAMAT: Sekarpuro, Kabupaten Malang, Jawa Timur, kawasan pergudangan dan jalur distribusi utama',
+            'GPS: -7.969635, 112.679615, akurasi 3 meter',
+          ],
+        );
+
+        final output = img.decodeImage(await destination.readAsBytes());
+        expect(output, isNotNull, reason: 'Split pada ${width}x$height');
+        expect(output!.width, width);
+        expect(output.height, height);
+      }
+    });
+
     test('does not silently truncate metadata that cannot fit the photo', () async {
       final source = File('${tempDir.path}/oversized-metadata-source.jpg');
       final destination = File('${tempDir.path}/existing-safe-output.jpg');
