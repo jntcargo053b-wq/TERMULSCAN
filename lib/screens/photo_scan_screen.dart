@@ -376,6 +376,10 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         timestamp: capturedAt,
         latitude: captureCoords?.lat,
         longitude: captureCoords?.lng,
+        locationAccuracyMeters: captureCoords?.accuracy,
+        locationAgeMillis: captureCoords?.ageMillis,
+        locationProvider: captureCoords?.provider,
+        locationIsFallback: captureCoords?.isFallback ?? false,
         locationName: null,
         scanResult: _barcode,
       );
