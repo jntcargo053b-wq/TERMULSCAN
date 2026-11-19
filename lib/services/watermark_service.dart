@@ -1021,7 +1021,21 @@ class WatermarkService {
     }
     if (const {'pod','editorial','technical','geo','split','ribbon'}.contains(style)) {
       for (final k in const [1.0, 0.85, 0.7, 0.58]) {
-        if (_tryDistinctTemplate(cv, W, H, parsed, t, logo, style, position, k)) return true;
+        if (_tryDistinctTemplate(cv, W, H, parsed, t, logo, style, position, k)) {
+          return true;
+        }
+      }
+
+      // Template khusus diprioritaskan. Jika metadata terlalu panjang untuk
+      // komposisi tersebut, gunakan kartu responsif agar semua baris tetap
+      // terlihat dan foto tetap dapat disimpan tanpa pemotongan metadata.
+      final fallbackTheme = _themeFor(style);
+      for (final k in const [1.0, 0.85, 0.72, 0.6]) {
+        if (_tryCard(
+          cv, W, H, parsed, t, logo, fallbackTheme, style, position, k,
+        )) {
+          return true;
+        }
       }
       return false;
     }
