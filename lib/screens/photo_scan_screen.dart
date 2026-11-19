@@ -199,6 +199,12 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       );
       if (xfile == null) return;
 
+      // Catat waktu sedekat mungkin dengan saat kamera mengembalikan foto.
+      // GPS dimulai paralel dengan pratinjau agar tidak menambah waktu tunggu
+      // setelah pengguna menekan tombol konfirmasi.
+      final capturedAt = DateTime.now();
+      final coordsFuture = _loc.getCoordinatesOnly();
+
       HapticFeedback.mediumImpact();
       captureStage = 'menampilkan pratinjau foto';
       final confirmed = await _showPreviewAndConfirm(xfile.path);
@@ -212,6 +218,8 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       final entry = await _savePhotoWithCaptureLocation(
         xfile.path,
         isGallery: false,
+        capturedAt: capturedAt,
+        captureCoordsFuture: coordsFuture,
         onStageChanged: (stage) => captureStage = stage,
       );
       _finishSavingPhoto(entry);
@@ -361,11 +369,15 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
   Future<ScanEntry> _savePhotoWithCaptureLocation(
     String sourcePath, {
     required bool isGallery,
+    DateTime? capturedAt,
+    Future<({double? lat, double? lng, double? accuracy, int? ageMillis, String? provider, bool isFallback})>? captureCoordsFuture,
     void Function(String stage)? onStageChanged,
   }) async {
+    // Untuk kamera, waktu shutter sudah diberikan dari _takePhoto.
+    // Untuk impor galeri, timestamp tetap dibuat saat proses penyimpanan.
+    final photoCapturedAt = capturedAt ?? DateTime.now();
     onStageChanged?.call('menyalin foto ke penyimpanan aplikasi');
     final savedPath = await _storage.savePhoto(sourcePath);
-    final capturedAt = DateTime.now();
 
     try {
       // Raw copy is the immutable recovery source. If anything fails before
@@ -376,7 +388,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
       onStageChanged?.call('mengambil koordinat GPS');
       final captureCoords = isGallery
           ? null
-          : await _loc.getCoordinatesOnly();
+          : await (captureCoordsFuture ?? _loc.getCoordinatesOnly());
 
       // Persist the history entry and recovery task BEFORE burning the
       // watermark. If Android kills the process during image processing, the
@@ -387,7 +399,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         type: ScanType.photo,
         value: savedPath,
         imagePath: savedPath,
-        timestamp: capturedAt,
+        timestamp: photoCapturedAt,
         latitude: captureCoords?.lat,
         longitude: captureCoords?.lng,
         locationAccuracyMeters: captureCoords?.accuracy,
@@ -440,7 +452,7 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         await _burnWatermark(
           sourcePath: savedPath,
           destPath: savedPath,
-          timestamp: capturedAt,
+          timestamp: photoCapturedAt,
           latitude: captureCoords?.lat,
           longitude: captureCoords?.lng,
           locationText: locationText,
