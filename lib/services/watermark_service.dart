@@ -1923,6 +1923,31 @@ class WatermarkService {
           ? img.encodePng(image)
           : img.encodeJpg(image, quality: _jpegQuality);
 
+      // Bersihkan hanya file sementara render yang sudah yatim (>24 jam)
+      // untuk tujuan yang sama. File backup sengaja tidak disentuh karena bisa
+      // menjadi satu-satunya salinan hasil lama setelah proses terhenti.
+      final destination = File(req.destPath);
+      final tempPrefix = '${destination.uri.pathSegments.last}.wm_tmp_';
+      try {
+        final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+        for (final entity in destination.parent.listSync(followLinks: false)) {
+          if (entity is! File ||
+              !entity.uri.pathSegments.last.startsWith(tempPrefix)) {
+            continue;
+          }
+          try {
+            if (entity.statSync().modified.isBefore(cutoff)) {
+              entity.deleteSync();
+            }
+          } catch (cleanupError) {
+            debugPrint('Tidak dapat membersihkan file sementara watermark: $cleanupError');
+          }
+        }
+      } catch (cleanupError) {
+        // Kegagalan housekeeping tidak boleh menggagalkan penyimpanan foto.
+        debugPrint('Pembersihan file sementara watermark dilewati: $cleanupError');
+      }
+
       final tempPath =
           '${req.destPath}.wm_tmp_${DateTime.now().microsecondsSinceEpoch}';
       final tempFile = File(tempPath);
@@ -1931,7 +1956,6 @@ class WatermarkService {
         if (!tempFile.existsSync() || tempFile.lengthSync() == 0) {
           throw Exception('File watermark sementara kosong');
         }
-        final destination = File(req.destPath);
         final backupPath =
             '${req.destPath}.wm_backup_${DateTime.now().microsecondsSinceEpoch}';
         final backupFile = File(backupPath);
