@@ -768,6 +768,66 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
                   onTap: () { setState(() => _selectedStyle = 'badge'); _refreshPreview(); },
                 ),
               ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'POD Pro',
+                  subtitle: 'AWB dominan · panel lebar',
+                  style: 'pod',
+                  selected: _selectedStyle == 'pod',
+                  onTap: () { setState(() => _selectedStyle = 'pod'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'Editorial',
+                  subtitle: 'Kertas terang · garis tipis',
+                  style: 'editorial',
+                  selected: _selectedStyle == 'editorial',
+                  onTap: () { setState(() => _selectedStyle = 'editorial'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'Technical',
+                  subtitle: 'Grid teknis · garis tegas',
+                  style: 'technical',
+                  selected: _selectedStyle == 'technical',
+                  onTap: () { setState(() => _selectedStyle = 'technical'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'Geo Evidence',
+                  subtitle: 'Identitas lokasi · hijau',
+                  style: 'geo',
+                  selected: _selectedStyle == 'geo',
+                  onTap: () { setState(() => _selectedStyle = 'geo'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'Split Panel',
+                  subtitle: 'Aksen dua sisi',
+                  style: 'split',
+                  selected: _selectedStyle == 'split',
+                  onTap: () { setState(() => _selectedStyle = 'split'); _refreshPreview(); },
+                ),
+              ),
+              SizedBox(
+                width: styleOptionWidth,
+                child: _WatermarkStyleOption(
+                  title: 'Ribbon',
+                  subtitle: 'Pita atas · aksen koral',
+                  style: 'ribbon',
+                  selected: _selectedStyle == 'ribbon',
+                  onTap: () { setState(() => _selectedStyle = 'ribbon'); _refreshPreview(); },
+                ),
+              ),
             ],
           ),
           const Gap(8),
