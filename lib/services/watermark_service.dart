@@ -1080,7 +1080,8 @@ class WatermarkService {
         ? 0
         : cv.lh(small) + gap ~/ 2 +
             awbLines.length * cv.lh(awbEm) + gap;
-    final detailStep = cv.lh(small) + math.max(2, gap ~/ 2);
+    final detailGap = math.max(2, gap ~/ 2).toInt();
+    final detailStep = cv.lh(small) + detailGap;
     final detailsH = detailLines.length * detailStep;
     final requiredPanelH = math.max(
       100,
@@ -1147,7 +1148,7 @@ class WatermarkService {
       final lineHeight = cv.lh(small);
       if(cy + lineHeight > bottom - pad) return false;
       cv.text(line,em:small,x:x+pad,y:cy,color:muted,shadow:style!='editorial');
-      cy += lineHeight + math.max(2, gap ~/ 2);
+      cy += lineHeight + detailGap;
     }
     return true;
   }
