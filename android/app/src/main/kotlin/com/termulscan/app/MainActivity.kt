@@ -95,10 +95,24 @@ class MainActivity : FlutterActivity() {
             null
         }
 
-        val cachedBest: Location? = when {
-            gpsLast != null && isUsable(gpsLast) -> gpsLast
-            netLast != null && isUsable(netLast) -> netLast
-            else -> null
+        fun ageMillis(loc: Location): Long {
+            return if (loc.elapsedRealtimeNanos > 0L) {
+                ((SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
+            } else {
+                Long.MAX_VALUE
+            }
+        }
+
+        // Jangan selalu mengutamakan GPS last-known: koordinat GPS lama bisa
+        // kalah berguna dibanding NETWORK fix yang jauh lebih baru.
+        val cachedCandidates = listOfNotNull(gpsLast, netLast).filter(::isUsable)
+        val cachedBest: Location? = cachedCandidates.minWithOrNull { a, b ->
+            val ageDifference = ageMillis(a) - ageMillis(b)
+            if (kotlin.math.abs(ageDifference) > 3_000L) {
+                ageDifference.compareTo(0L) // freshness wins when >3s apart
+            } else {
+                a.accuracy.compareTo(b.accuracy) // otherwise prefer better accuracy
+            }
         }
 
         if (cachedBest != null) {
@@ -177,6 +191,6 @@ class MainActivity : FlutterActivity() {
                 ))
                 try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
             }
-        }, 5000)
+        }, 3500)
     }
 }
