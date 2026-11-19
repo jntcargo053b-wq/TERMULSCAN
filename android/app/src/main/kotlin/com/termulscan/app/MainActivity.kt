@@ -56,7 +56,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getCurrentLocation(result: Result) {
-        // Cek permission
         val hasFineLocation = ContextCompat.checkSelfPermission(
             this, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -69,19 +68,27 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 1. Cek last-known location (sangat cepat). Accuracy is metadata:
-        // a usable recent coordinate is preferable to waiting for a "better" fix.
-        val maxAgeMillis = 20_000L
+        fun ageMillis(loc: Location): Long {
+            if (loc.elapsedRealtimeNanos <= 0L) return Long.MAX_VALUE
+            return ((SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L)
+                .coerceAtLeast(0L)
+        }
 
         fun isUsable(loc: Location?): Boolean {
             if (loc == null) return false
-            val ageMillis = if (loc.elapsedRealtimeNanos > 0L) {
-                (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
-            } else {
-                Long.MAX_VALUE
-            }
-            return ageMillis <= maxAgeMillis &&
+            return ageMillis(loc) <= 10_000L &&
                 loc.latitude.isFinite() && loc.longitude.isFinite()
+        }
+
+        fun locationMap(loc: Location, isFallback: Boolean): Map<String, Any?> {
+            return mapOf(
+                "lat" to loc.latitude,
+                "lng" to loc.longitude,
+                "accuracy" to if (loc.hasAccuracy()) loc.accuracy else null,
+                "ageMillis" to ageMillis(loc),
+                "provider" to loc.provider,
+                "isFallback" to isFallback
+            )
         }
 
         val gpsLast = try {
@@ -95,68 +102,79 @@ class MainActivity : FlutterActivity() {
             null
         }
 
-        fun ageMillis(loc: Location): Long {
-            return if (loc.elapsedRealtimeNanos > 0L) {
-                ((SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L).coerceAtLeast(0L)
-            } else {
-                Long.MAX_VALUE
-            }
-        }
-
-        // Jangan selalu mengutamakan GPS last-known: koordinat GPS lama bisa
-        // kalah berguna dibanding NETWORK fix yang jauh lebih baru.
         val cachedCandidates = listOfNotNull(gpsLast, netLast).filter(::isUsable)
-        val cachedBest: Location? = cachedCandidates.minWithOrNull { a, b ->
+        val cachedBest = cachedCandidates.minWithOrNull { a, b ->
             val ageDifference = ageMillis(a) - ageMillis(b)
             if (kotlin.math.abs(ageDifference) > 3_000L) {
-                ageDifference.compareTo(0L) // freshness wins when >3s apart
+                ageDifference.compareTo(0L)
             } else {
-                a.accuracy.compareTo(b.accuracy) // otherwise prefer better accuracy
+                val aAccuracy = if (a.hasAccuracy()) a.accuracy else Float.MAX_VALUE
+                val bAccuracy = if (b.hasAccuracy()) b.accuracy else Float.MAX_VALUE
+                aAccuracy.compareTo(bAccuracy)
             }
         }
 
-        if (cachedBest != null) {
-            val map = mapOf(
-                "lat" to cachedBest.latitude,
-                "lng" to cachedBest.longitude,
-                "accuracy" to cachedBest.accuracy
-            )
-            result.success(map)
+        // A very recent cached fix is fast enough to use immediately.
+        if (cachedBest != null && ageMillis(cachedBest) <= 3_000L) {
+            result.success(locationMap(cachedBest, false))
             return
         }
 
-        // 2. Tidak ada cache – request satu fresh fix dari provider aktif.
-        // Fix valid pertama dipakai; tidak ada hard gate accuracy.
-        val providers = listOf(
-            LocationManager.GPS_PROVIDER,
-            LocationManager.NETWORK_PROVIDER
-        )
-        var requested = false
+        // A 3–10 second cache is only a fallback. Try to obtain a fresh fix
+        // first so a moving courier is not stamped with an old position.
+        val cachedFallback = cachedBest
+        val handler = Handler(Looper.getMainLooper())
         var resultSent = false
+        var bestFresh: Location? = null
+        var requested = false
+        var refinementRunnable: Runnable? = null
+        var timeoutRunnable: Runnable? = null
 
-        fun sendResult(location: Location) {
+        lateinit var locationListener: LocationListener
+
+        fun finish(location: Location?, isFallback: Boolean) {
+            if (resultSent) return
             resultSent = true
-            val ageMillis = if (location.elapsedRealtimeNanos > 0L) {
-                (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+            refinementRunnable?.let(handler::removeCallbacks)
+            timeoutRunnable?.let(handler::removeCallbacks)
+            try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+            if (location != null) {
+                result.success(locationMap(location, isFallback))
             } else {
-                -1L
+                result.success(mapOf(
+                    "lat" to null,
+                    "lng" to null,
+                    "accuracy" to null,
+                    "ageMillis" to null,
+                    "provider" to null,
+                    "isFallback" to false
+                ))
             }
-            result.success(
-                mapOf(
-                    "lat" to location.latitude,
-                    "lng" to location.longitude,
-                    "accuracy" to location.accuracy,
-                    "ageMillis" to ageMillis
-                )
-            )
         }
 
-        val locationListener = object : LocationListener {
+        locationListener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (resultSent) return
-                if (!location.latitude.isFinite() || !location.longitude.isFinite()) return
-                sendResult(location)
-                try { locationManager.removeUpdates(this) } catch (_: Exception) {}
+                if (resultSent || !location.latitude.isFinite() || !location.longitude.isFinite()) return
+                if (ageMillis(location) > 5_000L) return
+
+                val currentBest = bestFresh
+                if (currentBest == null) {
+                    bestFresh = location
+                    // Give the other provider a short opportunity to return a
+                    // better/fresher fix without adding a long camera delay.
+                    refinementRunnable = Runnable {
+                        finish(bestFresh, false)
+                    }.also { handler.postDelayed(it, 450L) }
+                } else {
+                    val ageDifference = ageMillis(location) - ageMillis(currentBest)
+                    val locationAccuracy = if (location.hasAccuracy()) location.accuracy else Float.MAX_VALUE
+                    val currentAccuracy = if (currentBest.hasAccuracy()) currentBest.accuracy else Float.MAX_VALUE
+                    if (kotlin.math.abs(ageDifference) > 1_000L) {
+                        if (ageDifference < 0L) bestFresh = location
+                    } else if (locationAccuracy < currentAccuracy) {
+                        bestFresh = location
+                    }
+                }
             }
 
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
@@ -164,33 +182,41 @@ class MainActivity : FlutterActivity() {
             override fun onProviderDisabled(provider: String) {}
         }
 
+        val providers = listOf(
+            LocationManager.GPS_PROVIDER,
+            LocationManager.NETWORK_PROVIDER
+        )
         for (provider in providers) {
-            if (locationManager.isProviderEnabled(provider)) {
-                try {
-                    locationManager.requestSingleUpdate(provider, locationListener, Looper.getMainLooper())
+            try {
+                if (locationManager.isProviderEnabled(provider)) {
+                    locationManager.requestSingleUpdate(
+                        provider, locationListener, Looper.getMainLooper()
+                    )
                     requested = true
-                } catch (_: Exception) {
-                    // Provider mungkin tidak support requestSingleUpdate, abaikan
                 }
+            } catch (_: Exception) {
+                // Provider unavailable or permission changed; try the other one.
             }
         }
 
         if (!requested) {
-            result.error("NO_PROVIDER", "No location provider enabled", null)
+            if (cachedFallback != null) {
+                finish(cachedFallback, true)
+            } else {
+                result.error("NO_PROVIDER", "No location provider enabled", null)
+            }
             return
         }
 
-        // 3. Timeout 5 detik – null hanya berarti tidak ada coordinate fix.
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!resultSent) {
-                resultSent = true
-                result.success(mapOf(
-                    "lat" to null,
-                    "lng" to null,
-                    "accuracy" to null
-                ))
-                try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
+        val timeoutMillis = if (cachedFallback != null) 2_500L else 3_500L
+        timeoutRunnable = Runnable {
+            if (bestFresh != null) {
+                finish(bestFresh, false)
+            } else if (cachedFallback != null) {
+                finish(cachedFallback, true)
+            } else {
+                finish(null, false)
             }
-        }, 3500)
+        }.also { handler.postDelayed(it, timeoutMillis) }
     }
 }
