@@ -216,7 +216,7 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
     try {
       // Simpan barcode secepat mungkin. Reverse-geocoding tidak boleh
       // menahan operator di layar scanner karena request jaringan bisa lambat.
-      ({double? lat, double? lng, double? accuracy})? coordinates;
+      ({double? lat, double? lng, double? accuracy, int? ageMillis, String? provider, bool isFallback})? coordinates;
       try {
         coordinates = await _locationService.getCoordinatesOnly();
       } catch (e) {
@@ -230,6 +230,10 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> with WidgetsBindi
         timestamp: DateTime.now(),
         latitude: coordinates?.lat,
         longitude: coordinates?.lng,
+        locationAccuracyMeters: coordinates?.accuracy,
+        locationAgeMillis: coordinates?.ageMillis,
+        locationProvider: coordinates?.provider,
+        locationIsFallback: coordinates?.isFallback ?? false,
         address: '',
         imagePath: null,
       );
