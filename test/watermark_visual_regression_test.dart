@@ -1,4 +1,5 @@
-import 'dart:math' as math;\nimport 'dart:io';
+import 'dart:math' as math;
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
