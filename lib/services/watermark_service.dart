@@ -1800,11 +1800,11 @@ class WatermarkService {
   static void _burnIsolate(WatermarkBurnRequest req) {
     try {
       final bytes = File(req.sourcePath).readAsBytesSync();
-      var image = img.decodeImage(bytes);
-      if (image == null) {
+      final decodedImage = img.decodeImage(bytes);
+      if (decodedImage == null) {
         throw StateError('Gagal decode gambar: ${req.sourcePath}');
       }
-      image = img.bakeOrientation(image);
+      final image = img.bakeOrientation(decodedImage);
 
       final hasText = req.lines.isNotEmpty;
       img.Image? logo;
