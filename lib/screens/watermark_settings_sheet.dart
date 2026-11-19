@@ -1217,7 +1217,188 @@ class _WatermarkStyleOption extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (style != 'classic' && style != 'timemark')
+                    if (const {'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'}.contains(style))
+                      Positioned.fill(
+                        child: Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: switch (style) {
+                            'pod' => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 91,
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xF008172B),
+                                  border: Border(top: BorderSide(color: Colors.amber, width: 2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('16:45  |  19 NOV 2026', style: TextStyle(color: Colors.white, fontSize: 5, fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 3),
+                                    const Text('NO. RESI / AWB', style: TextStyle(color: Colors.amber, fontSize: 4, fontWeight: FontWeight.w900)),
+                                    const Text('JP123456789', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+                                    Container(height: 1, color: Colors.white30),
+                                    const Text('PENERIMA  •  ALAMAT  •  GPS', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            'editorial' => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 77,
+                                padding: const EdgeInsets.only(left: 5, bottom: 3),
+                                decoration: const BoxDecoration(
+                                  border: Border(left: BorderSide(color: Color(0xFF69D6B5), width: 2)),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('16:45', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w300)),
+                                    const Text('WEDNESDAY / 19 NOV', style: TextStyle(color: Color(0xFF69D6B5), fontSize: 4, fontWeight: FontWeight.w900)),
+                                    const SizedBox(height: 3),
+                                    Container(height: 1, color: Colors.white54),
+                                    const Text('AWB  JP123456789', style: TextStyle(color: Colors.white, fontSize: 5, fontWeight: FontWeight.w700)),
+                                    const Text('MALANG  •  -7.98, 112.63', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            'technical' => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 85,
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xEE101B2B),
+                                  border: Border.all(color: const Color(0xFF50BEFF), width: 1),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('CAPTURE TIME', style: TextStyle(color: Color(0xFF50BEFF), fontSize: 4, fontWeight: FontWeight.w900)),
+                                    Row(children: const [
+                                      Text('16:45', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
+                                      SizedBox(width: 4),
+                                      Text('19 NOV 2026', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                    ]),
+                                    const Divider(height: 4, color: Colors.white24),
+                                    const Row(children: [
+                                      Expanded(child: Text('AWB  JP12345', style: TextStyle(color: Colors.white, fontSize: 4))),
+                                      Expanded(child: Text('GPS  -7.98,112', style: TextStyle(color: Colors.white, fontSize: 4))),
+                                    ]),
+                                    const Row(children: [
+                                      Expanded(child: Text('DEST  MALANG', style: TextStyle(color: Colors.white70, fontSize: 4))),
+                                      Expanded(child: Text('ACC  4.2 M', style: TextStyle(color: Colors.white70, fontSize: 4))),
+                                    ]),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            'geo' => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 88,
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xEE073B38),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.location_on, color: Color(0xFF48DCB8), size: 21),
+                                    const SizedBox(width: 3),
+                                    Expanded(child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Text('16:45  •  MALANG', style: TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.w900)),
+                                        SizedBox(height: 3),
+                                        Text('GPS COORDINATES', style: TextStyle(color: Color(0xFF48DCB8), fontSize: 4, fontWeight: FontWeight.w900)),
+                                        Text('-7.9826, 112.6308', style: TextStyle(color: Colors.white, fontSize: 5)),
+                                        Text('Jl. Example No. 10', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                      ],
+                                    )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            'split' => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 89,
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xEE282044),
+                                  border: Border(left: BorderSide(color: Color(0xFFBE96FF), width: 2)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 27, child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text('16:45', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+                                        Text('19 NOV', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                      ],
+                                    )),
+                                    Container(width: 1, height: 31, color: Colors.white38),
+                                    const SizedBox(width: 4),
+                                    const Expanded(child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text('AWB', style: TextStyle(color: Color(0xFFBE96FF), fontSize: 4, fontWeight: FontWeight.w900)),
+                                        Text('JP123456789', style: TextStyle(color: Colors.white, fontSize: 5, fontWeight: FontWeight.w900)),
+                                        SizedBox(height: 3),
+                                        Text('MALANG  •  GPS OK', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                      ],
+                                    )),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            _ => Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                width: 88,
+                                decoration: const BoxDecoration(color: Color(0xEE49231E)),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                                      color: const Color(0xFFFF7E56),
+                                      child: const Text('16:45  •  19 NOV 2026', style: TextStyle(color: Color(0xFF301A16), fontSize: 6, fontWeight: FontWeight.w900)),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(4),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: const [
+                                          Text('JP123456789', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
+                                          SizedBox(height: 2),
+                                          Divider(height: 2, color: Colors.white30),
+                                          Text('PENERIMA  •  ALAMAT  •  GPS', style: TextStyle(color: Colors.white70, fontSize: 4)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          },
+                        ),
+                      ),
+                    if (style != 'classic' && style != 'timemark' &&
+                        !const {'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'}.contains(style))
                     Positioned(
                       left: style == 'modern' || style == 'minimal' || style == 'editorial' || style == 'technical' || style == 'split' || style == 'ribbon' ? 4 : null,
                       right: style == 'classic' || style == 'top' || style == 'pod' || style == 'geo' ? 0 : (style == 'compact' || style == 'badge' ? 4 : null),
