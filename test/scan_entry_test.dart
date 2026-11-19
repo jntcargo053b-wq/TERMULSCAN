@@ -54,6 +54,45 @@ void main() {
       expect(entry.displayImagePath, '/app/photos/photo_456_1.jpg');
     });
 
+    test('photo GPS quality metadata round-trips through persisted map', () {
+      final original = ScanEntry(
+        id: 'photo-gps-1',
+        type: ScanType.photo,
+        value: '/app/photos/gps.jpg',
+        imagePath: '/app/photos/gps.jpg',
+        timestamp: DateTime(2026, 11, 19, 10),
+        latitude: -7.98,
+        longitude: 112.63,
+        locationAccuracyMeters: 7.5,
+        locationAgeMillis: 420,
+        locationProvider: 'gps',
+        locationIsFallback: false,
+      );
+
+      final restored = ScanEntry.fromMap(original.toMap());
+
+      expect(restored.locationAccuracyMeters, 7.5);
+      expect(restored.locationAgeMillis, 420);
+      expect(restored.locationProvider, 'gps');
+      expect(restored.locationIsFallback, isFalse);
+    });
+
+    test('legacy history defaults GPS quality metadata safely', () {
+      final restored = ScanEntry.fromMap({
+        'id': 'old-photo',
+        'type': 'photo',
+        'value': '/app/photos/old.jpg',
+        'timestamp': '2026-10-09T12:00:00.000',
+        'latitude': -7.98,
+        'longitude': 112.63,
+      });
+
+      expect(restored.locationAccuracyMeters, isNull);
+      expect(restored.locationAgeMillis, isNull);
+      expect(restored.locationProvider, isNull);
+      expect(restored.locationIsFallback, isFalse);
+    });
+
     test('barcode without scan result uses barcode value as title', () {
       final entry = ScanEntry(
         id: 'scan-2',
