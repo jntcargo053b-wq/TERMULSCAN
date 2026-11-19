@@ -35,6 +35,7 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
   @override
   void initState() {
     super.initState();
+    unawaited(_cleanupStalePreviewFiles());
     _operatorController.text = _settings.operatorName;
     _customTextController.text = _settings.customText;
     _selectedStyle = _settings.watermarkStyle;
@@ -68,6 +69,33 @@ class _WatermarkSettingsSheetState extends State<WatermarkSettingsSheet> {
     _operatorController.dispose();
     _customTextController.dispose();
     super.dispose();
+  }
+
+  /// Bersihkan hasil preview lama yang tertinggal akibat aplikasi ditutup
+  /// paksa. Sumber contoh (_source.jpg) dipertahankan sebagai cache.
+  Future<void> _cleanupStalePreviewFiles() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+      await for (final entity in tempDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        if (!name.startsWith('termulscan_watermark_preview_') ||
+            name.endsWith('_source.jpg')) {
+          continue;
+        }
+        try {
+          if ((await entity.stat()).modified.isBefore(cutoff)) {
+            await entity.delete();
+          }
+        } catch (error) {
+          debugPrint('Gagal membersihkan preview watermark lama: $error');
+        }
+      }
+    } catch (error) {
+      // Preview baru tetap boleh dibuat meskipun housekeeping gagal.
+      debugPrint('Pembersihan preview watermark dilewati: $error');
+    }
   }
 
   /// Hindari render bitmap pada setiap ketukan saat nama operator diketik.
