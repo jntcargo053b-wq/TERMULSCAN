@@ -1019,11 +1019,91 @@ class WatermarkService {
       }
       return false;
     }
-    final st = style == 'timemark' ? 'classic' : style;
+    if (const {'pod','editorial','technical','geo','split','ribbon'}.contains(style)) {\n      for (final k in const [1.0, 0.85, 0.7, 0.58]) {\n        if (_tryDistinctTemplate(cv, W, H, parsed, t, logo, style, position, k)) return true;\n      }\n      return false;\n    }\n    final st = style == 'timemark' ? 'classic' : style;
     final theme = _themeFor(st);
     for (final k in const [1.0, 0.85, 0.72, 0.6]) {
       if (_tryCard(cv, W, H, parsed, t, logo, theme, st, position, k)) return true;
     }    return false;
+  }
+
+  // Six template baru menggunakan komposisi geometri tersendiri.
+  static bool _tryDistinctTemplate(_Cv cv, int W, int H, _Parsed p,
+      _TimeInfo? t, img.Image? logo, String style, String position, double k) {
+    final u = _unit(W,H)*k;
+    final pad = _ci(18*u,7,38), gap = _ci(9*u,4,20);
+    final small = math.max(10.0,19*u), big = math.max(22.0,66*u);
+    final rows = _rows(p, includeCustom:true);
+    final awb = p.awb?.trim() ?? '';
+    final details = <String>[];
+    for (final r in rows) {
+      if (r.label == 'AWB') continue;
+      details.add(r.label == null ? r.value : '${r.label}: ${r.value}');
+    }
+    final maxW = math.min((W*.88).round(),W-pad*2);
+    if (maxW < 90) return false;
+    final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,maxW-pad*2,bold:true);
+    final detailLines = <String>[];
+    for (final d in details) { detailLines.addAll(cv.wrap(d,small,maxW-pad*2)); }
+    final time = t?.time ?? '', date = t == null ? '' : '${t.dayText}, ${t.dateText}';
+    final headerH = t == null ? 0 : cv.lh(small)*2;
+    final awbH = awbLines.length*cv.lh(big*.58);
+    final detailsH = detailLines.length*cv.lh(small);
+    final panelH = math.min(H-pad*2, math.max(100,
+        pad*2+headerH+(awbLines.isEmpty?0:awbH+gap)+detailsH+gap*3));
+    final (x,y) = _anchor(position,W,H,maxW,panelH,_ci(14*u,5,30),'bottomLeft');
+    final right=x+maxW-1, bottom=y+panelH-1;
+    final white=img.ColorRgb8(255,255,255), muted=img.ColorRgb8(205,216,226);
+    final accent=_themeFor(style).accent;
+    cv.region(x,y,maxW,panelH);
+    if (style == 'pod') {
+      cv.rrect(x,y,right,bottom,_ci(10*u,4,22),img.ColorRgba8(8,20,38,240));
+      cv.rect(x,y,right,y+_ci(7*u,4,14),accent);
+      cv.text('PROOF OF DELIVERY',em:small,x:x+pad,y:y+pad,color:accent,bold:true);
+    } else if (style == 'editorial') {
+      cv.rect(x,y,x+_ci(4*u,2,6),bottom,accent);
+      cv.text('DELIVERY RECORD',em:small,x:x+pad+_ci(8*u,3,12),y:y+pad,color:accent,bold:true,shadow:false);
+    } else if (style == 'technical') {
+      cv.rrect(x,y,right,bottom,_ci(3*u,2,8),img.ColorRgba8(8,16,29,242));
+      final step=_ci(24*u,10,42);
+      for(var gx=x+step;gx<right;gx+=step){cv.rect(gx,y+1,gx+1,bottom-1,img.ColorRgba8(90,160,210,45));}
+      cv.rect(x,y,x+_ci(5*u,2,7),bottom,accent);
+      cv.text('FIELD DATA / POD',em:small,x:x+pad,y:y+pad,color:accent,bold:true);
+    } else if (style == 'geo') {
+      cv.rrect(x,y,right,bottom,_ci(24*u,8,40),img.ColorRgba8(5,43,42,238));
+      cv.icon('pin',x+pad+_ci(18*u,8,28),y+pad+_ci(18*u,8,28),_ci(38*u,16,54),accent);
+      cv.text('LOCATION VERIFIED',em:small,x:x+pad+_ci(44*u,18,62),y:y+pad,color:accent,bold:true);
+    } else if (style == 'split') {
+      cv.rrect(x,y,right,bottom,_ci(8*u,3,16),img.ColorRgba8(24,20,48,242));
+      final dx=x+(maxW*.43).round();
+      cv.rect(dx,y+pad,dx+_ci(2*u,1,3),bottom-pad,accent);
+      if(time.isNotEmpty) cv.timeText(time,em:big*.72,x:x+pad,cy:y+panelH~/2,color:white);
+      cv.text('TRACKING',em:small,x:dx+pad,y:y+pad,color:accent,bold:true);
+    } else {
+      cv.rrect(x,y,right,bottom,_ci(7*u,3,14),img.ColorRgba8(48,22,20,240));
+      final bh=_ci(32*u,15,48);
+      cv.rect(x,y,right,y+bh,accent);
+      cv.text('DELIVERY • TIMESTAMP',em:small,x:x+pad,y:y+(bh-cv.lh(small))~/2,color:img.ColorRgb8(30,20,18),bold:true,shadow:false);
+    }
+    var cy=y+pad+cv.lh(small)+gap;
+    if(time.isNotEmpty && style!='split'){
+      cv.text(time,em:big*.62,x:x+pad,y:cy,color:white,bold:true); cy+=cv.lh(big*.62);
+      cv.text(date,em:small,x:x+pad,y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
+    } else if(date.isNotEmpty && style=='split') {
+      cv.text(date,em:small,x:x+maxW*.48,y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
+    }
+    if(awbLines.isNotEmpty){
+      final awbEm=big*.58;
+      cv.text(style=='pod'?'AWB / RESI':style=='technical'?'ID:':style=='geo'?'SHIPMENT':'AWB',
+        em:small,x:x+pad,y:cy,color:accent,bold:true); cy+=cv.lh(small);
+      for(final line in awbLines){cv.text(line,em:awbEm,x:x+pad,y:cy,color:white,bold:true);cy+=cv.lh(awbEm);}
+      cy+=gap;
+    }
+    if(logo!=null && style=='pod'){
+      final lh=_ci(26*u,12,48), lw=math.min((logo.width*lh/logo.height).round(),_ci(100*u,40,150));
+      cv.logoTile(logo,right-pad-lw,y+pad,lw,lh,_ci(3*u,2,7),_ci(4*u,2,9),img.ColorRgba8(255,255,255,240));
+    }
+    for(final line in detailLines){if(cy+cv.lh(small)>bottom-pad)break;cv.text(line,em:small,x:x+pad,y:cy,color:muted,shadow:style!='editorial');cy+=cv.lh(small);}
+    return true;
   }
 
   static bool _tryCard(
