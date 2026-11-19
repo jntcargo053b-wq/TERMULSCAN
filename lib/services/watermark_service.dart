@@ -1061,6 +1061,8 @@ class WatermarkService {
     }
     // Panel watermark jangan memenuhi hampir seluruh foto. Batas 72% memberi
     // ruang visual pada subjek foto dan mencegah semua template tampak melebar.
+    // maxW hanya batas pembungkus teks, bukan lebar panel final.
+    // Lebar panel dihitung dari konten agar template tidak selalu menjadi pita.
     final maxW = math.min((W * .72).round(), W - pad * 2);
     if (maxW < 90) return false;
     final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,maxW-pad*2,bold:true);
@@ -1085,6 +1087,32 @@ class WatermarkService {
     final detailGap = math.max(2, gap ~/ 2).toInt();
     final detailStep = cv.lh(small) + detailGap;
     final detailsH = detailLines.length * detailStep;
+    final titleText = switch (style) {
+      'pod' => 'PROOF OF DELIVERY',
+      'editorial' => 'DELIVERY RECORD',
+      'technical' => 'FIELD DATA / POD',
+      'geo' => 'LOCATION VERIFIED',
+      'split' => 'TRACKING',
+      _ => 'DELIVERY • TIMESTAMP',
+    };
+    var contentW = cv.tw(titleText, small, bold: true);
+    if (time.isNotEmpty && style != 'split') {
+      contentW = math.max(contentW, cv.tw(time, timeEm * .62, bold: true));
+      contentW = math.max(contentW, cv.tw(date, small, bold: true));
+    }
+    for (final line in awbLines) {
+      contentW = math.max(contentW, cv.tw(line, awbEm, bold: true));
+    }
+    for (final line in detailLines) {
+      contentW = math.max(contentW, cv.tw(line, small));
+    }
+    // Sisakan ruang ikon pin pada Geo dan dua kolom pada Split.
+    if (style == 'geo') contentW += _ci(54 * u, 24, 72);
+    final minPanelW = math.min(maxW, math.max(140, (W * .38).round()));
+    final preferredPanelW = math.min(maxW, contentW + pad * 2);
+    final panelW = style == 'split'
+        ? math.max(preferredPanelW, math.min(maxW, (W * .64).round()))
+        : preferredPanelW.clamp(minPanelW, maxW).toInt();
     final requiredPanelH = math.max(
       100,
       pad * 2 + titleH + timeBlockH + awbBlockH + detailsH + gap,
@@ -1094,8 +1122,8 @@ class WatermarkService {
     // menjadi fallback dan pada akhirnya burn gagal secara aman.
     if (requiredPanelH > H - pad * 2) return false;
     final panelH = requiredPanelH;
-    final (x,y) = _anchor(position,W,H,maxW,panelH,_ci(14*u,5,30),'bottomLeft');
-    final right=x+maxW-1, bottom=y+panelH-1;
+    final (x,y) = _anchor(position,W,H,panelW,panelH,_ci(14*u,5,30),'bottomLeft');
+    final right=x+panelW-1, bottom=y+panelH-1;
     final white=img.ColorRgb8(255,255,255), muted=img.ColorRgb8(205,216,226);
     final accent=_themeFor(style).accent;
     cv.region(x,y,maxW,panelH);
@@ -1118,7 +1146,7 @@ class WatermarkService {
       cv.text('LOCATION VERIFIED',em:small,x:x+pad+_ci(44*u,18,62),y:y+pad,color:accent,bold:true);
     } else if (style == 'split') {
       cv.rrect(x,y,right,bottom,_ci(8*u,3,16),img.ColorRgba8(24,20,48,242));
-      final dx=x+(maxW*.43).round();
+      final dx=x+(panelW*.43).round();
       cv.rect(dx,y+pad,dx+_ci(2*u,1,3),bottom-pad,accent);
       if(time.isNotEmpty) cv.timeText(time,em:big*.72,x:x+pad,cy:y+panelH~/2,color:white);
       cv.text('TRACKING',em:small,x:dx+pad,y:y+pad,color:accent,bold:true);
@@ -1133,7 +1161,7 @@ class WatermarkService {
       cv.text(time,em:big*.62,x:x+pad,y:cy,color:white,bold:true); cy+=cv.lh(big*.62);
       cv.text(date,em:small,x:x+pad,y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
     } else if(date.isNotEmpty && style=='split') {
-      cv.text(date,em:small,x:x+(maxW*.48).round(),y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
+      cv.text(date,em:small,x:x+(panelW*.48).round(),y:cy,color:muted,bold:true); cy+=cv.lh(small)+gap;
     }
     if(awbLines.isNotEmpty){
       final awbEm=big*.58;
