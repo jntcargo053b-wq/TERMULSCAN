@@ -1224,8 +1224,8 @@ class _WatermarkStyleOption extends StatelessWidget {
                       top: style == 'top' || style == 'pod' || style == 'geo' || style == 'ribbon' ? 0 : (style == 'modern' ? 4 : null),
                       bottom: style == 'top' || style == 'modern' || style == 'pod' || style == 'geo' || style == 'ribbon' ? null : 0,
                       child: Container(
-                        width: style == 'compact' ? 43 : (style == 'badge' ? 39 : (style == 'minimal' ? 48 : (style == 'pod' ? 86 : (style == 'editorial' ? 74 : (style == 'technical' ? 68 : (style == 'geo' ? 78 : (style == 'split' ? 70 : (style == 'ribbon' ? 82 : null))))))),
-                        height: style == 'compact' ? 24 : (style == 'badge' ? 29 : (style == 'minimal' ? 17 : (style == 'modern' ? 25 : (style == 'pod' || style == 'geo' || style == 'ribbon' ? 22 : (style == 'technical' ? 26 : (style == 'editorial' ? 20 : (style == 'split' ? 24 : 14)))))),
+                        width: style == 'compact' ? 43 : (style == 'badge' ? 39 : (style == 'minimal' ? 48 : (style == 'pod' ? 86 : (style == 'editorial' ? 74 : (style == 'technical' ? 68 : (style == 'geo' ? 78 : (style == 'split' ? 70 : (style == 'ribbon' ? 82 : null)))))))),
+                        height: style == 'compact' ? 24 : (style == 'badge' ? 29 : (style == 'minimal' ? 17 : (style == 'modern' ? 25 : (style == 'pod' || style == 'geo' || style == 'ribbon' ? 22 : (style == 'technical' ? 26 : (style == 'editorial' ? 20 : (style == 'split' ? 24 : 14))))))),
                         padding: EdgeInsets.fromLTRB(
                           style == 'minimal' ? 5 : 3,
                           style == 'badge' ? 5 : 3,
