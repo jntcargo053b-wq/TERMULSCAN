@@ -505,7 +505,8 @@ class WatermarkService {
   }
 
   static const _styles = {
-    'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge'
+    'classic', 'timemark', 'compact', 'top', 'modern', 'minimal', 'badge',
+    'pod', 'editorial', 'technical', 'geo', 'split', 'ribbon'
   };
 
   /// Dimensi foto setelah orientasi EXIF (tanpa decode piksel penuh).
@@ -953,6 +954,24 @@ class WatermarkService {
       case 'badge':
         return _Theme(c(252, 214, 112, 228), c(238, 178, 56, 234), c(120, 74, 8),
             c(96, 62, 10), c(44, 34, 18), c(96, 68, 24), c(96, 68, 24, 90), true);
+      case 'pod':
+        return _Theme(c(18, 42, 72, 232), c(8, 22, 42, 242), c(255, 184, 40),
+            c(255, 205, 92), white, c(190, 208, 228), div, false);
+      case 'editorial':
+        return _Theme(c(244, 241, 232, 238), c(226, 231, 226, 244), c(32, 92, 82),
+            c(32, 92, 82), c(26, 38, 36), c(82, 98, 92), c(40, 70, 62, 65), true);
+      case 'technical':
+        return _Theme(c(24, 30, 42, 238), c(12, 18, 28, 246), c(80, 190, 255),
+            c(100, 205, 255), white, c(174, 194, 214), div, false);
+      case 'geo':
+        return _Theme(c(16, 65, 62, 224), c(7, 38, 48, 238), c(72, 220, 184),
+            c(104, 238, 204), white, c(178, 222, 216), div, false);
+      case 'split':
+        return _Theme(c(42, 38, 72, 232), c(22, 24, 48, 244), c(190, 150, 255),
+            c(210, 180, 255), white, c(204, 194, 228), div, false);
+      case 'ribbon':
+        return _Theme(c(72, 34, 26, 232), c(38, 20, 22, 242), c(255, 126, 86),
+            c(255, 160, 124), white, c(232, 196, 184), div, false);
       default:
         return _Theme(c(18, 34, 58, 186), c(10, 20, 38, 204), c(255, 190, 55),
             c(255, 200, 80), white, c(186, 200, 222), div, false);
@@ -1033,6 +1052,12 @@ class WatermarkService {
       'modern' => 17.0,
       'minimal' => 9.0,
       'badge' => 10.0,
+      'pod' => 16.0,
+      'editorial' => 18.0,
+      'technical' => 13.0,
+      'geo' => 15.0,
+      'split' => 14.0,
+      'ribbon' => 12.0,
       _ => 15.0,
     };
     final gapScale = switch (style) {
@@ -1041,6 +1066,12 @@ class WatermarkService {
       'modern' => 11.0,
       'minimal' => 6.0,
       'badge' => 6.0,
+      'pod' => 9.0,
+      'editorial' => 12.0,
+      'technical' => 7.0,
+      'geo' => 8.0,
+      'split' => 10.0,
+      'ribbon' => 7.0,
       _ => 9.0,
     };
     final radiusScale = switch (style) {
@@ -1049,6 +1080,12 @@ class WatermarkService {
       'modern' => 19.0,
       'minimal' => 4.0,
       'badge' => 8.0,
+      'pod' => 12.0,
+      'editorial' => 2.0,
+      'technical' => 5.0,
+      'geo' => 16.0,
+      'split' => 15.0,
+      'ribbon' => 6.0,
       _ => 14.0,
     };
     final panelWidthFactor = switch (style) {
@@ -1057,6 +1094,12 @@ class WatermarkService {
       'modern' => 0.84,
       'minimal' => 0.76,
       'badge' => 0.64,
+      'pod' => 0.94,
+      'editorial' => 0.90,
+      'technical' => 0.82,
+      'geo' => 0.88,
+      'split' => 0.86,
+      'ribbon' => 0.90,
       _ => 0.88,
     };
     final pad = _ci(padScale * u, 5, 44);
@@ -1153,6 +1196,26 @@ class WatermarkService {
         accent(cy2: py + ab - 1);
       case 'minimal':
         cv.rect(px + pad ~/ 2, py + pad, px + pad ~/ 2 + math.max(1, ab ~/ 2),
+            bottom - pad, theme.accent);
+      case 'pod':
+        accent(cy2: py + ab - 1);
+        cv.rect(right - ab + 1, py + pad, right - 1, bottom - pad, theme.accent);
+      case 'editorial':
+        cv.rect(px + pad ~/ 2, py + pad, px + pad, bottom - pad, theme.accent);
+        cv.rect(px + pad, bottom - ab, right - pad, bottom - ab + 1, theme.accent);
+      case 'technical':
+        accent(cx2: px + ab - 1);
+        cv.rect(px + pad, py + pad ~/ 2, right - pad, py + pad ~/ 2 + 1, theme.accent);
+        cv.rect(px + pad, bottom - pad ~/ 2, right - pad, bottom - pad ~/ 2 + 1, theme.accent);
+      case 'geo':
+        accent(cy2: py + ab - 1);
+        cv.rect(px + pad, bottom - ab, right - pad, bottom - ab + 1, theme.accent);
+      case 'split':
+        accent(cx1: right - ab + 1);
+        cv.rect(px + pad, py + pad, px + pad + math.max(1, ab ~/ 2), bottom - pad, theme.accent);
+      case 'ribbon':
+        accent(cy2: py + ab - 1);
+        cv.rect(px + pad, py + ab + gap, px + pad + math.max(1, ab ~/ 2),
             bottom - pad, theme.accent);
       case 'modern':
         accent(cx2: px + ab - 1);
