@@ -1068,7 +1068,12 @@ class WatermarkService {
     // Split memiliki dua kolom: metadata harus dibungkus mengikuti lebar
     // kolom kanan, bukan lebar seluruh panel. Ini mencegah alamat masuk ke
     // kolom jam seperti yang terjadi pada foto portrait pengguna.
-    final splitTextMaxW = math.max(40, (maxW * .48).round() - pad * 2);
+    final splitPanelMinW = math.min(maxW, (W * .64).round());
+    // Kolom kanan dimulai pada 48% panel dan berakhir sebelum padding kanan.
+    // Hitung dari lebar minimum panel Split agar teks tidak terpotong ketika
+    // panel memakai lebar minimum 64% foto (bukan batas maxW 72%).
+    final splitTextMaxW =
+        math.max(40, (splitPanelMinW * .52).round() - pad * 2);
     final textMaxW = style == 'split' ? splitTextMaxW : maxW - pad * 2;
     final awbLines = awb.isEmpty ? <String>[] : cv.wrap(awb,big*.58,textMaxW,bold:true);
     final detailLines = <String>[];
