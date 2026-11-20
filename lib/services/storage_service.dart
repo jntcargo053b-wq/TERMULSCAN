@@ -71,7 +71,7 @@ class StorageService {
         for (final raw in decoded.whereType<Map>()) {
           final task = Map<String, dynamic>.from(raw);
           final id = task['entryId']?.toString();
-          if (id != null && id.isNotEmpty && task['retryExhausted'] != true) {
+          if (id != null && id.isNotEmpty) {
             _pendingPhotoTasks[id] = task;
           }
         }
@@ -710,30 +710,10 @@ class StorageService {
       _setPhotoTaskFieldAndPersist(entryId, 'addressResolved', true);
 
   Future<void> markPhotoTaskRetryExhausted(String entryId) async {
-    // A task that has permanently failed is no longer recoverable. Persist its
-    // removal before deleting the RAW source, so a failed write cannot leave
-    // a persisted task pointing at a missing recovery file.
-    final previousTask = _pendingPhotoTasks.remove(entryId);
-    if (previousTask == null) {
-      await _cleanupRawForEntry(entryId);
-      return;
-    }
-
-    try {
-      await _persist();
-    } catch (_) {
-      _pendingPhotoTasks.putIfAbsent(
-        entryId,
-        () => Map<String, dynamic>.from(previousTask),
-      );
-      try {
-        await _persist();
-      } catch (repairError) {
-        debugPrint('Gagal memulihkan antrean foto gagal $entryId: $repairError');
-      }
-      rethrow;
-    }
-    await _cleanupRawForEntry(entryId);
+    // Retry exhaustion is a paused state, not permission to discard the
+    // original capture. Keep the task persisted so startup cleanup continues
+    // to treat its RAW file as referenced and available for manual recovery.
+    await _setPhotoTaskFieldAndPersist(entryId, 'retryExhausted', true);
   }
 
   Future<void> markPhotoTaskAttempt(String entryId) async {
