@@ -1,7 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:termulscan/services/photo_file_recovery.dart';
+
+Uint8List _validJpeg() {
+  final image = img.Image(width: 4, height: 4);
+  return Uint8List.fromList(img.encodeJpg(image));
+}
 
 void main() {
   group('PhotoFileRecovery', () {
@@ -46,17 +52,32 @@ void main() {
       expect(await backup.exists(), isFalse);
     });
 
-    test('deletes backup when the new destination already exists', () async {
-      final destination = File('${directory.path}/photo_100_1.jpg');
+    test('restores backup when destination is non-empty but corrupt', () async {
+      final destination = File('${directory.path}/photo_corrupt.jpg');
       final backup = File(
-        '${directory.path}/photo_100_1.jpg.wm_backup_200',
+        '${directory.path}/photo_corrupt.jpg.wm_backup_400',
       );
-      await destination.writeAsBytes([4, 5, 6]);
+      await destination.writeAsBytes([0xFF, 0xD8, 0x00, 0x01]);
       await backup.writeAsBytes([1, 2, 3]);
 
       await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
 
-      expect(await destination.readAsBytes(), [4, 5, 6]);
+      expect(await destination.readAsBytes(), [1, 2, 3]);
+      expect(await backup.exists(), isFalse);
+    });
+
+    test('deletes backup when the new destination is a valid image', () async {
+      final destination = File('${directory.path}/photo_100_1.jpg');
+      final backup = File(
+        '${directory.path}/photo_100_1.jpg.wm_backup_200',
+      );
+      final validOutput = _validJpeg();
+      await destination.writeAsBytes(validOutput);
+      await backup.writeAsBytes([1, 2, 3]);
+
+      await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
+
+      expect(await destination.readAsBytes(), validOutput);
       expect(await backup.exists(), isFalse);
     });
 
