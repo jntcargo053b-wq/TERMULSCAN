@@ -15,6 +15,23 @@ void main() {
   });
 
   group('StorageService photo recovery metadata', () {
+    test('corrupt metadata is preserved and skips destructive startup cleanup', () async {
+      const corruptHistory = '{broken-history';
+      const corruptTasks = '{broken-photo-tasks';
+      SharedPreferences.setMockInitialValues({
+        'scan_entries': corruptHistory,
+        'pending_photo_tasks_v1': corruptTasks,
+      });
+
+      await storage.init();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('scan_entries'), corruptHistory);
+      expect(prefs.getString('pending_photo_tasks_v1'), corruptTasks);
+      expect(storage.entries, isEmpty);
+      expect(storage.pendingPhotoTaskIds, isEmpty);
+    });
+
     test('rawPathFor inserts suffix before the extension', () {
       expect(
         storage.rawPathFor('/app/photos/photo_123_1.jpg'),
