@@ -142,6 +142,28 @@ void main() {
       expect(DateTime.tryParse(savedTask['lastAddressAttemptAt'] as String), isNotNull);
     });
 
+    test('retry exhaustion pauses task without discarding recovery metadata', () async {
+      const entryId = 'storage-test-retry-exhausted';
+      await storage.enqueuePhotoTask(
+        entryId,
+        latitude: -7.98,
+        longitude: 112.63,
+      );
+
+      await storage.markPhotoTaskRetryExhausted(entryId);
+
+      final task = storage.getPhotoTask(entryId)!;
+      expect(task['retryExhausted'], isTrue);
+      expect(task['latitude'], -7.98);
+      expect(task['longitude'], 112.63);
+      expect(storage.pendingPhotoTaskIds, contains(entryId));
+
+      final savedTask = await _readPersistedTask(entryId);
+      expect(savedTask['retryExhausted'], isTrue);
+      expect(savedTask['latitude'], -7.98);
+      expect(savedTask['longitude'], 112.63);
+    });
+
     test('watermark and address completion flags are persisted', () async {
       const entryId = 'storage-test-completion-flags';
       await storage.enqueuePhotoTask(entryId);
