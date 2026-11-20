@@ -17,6 +17,8 @@ class StorageService {
 
   static const _entriesKey = 'scan_entries';
   static const _photoTasksKey = 'pending_photo_tasks_v1';
+  static const _corruptEntriesBackupKey = 'scan_entries_corrupt_backup_v1';
+  static const _corruptTasksBackupKey = 'pending_photo_tasks_corrupt_backup_v1';
 
   final List<ScanEntry> _entries = [];
   final Map<String, Map<String, dynamic>> _pendingPhotoTasks = {};
@@ -24,6 +26,9 @@ class StorageService {
   Timer? _saveDebounceTimer;
   Future<void> _persistChain = Future.value();
   bool _initialized = false;
+  bool _metadataCorrupt = false;
+  String? _corruptEntriesRaw;
+  String? _corruptTasksRaw;
   int _idCounter = 0;
 
   List<ScanEntry> get entries => List.unmodifiable(_entries);
@@ -34,6 +39,9 @@ class StorageService {
     final data = prefs.getString(_entriesKey);
     final taskData = prefs.getString(_photoTasksKey);
     var metadataCorrupt = false;
+    _metadataCorrupt = false;
+    _corruptEntriesRaw = null;
+    _corruptTasksRaw = null;
     _entries.clear();
     _pendingPhotoTasks.clear();
 
@@ -50,6 +58,7 @@ class StorageService {
         // Jangan menganggap riwayat kosong: file foto lama mungkin masih
         // menjadi satu-satunya salinan yang dapat diselamatkan.
         metadataCorrupt = true;
+        _corruptEntriesRaw = data;
         debugPrint('Metadata riwayat scan rusak; cleanup foto dilewati: $e');
       }
     }
@@ -69,6 +78,7 @@ class StorageService {
       } catch (e) {
         // RAW bisa menjadi sumber pemulihan terakhir bila antrean rusak.
         metadataCorrupt = true;
+        _corruptTasksRaw = taskData;
         debugPrint('Metadata antrean foto rusak; cleanup foto dilewati: $e');
       }
     }
@@ -80,6 +90,7 @@ class StorageService {
       await _repairImageReferences();
       await cleanupOrphanPhotoFiles();
     }
+    _metadataCorrupt = metadataCorrupt;
     // Saat metadata korup, startup tetap berjalan tetapi tidak melakukan
     // operasi destruktif terhadap foto/RAW. Pemulihan metadata perlu tindakan
     // khusus; jangan menimpa sumber yang mungkin masih dapat diselamatkan.
@@ -467,6 +478,35 @@ class StorageService {
     await _persist();
   }
 
+  Future<void> _preserveCorruptMetadata(SharedPreferences prefs) async {
+    if (!_metadataCorrupt) return;
+
+    if (_corruptEntriesRaw != null &&
+        !prefs.containsKey(_corruptEntriesBackupKey)) {
+      final saved = await prefs.setString(
+        _corruptEntriesBackupKey,
+        _corruptEntriesRaw!,
+      );
+      if (!saved) {
+        throw StateError('Cadangan metadata riwayat rusak gagal disimpan');
+      }
+    }
+
+    if (_corruptTasksRaw != null &&
+        !prefs.containsKey(_corruptTasksBackupKey)) {
+      final saved = await prefs.setString(
+        _corruptTasksBackupKey,
+        _corruptTasksRaw!,
+      );
+      if (!saved) {
+        throw StateError('Cadangan metadata antrean foto rusak gagal disimpan');
+      }
+    }
+
+    // Clear the guard only after every damaged source has a durable backup.
+    _metadataCorrupt = false;
+  }
+
   Future<void> _persist() async {
     // Capture snapshot immediately, but serialize only inside the ordered
     // persistence chain. This prevents a slower compute() from allowing an
@@ -492,6 +532,9 @@ class StorageService {
             : json.encode(tasksSnapshot);
 
         final prefs = await SharedPreferences.getInstance();
+        // Preserve the exact damaged source before any later write can replace
+        // it. If backup persistence fails, abort this write and keep originals.
+        await _preserveCorruptMetadata(prefs);
         final entriesSaved = await prefs.setString(_entriesKey, entriesJson);
         if (!entriesSaved) {
           throw StateError('Riwayat scan gagal disimpan ke penyimpanan lokal');
