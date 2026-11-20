@@ -30,6 +30,32 @@ void main() {
       expect(prefs.getString('pending_photo_tasks_v1'), corruptTasks);
       expect(storage.entries, isEmpty);
       expect(storage.pendingPhotoTaskIds, isEmpty);
+
+      // A later normal write must first preserve the exact damaged source.
+      await storage.enqueuePhotoTask('new-photo-after-corruption');
+      expect(
+        prefs.getString('scan_entries_corrupt_backup_v1'),
+        corruptHistory,
+      );
+      expect(
+        prefs.getString('pending_photo_tasks_corrupt_backup_v1'),
+        corruptTasks,
+      );
+      expect(
+        () => json.decode(prefs.getString('pending_photo_tasks_v1')!),
+        returnsNormally,
+      );
+
+      // The first recovery snapshot is immutable across subsequent writes.
+      await storage.enqueuePhotoTask('another-new-photo');
+      expect(
+        prefs.getString('scan_entries_corrupt_backup_v1'),
+        corruptHistory,
+      );
+      expect(
+        prefs.getString('pending_photo_tasks_corrupt_backup_v1'),
+        corruptTasks,
+      );
     });
 
     test('rawPathFor inserts suffix before the extension', () {
