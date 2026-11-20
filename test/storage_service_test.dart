@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:termulscan/models/scan_entry.dart';
 import 'package:termulscan/services/storage_service.dart';
 
 void main() {
@@ -67,6 +68,40 @@ void main() {
         storage.rawPathFor('/app/photos/photo_without_extension'),
         '/app/photos/photo_without_extension_raw',
       );
+    });
+
+    test('photo entry and recovery task are committed in one snapshot', () async {
+      const entryId = 'storage-test-atomic-photo';
+      final entry = ScanEntry(
+        id: entryId,
+        type: ScanType.photo,
+        value: '/photos/photo_123_1.jpg',
+        imagePath: '/photos/photo_123_1.jpg',
+        timestamp: DateTime(2026, 11, 21, 10),
+        latitude: -7.98,
+        longitude: 112.63,
+      );
+
+      await storage.addPhotoEntryWithTask(
+        entry,
+        latitude: -7.98,
+        longitude: 112.63,
+      );
+
+      expect((await storage.getEntry(entryId))?.displayImagePath,
+          '/photos/photo_123_1.jpg');
+      expect(storage.getPhotoTask(entryId)?['latitude'], -7.98);
+
+      final prefs = await SharedPreferences.getInstance();
+      final savedEntries =
+          (json.decode(prefs.getString('scan_entries')!) as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      final savedTasks =
+          (json.decode(prefs.getString('pending_photo_tasks_v1')!)
+                  as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(savedEntries.any((item) => item['id'] == entryId), isTrue);
+      expect(savedTasks.any((item) => item['entryId'] == entryId), isTrue);
     });
 
     test('enqueue persists capture coordinates and initial retry metadata', () async {
