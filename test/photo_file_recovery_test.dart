@@ -91,6 +91,40 @@ void main() {
       expect(await backup.exists(), isFalse);
     });
 
+    test('preserves corrupt destination and invalid backup for later recovery',
+        () async {
+      final destination = File('${directory.path}/photo_both_corrupt.jpg');
+      final backup = File(
+        '${directory.path}/photo_both_corrupt.jpg.wm_backup_500',
+      );
+      final destinationBytes = Uint8List.fromList([0xFF, 0xD8, 0x00]);
+      final backupBytes = Uint8List.fromList([0x00, 0x01, 0x02]);
+      await destination.writeAsBytes(destinationBytes);
+      await backup.writeAsBytes(backupBytes);
+
+      await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
+
+      expect(await destination.exists(), isTrue);
+      expect(await destination.readAsBytes(), destinationBytes);
+      expect(await backup.exists(), isTrue);
+      expect(await backup.readAsBytes(), backupBytes);
+    });
+
+    test('does not restore an invalid backup when destination is missing',
+        () async {
+      final backup = File(
+        '${directory.path}/photo_missing.jpg.wm_backup_600',
+      );
+      final backupBytes = Uint8List.fromList([0x01, 0x02, 0x03]);
+      await backup.writeAsBytes(backupBytes);
+
+      await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
+
+      expect(await File('${directory.path}/photo_missing.jpg').exists(), isFalse);
+      expect(await backup.exists(), isTrue);
+      expect(await backup.readAsBytes(), backupBytes);
+    });
+
     test('removes abandoned temporary output but leaves unrelated files',
         () async {
       final temporary = File(
