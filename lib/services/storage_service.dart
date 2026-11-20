@@ -481,25 +481,41 @@ class StorageService {
   Future<void> _preserveCorruptMetadata(SharedPreferences prefs) async {
     if (!_metadataCorrupt) return;
 
-    if (_corruptEntriesRaw != null &&
-        !prefs.containsKey(_corruptEntriesBackupKey)) {
-      final saved = await prefs.setString(
-        _corruptEntriesBackupKey,
-        _corruptEntriesRaw!,
-      );
-      if (!saved) {
-        throw StateError('Cadangan metadata riwayat rusak gagal disimpan');
+    if (_corruptEntriesRaw != null) {
+      final existing = prefs.getString(_corruptEntriesBackupKey);
+      if (existing != null && existing != _corruptEntriesRaw) {
+        throw StateError(
+          'Cadangan metadata riwayat sebelumnya masih ada; '
+          'metadata rusak terbaru tidak akan menimpa cadangan lama',
+        );
+      }
+      if (existing == null) {
+        final saved = await prefs.setString(
+          _corruptEntriesBackupKey,
+          _corruptEntriesRaw!,
+        );
+        if (!saved) {
+          throw StateError('Cadangan metadata riwayat rusak gagal disimpan');
+        }
       }
     }
 
-    if (_corruptTasksRaw != null &&
-        !prefs.containsKey(_corruptTasksBackupKey)) {
-      final saved = await prefs.setString(
-        _corruptTasksBackupKey,
-        _corruptTasksRaw!,
-      );
-      if (!saved) {
-        throw StateError('Cadangan metadata antrean foto rusak gagal disimpan');
+    if (_corruptTasksRaw != null) {
+      final existing = prefs.getString(_corruptTasksBackupKey);
+      if (existing != null && existing != _corruptTasksRaw) {
+        throw StateError(
+          'Cadangan metadata antrean sebelumnya masih ada; '
+          'metadata rusak terbaru tidak akan menimpa cadangan lama',
+        );
+      }
+      if (existing == null) {
+        final saved = await prefs.setString(
+          _corruptTasksBackupKey,
+          _corruptTasksRaw!,
+        );
+        if (!saved) {
+          throw StateError('Cadangan metadata antrean foto rusak gagal disimpan');
+        }
       }
     }
 
