@@ -26,6 +26,7 @@ class StorageService {
   Timer? _saveDebounceTimer;
   Future<void> _persistChain = Future.value();
   bool _initialized = false;
+  Future<void>? _initFuture;
   bool _metadataCorrupt = false;
   String? _corruptEntriesRaw;
   String? _corruptTasksRaw;
@@ -34,6 +35,23 @@ class StorageService {
   List<ScanEntry> get entries => List.unmodifiable(_entries);
 
   Future<void> init() async {
+    if (_initialized) return;
+    final pending = _initFuture;
+    if (pending != null) return pending;
+
+    final initialization = _initialize();
+    _initFuture = initialization;
+    try {
+      await initialization;
+    } catch (_) {
+      if (identical(_initFuture, initialization)) {
+        _initFuture = null;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _initialize() async {
     if (_initialized) return;
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString(_entriesKey);
