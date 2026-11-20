@@ -43,12 +43,17 @@ class PhotoTaskRecoveryService {
     try {
       await _settings.load();
       for (final entryId in List<String>.from(_storage.pendingPhotoTaskIds)) {
-        await processEntry(entryId, allowFreshLocation: false);
+        try {
+          await processEntry(entryId, allowFreshLocation: false);
+        } catch (e, st) {
+          // Satu foto yang gagal tidak boleh menghentikan pemulihan foto lain.
+          // Task yang gagal tetap tersimpan untuk percobaan berikutnya.
+          debugPrint('Photo recovery task $entryId gagal: $e\\n$st');
+        }
       }
     } catch (e, st) {
-      // Recovery berjalan sebagai background task dan tidak boleh membuat
-      // startup/widget test gagal hanya karena plugin storage belum tersedia.
-      // Task tetap dipertahankan untuk percobaan berikutnya.
+      // Kegagalan memuat pengaturan/plugin tidak boleh membuat startup gagal.
+      // Antrean tetap tersimpan untuk percobaan monitoring berikutnya.
       debugPrint('Photo recovery startup gagal: $e\\n$st');
     } finally {
       _runningRecovery = false;
