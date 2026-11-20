@@ -43,6 +43,11 @@ class PhotoFileRecovery {
         '${directory.path}/${name.substring(0, marker)}',
       );
       try {
+        // A backup is a recovery source only if it is a decodable image.
+        // Never replace a destination with an empty/truncated backup.
+        if (!await _isDecodableImage(backup)) {
+          continue;
+        }
         if (await original.exists()) {
           // Ukuran > 0 belum membuktikan hasil render adalah gambar yang sah.
           // Decode hanya dilakukan pada jalur pemulihan saat startup.
