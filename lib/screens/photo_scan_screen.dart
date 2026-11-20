@@ -409,12 +409,9 @@ class _PhotoScanScreenState extends State<PhotoScanScreen> {
         locationName: null,
         scanResult: _barcode,
       );
-      onStageChanged?.call('menyimpan data riwayat foto');
-      await _storage.add(entry);
-
-      onStageChanged?.call('menyiapkan antrean pemulihan foto');
-      await _storage.enqueuePhotoTask(
-        entry.id,
+      onStageChanged?.call('menyimpan riwayat dan antrean pemulihan foto');
+      await _storage.addPhotoEntryWithTask(
+        entry,
         latitude: captureCoords?.lat,
         longitude: captureCoords?.lng,
         allowFreshLocation: !isGallery,
