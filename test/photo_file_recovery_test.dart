@@ -29,13 +29,16 @@ void main() {
       final backup = File(
         '${directory.path}/photo_100_1.jpg.wm_backup_200',
       );
-      await backup.writeAsBytes([1, 2, 3]);
+      final originalPhoto = _validJpeg();
+      await backup.writeAsBytes(originalPhoto);
 
       await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
 
       final restored = File('${directory.path}/photo_100_1.jpg');
       expect(await restored.exists(), isTrue);
-      expect(await restored.readAsBytes(), [1, 2, 3]);
+      final restoredBytes = await restored.readAsBytes();
+      expect(restoredBytes, originalPhoto);
+      expect(img.decodeImage(restoredBytes), isNotNull);
       expect(await backup.exists(), isFalse);
     });
 
@@ -45,11 +48,14 @@ void main() {
         '${directory.path}/photo_empty.jpg.wm_backup_300',
       );
       await destination.writeAsBytes([]);
-      await backup.writeAsBytes([7, 8, 9]);
+      final originalPhoto = _validJpeg();
+      await backup.writeAsBytes(originalPhoto);
 
       await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
 
-      expect(await destination.readAsBytes(), [7, 8, 9]);
+      final restoredBytes = await destination.readAsBytes();
+      expect(restoredBytes, originalPhoto);
+      expect(img.decodeImage(restoredBytes), isNotNull);
       expect(await backup.exists(), isFalse);
     });
 
@@ -59,11 +65,14 @@ void main() {
         '${directory.path}/photo_corrupt.jpg.wm_backup_400',
       );
       await destination.writeAsBytes([0xFF, 0xD8, 0x00, 0x01]);
-      await backup.writeAsBytes([1, 2, 3]);
+      final originalPhoto = _validJpeg();
+      await backup.writeAsBytes(originalPhoto);
 
       await PhotoFileRecovery.recoverWatermarkArtifacts(directory);
 
-      expect(await destination.readAsBytes(), [1, 2, 3]);
+      final restoredBytes = await destination.readAsBytes();
+      expect(restoredBytes, originalPhoto);
+      expect(img.decodeImage(restoredBytes), isNotNull);
       expect(await backup.exists(), isFalse);
     });
 
