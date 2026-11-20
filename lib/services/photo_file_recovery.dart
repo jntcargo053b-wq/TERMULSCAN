@@ -43,26 +43,26 @@ class PhotoFileRecovery {
         '${directory.path}/${name.substring(0, marker)}',
       );
       try {
+        if (await original.exists() && await _isDecodableImage(original)) {
+          // A valid destination is already the committed output. Its backup
+          // is obsolete, even if the backup itself is damaged.
+          await backup.delete();
+          continue;
+        }
+
         // A backup is a recovery source only if it is a decodable image.
         // Never replace a destination with an empty/truncated backup.
         if (!await _isDecodableImage(backup)) {
           continue;
         }
+
         if (await original.exists()) {
-          // Ukuran > 0 belum membuktikan hasil render adalah gambar yang sah.
-          // Decode hanya dilakukan pada jalur pemulihan saat startup.
-          if (await _isDecodableImage(original)) {
-            await backup.delete();
-          } else {
-            // Tujuan kosong/rusak: pulihkan foto sebelumnya.
-            await original.delete();
-            await backup.rename(original.path);
-          }
-        } else {
-          // Output baru belum terpasang. Pulihkan foto lama agar riwayat tidak
-          // menunjuk ke file yang hilang.
-          await backup.rename(original.path);
+          // Destination is empty/corrupt: restore the valid previous photo.
+          await original.delete();
         }
+        // Output is missing or corrupt. Restore the valid backup so history
+        // does not point at a missing/invalid image.
+        await backup.rename(original.path);
       } catch (_) {
         // Jangan menghapus backup bila pemeriksaan/pemulihan gagal.
       }
