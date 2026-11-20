@@ -65,7 +65,11 @@ class _WHScannerAppState extends State<WHScannerApp> with WidgetsBindingObserver
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
       PhotoTaskRecoveryService.instance.disposeMonitoring();
-      StorageService().flush();
+      // Lifecycle callback tidak dapat menunggu Future. Tangani error secara
+      // eksplisit agar kegagalan disk tidak menjadi unhandled async error.
+      unawaited(StorageService().flush().catchError((Object error) {
+        debugPrint('Gagal flush penyimpanan saat app masuk background: $error');
+      }));
     }
   }
 
