@@ -107,6 +107,52 @@ class StorageService {
     _triggerSave();
   }
 
+  /// Commit foto baru dan task pemulihannya dalam satu snapshot metadata.
+  /// Jika persistensi gagal, keduanya dikembalikan bersama-sama sehingga foto
+  /// tidak tertinggal sebagai riwayat tanpa sumber recovery.
+  Future<void> addPhotoEntryWithTask(
+    ScanEntry entry, {
+    double? latitude,
+    double? longitude,
+    bool allowFreshLocation = true,
+  }) async {
+    if (!entry.isPhoto) {
+      throw ArgumentError.value(entry.type, 'entry.type', 'Harus berupa foto');
+    }
+    if (_entries.any((item) => item.id == entry.id) ||
+        _pendingPhotoTasks.containsKey(entry.id)) {
+      throw StateError('ID foto sudah digunakan: ${entry.id}');
+    }
+
+    _saveDebounceTimer?.cancel();
+    _entries.insert(0, entry);
+    _pendingPhotoTasks[entry.id] = {
+      'entryId': entry.id,
+      'createdAt': DateTime.now().toIso8601String(),
+      'attempts': 0,
+      'watermarkCompleted': false,
+      'addressResolved': false,
+      'addressAttempts': 0,
+      'retryExhausted': false,
+      'allowFreshLocation': allowFreshLocation,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+    };
+
+    try {
+      await _persist();
+    } catch (_) {
+      _entries.removeWhere((item) => item.id == entry.id);
+      _pendingPhotoTasks.remove(entry.id);
+      try {
+        await _persist();
+      } catch (repairError) {
+        debugPrint('Gagal rollback foto ${entry.id} setelah commit gagal: $repairError');
+      }
+      rethrow;
+    }
+  }
+
   Future<void> addEntry(ScanEntry entry) => add(entry);
 
   Future<ScanEntry?> getEntry(String id) async {
