@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:image/image.dart' as img;
+
 /// Memulihkan file sementara watermark setelah proses aplikasi terhenti.
 ///
 /// Dipanggil saat startup saja, sebelum pipeline foto menerima pekerjaan baru.
@@ -42,13 +44,12 @@ class PhotoFileRecovery {
       );
       try {
         if (await original.exists()) {
-          // File tujuan yang ada tetapi kosong bukan hasil render yang sah.
-          // Jangan menghapus backup pemulihan dalam kondisi tersebut.
-          final outputLength = await original.length();
-          if (outputLength > 0) {
-            // Output baru sudah dipasang; backup lama tidak diperlukan.
+          // Ukuran > 0 belum membuktikan hasil render adalah gambar yang sah.
+          // Decode hanya dilakukan pada jalur pemulihan saat startup.
+          if (await _isDecodableImage(original)) {
             await backup.delete();
           } else {
+            // Tujuan kosong/rusak: pulihkan foto sebelumnya.
             await original.delete();
             await backup.rename(original.path);
           }
@@ -58,7 +59,7 @@ class PhotoFileRecovery {
           await backup.rename(original.path);
         }
       } catch (_) {
-        // Jangan menghapus backup bila pemulihan gagal.
+        // Jangan menghapus backup bila pemeriksaan/pemulihan gagal.
       }
     }
 
@@ -69,6 +70,15 @@ class PhotoFileRecovery {
       try {
         if (await file.exists()) await file.delete();
       } catch (_) {}
+    }
+  }
+
+  static Future<bool> _isDecodableImage(File file) async {
+    try {
+      if (await file.length() == 0) return false;
+      return img.decodeImage(await file.readAsBytes()) != null;
+    } catch (_) {
+      return false;
     }
   }
 
