@@ -33,38 +33,56 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     final data = prefs.getString(_entriesKey);
     final taskData = prefs.getString(_photoTasksKey);
+    var metadataCorrupt = false;
+    _entries.clear();
+    _pendingPhotoTasks.clear();
+
     if (data != null && data.isNotEmpty) {
       try {
-        final List<dynamic> jsonList = json.decode(data);
-        _entries
-          ..clear()
-          ..addAll(jsonList
-              .whereType<Map>()
-              .map((e) => ScanEntry.fromMap(Map<String, dynamic>.from(e))));
-      } catch (_) {
-        // Jangan crash saat startup bila history lama korup.
+        final decoded = json.decode(data);
+        if (decoded is! List) {
+          throw const FormatException('Format riwayat bukan daftar');
+        }
+        _entries.addAll(decoded
+            .whereType<Map>()
+            .map((e) => ScanEntry.fromMap(Map<String, dynamic>.from(e))));
+      } catch (e) {
+        // Jangan menganggap riwayat kosong: file foto lama mungkin masih
+        // menjadi satu-satunya salinan yang dapat diselamatkan.
+        metadataCorrupt = true;
+        debugPrint('Metadata riwayat scan rusak; cleanup foto dilewati: $e');
       }
     }
     if (taskData != null && taskData.isNotEmpty) {
       try {
-        final List<dynamic> tasks = json.decode(taskData);
-        for (final raw in tasks.whereType<Map>()) {
+        final decoded = json.decode(taskData);
+        if (decoded is! List) {
+          throw const FormatException('Format antrean foto bukan daftar');
+        }
+        for (final raw in decoded.whereType<Map>()) {
           final task = Map<String, dynamic>.from(raw);
           final id = task['entryId']?.toString();
           if (id != null && id.isNotEmpty && task['retryExhausted'] != true) {
             _pendingPhotoTasks[id] = task;
           }
         }
-      } catch (_) {
-        // Task recovery korup tidak boleh menggagalkan startup.
+      } catch (e) {
+        // RAW bisa menjadi sumber pemulihan terakhir bila antrean rusak.
+        metadataCorrupt = true;
+        debugPrint('Metadata antrean foto rusak; cleanup foto dilewati: $e');
       }
     }
 
-    // Normalisasi data lama: foto lama hanya menyimpan path di `value`.
-    // Simpan ulang dengan imagePath yang eksplisit dan path yang sudah
-    // direlokasi bila file masih dapat ditemukan.
-    await _repairImageReferences();
-    await cleanupOrphanPhotoFiles();
+    if (!metadataCorrupt) {
+      // Normalisasi data lama: foto lama hanya menyimpan path di `value`.
+      // Simpan ulang dengan imagePath yang eksplisit dan path yang sudah
+      // direlokasi bila file masih dapat ditemukan.
+      await _repairImageReferences();
+      await cleanupOrphanPhotoFiles();
+    }
+    // Saat metadata korup, startup tetap berjalan tetapi tidak melakukan
+    // operasi destruktif terhadap foto/RAW. Pemulihan metadata perlu tindakan
+    // khusus; jangan menimpa sumber yang mungkin masih dapat diselamatkan.
     _initialized = true;
   }
 
