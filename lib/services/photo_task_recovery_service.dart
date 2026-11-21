@@ -37,6 +37,12 @@ class PhotoTaskRecoveryService {
     _monitorTimer = null;
   }
 
+  /// Retry manual hanya memakai koordinat yang tersimpan pada saat capture.
+  Future<void> retryEntryManually(String entryId) async {
+    await _storage.resetPhotoTaskForManualRetry(entryId);
+    await processEntry(entryId, allowFreshLocation: false);
+  }
+
   Future<void> recoverPending() async {
     if (_runningRecovery) return;
     _runningRecovery = true;
