@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/scan_entry.dart';
 import '../services/storage_service.dart';
+import '../services/photo_task_recovery_service.dart';
 import '../theme/app_theme.dart';
 
 class _FullImagePreviewScreen extends StatelessWidget {
@@ -344,6 +345,37 @@ class _LogScreenState extends State<LogScreen> with WidgetsBindingObserver {
                   );
                 },
               ),
+              if (_storage.getPhotoTask(entry.id)?['retryExhausted'] == true) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Coba Pulihkan Foto Lagi'),
+                    onPressed: () async {
+                      try {
+                        await PhotoTaskRecoveryService.instance
+                            .retryEntryManually(entry.id);
+                        if (!context.mounted) return;
+                        _refreshList();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Pemulihan foto dicoba kembali.'),
+                          ),
+                        );
+                        Navigator.pop(context);
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Pemulihan foto gagal: $e'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
