@@ -773,6 +773,18 @@ class StorageService {
   Future<void> markPhotoTaskAddressResolved(String entryId) =>
       _setPhotoTaskFieldAndPersist(entryId, 'addressResolved', true);
 
+  /// Membuka kembali task yang sebelumnya dijeda setelah retry otomatis habis.
+  /// Status watermark/alamat yang sudah berhasil tetap dipertahankan.
+  Future<void> resetPhotoTaskForManualRetry(String entryId) async {
+    final task = _pendingPhotoTasks[entryId];
+    if (task == null) return;
+    await _setPhotoTaskFieldsAndPersist(entryId, {
+      'attempts': 0,
+      'addressAttempts': 0,
+      'retryExhausted': false,
+    });
+  }
+
   Future<void> markPhotoTaskRetryExhausted(String entryId) async {
     // Retry exhaustion is a paused state, not permission to discard the
     // original capture. Keep the task persisted so startup cleanup continues
