@@ -104,6 +104,30 @@ void main() {
       expect(savedTasks.any((item) => item['entryId'] == entryId), isTrue);
     });
 
+    test('manual retry resets paused counters but preserves capture coordinates and progress', () async {
+      const entryId = 'storage-test-manual-retry';
+      await storage.enqueuePhotoTask(
+        entryId,
+        latitude: -7.98,
+        longitude: 112.63,
+      );
+      await storage.markPhotoTaskWatermarkCompleted(entryId);
+      await storage.markPhotoTaskRetryExhausted(entryId);
+
+      await storage.resetPhotoTaskForManualRetry(entryId);
+
+      final task = storage.getPhotoTask(entryId)!;
+      expect(task['retryExhausted'], isFalse);
+      expect(task['attempts'], 0);
+      expect(task['addressAttempts'], 0);
+      expect(task['watermarkCompleted'], isTrue);
+      expect(task['latitude'], -7.98);
+      expect(task['longitude'], 112.63);
+      final persisted = await _readPersistedTask(entryId);
+      expect(persisted['retryExhausted'], isFalse);
+      expect(persisted['watermarkCompleted'], isTrue);
+    });
+
     test('enqueue persists capture coordinates and initial retry metadata', () async {
       const entryId = 'storage-test-enqueue';
       await storage.enqueuePhotoTask(
